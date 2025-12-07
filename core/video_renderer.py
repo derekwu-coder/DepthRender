@@ -9,28 +9,35 @@ from pathlib import Path
 from PIL import Image as PILImage, ImageDraw, ImageFont, Image
 import time
 
-# --- 系統字型設定（使用 DejaVuSansCondensed-Bold 系列）---
+# ============================================================
+# 字型設定：使用專案內的 RobotoCondensedBold.ttf
+# ============================================================
 
-SYSTEM_FONTS = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-]
+BASE_DIR = Path(__file__).resolve().parent.parent
+FONT_PATH = BASE_DIR / "assets" / "fonts" / "RobotoCondensedBold.ttf"
+
+print(f"[FONT] FONT_PATH = {FONT_PATH}")
+
+if not FONT_PATH.exists():
+    print(f"[WARN] Font file NOT found: {FONT_PATH}")
+else:
+    print(f"[INFO] Font file FOUND: {FONT_PATH}")
+
 
 def load_font(size: int) -> ImageFont.FreeTypeFont:
     """
-    統一載入系統字型：
-    - 依序嘗試 DejaVuSansCondensed-Bold / Bold / Regular
-    - 全部失敗則 fallback 到 Pillow 預設字型
+    統一載入字型：
+    - 成功：回傳對應大小的 RobotoCondensedBold
+    - 失敗：印出警告，改用預設字型
     """
-    for fp in SYSTEM_FONTS:
-        p = Path(fp)
-        if p.exists():
-            try:
-                print(f"[FONT LOAD] Using {p}, size={size}")
-                return ImageFont.truetype(str(p), size)
-            except Exception as e:
-                print(f"[FONT LOAD] Failed on {p}: {e}")
+    try:
+        if FONT_PATH.exists():
+            print(f"[FONT LOAD] Using {FONT_PATH} size={size}")
+            return ImageFont.truetype(str(FONT_PATH), size)
+        else:
+            print(f"[FONT LOAD] NOT FOUND, fallback to default. PATH={FONT_PATH}")
+    except Exception as e:
+        print(f"[WARN] Failed to load font {FONT_PATH} (size={size}): {e}")
 
     print(f"[FONT LOAD] Fallback to default (size={size})")
     return ImageFont.load_default()
@@ -116,14 +123,14 @@ DEPTH_TICK_LABEL_OFFSET_X = 0
 DEPTH_TICK_LABEL_OFFSET_Y = -8
 
 # --- 泡泡內文字 ---
-BUBBLE_FONT_SIZE = 32        # original = 32
+BUBBLE_FONT_SIZE = 32
 BUBBLE_TEXT_OFFSET_X = 0
 BUBBLE_TEXT_OFFSET_Y = -10
 
 # --- 賽事資訊文字（右下模組）---
-COMP_NAME_FONT_SIZE = 54   # 姓名         original = 34
-COMP_SUB_FONT_SIZE = 54    # 國籍 / 項目  original = 34
-COMP_CODE_FONT_SIZE = 54   # 三碼國碼     original = 34
+COMP_NAME_FONT_SIZE = 34   # 姓名
+COMP_SUB_FONT_SIZE = 34    # 國籍 / 項目
+COMP_CODE_FONT_SIZE = 34   # 三碼國碼
 
 COMP_NAME_OFFSET_X = 30
 COMP_NAME_OFFSET_Y = -8
@@ -227,11 +234,16 @@ def _load_flag_png(flags_dir: Path, code3: Optional[str]) -> Optional[Image.Imag
     if not code3:
         return None
     path = flags_dir / f"{code3.lower()}.png"
+    print(f"[FLAG] Try load flag: {path}")
     if not path.exists():
+        print(f"[FLAG] NOT FOUND: {path}")
         return None
     try:
-        return Image.open(path).convert("RGBA")
-    except Exception:
+        img = Image.open(path).convert("RGBA")
+        print(f"[FLAG] Loaded OK: {path}")
+        return img
+    except Exception as e:
+        print(f"[FLAG] ERROR loading {path}: {e}")
         return None
 
 
