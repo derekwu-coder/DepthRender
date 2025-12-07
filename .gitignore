@@ -1,0 +1,4 @@
+.DS_Store
+__pycache__/
+assets/.DS_Store
+core/__pycache__/

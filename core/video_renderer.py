@@ -83,7 +83,27 @@ COMP_ALPHA3_OFFSET_X = 0     # 三碼國碼額外 X 調整（在國旗下）
 
 # 字型設定
 BASE_DIR = Path(__file__).resolve().parent.parent
-FONT_PATH = str(BASE_DIR / "assets" / "fonts" / "Roboto Condensed Bold.ttf")
+FONT_PATH = BASE_DIR / "assets" / "fonts" / "Roboto Condensed Bold.ttf"
+
+print(f"[FONT] FONT_PATH = {FONT_PATH}")
+
+if not FONT_PATH.exists():
+    print(f"[WARN] Font file NOT found: {FONT_PATH}")
+else:
+    print(f"[INFO] Font file FOUND: {FONT_PATH}")
+
+
+def load_font(size: int) -> ImageFont.FreeTypeFont:
+    """
+    統一載入字型：
+    - 成功：回傳對應大小的 Roboto Condensed Bold
+    - 失敗：印出警告，改用預設字型
+    """
+    try:
+        return ImageFont.truetype(str(FONT_PATH), size)  # 這裡才轉成 str
+    except Exception as e:
+        print(f"[WARN] Failed to load font {FONT_PATH} (size={size}): {e}")
+        return ImageFont.load_default()
 
 # --- 右上 info 卡 ---
 INFO_CARD_FONT_SIZE = 48              # 字體大小   original = 48
@@ -262,7 +282,7 @@ def draw_competition_panel_bottom_right(
         # 速率
         if rate_text:
             try:
-                font_rate = ImageFont.truetype(FONT_PATH, BOARD3_RATE_FONT_SIZE)
+                font_rate = load_font(BOARD3_RATE_FONT_SIZE)
             except Exception:
                 font_rate = ImageFont.load_default()
 
@@ -280,7 +300,7 @@ def draw_competition_panel_bottom_right(
         # Dive Time（置中）
         if time_text:
             try:
-                font_time = ImageFont.truetype(FONT_PATH, BOARD3_TIME_FONT_SIZE)
+                font_time = load_font(BOARD3_TIME_FONT_SIZE)
             except Exception:
                 font_time = ImageFont.load_default()
 
@@ -335,9 +355,7 @@ def draw_competition_panel_bottom_right(
                 # 三碼國碼文字（例如 TPE）在旗右側
                 if code3:
                     try:
-                        font_code = ImageFont.truetype(
-                            FONT_PATH, int(FLAG_ALPHA3_FONT_SIZE)
-                        )
+                        font_code = load_font(int(FLAG_ALPHA3_FONT_SIZE))
                     except Exception:
                         font_code = ImageFont.load_default()
 
@@ -360,7 +378,7 @@ def draw_competition_panel_bottom_right(
         # ---------- 姓名：置中在黃板 ----------
         if diver_name:
             try:
-                font_name = ImageFont.truetype(FONT_PATH, COMP_NAME_FONT_SIZE)
+                font_name = load_font(COMP_NAME_FONT_SIZE)
             except Exception:
                 font_name = ImageFont.load_default()
 
@@ -379,7 +397,7 @@ def draw_competition_panel_bottom_right(
         # ---------- 項目（discipline）：靠右顯示在黃板裡 ----------
         if discipline and discipline != "（不指定）":
             try:
-                font_disc = ImageFont.truetype(FONT_PATH, COMP_SUB_FONT_SIZE)
+                font_disc = load_font(COMP_SUB_FONT_SIZE)
             except Exception:
                 font_disc = ImageFont.load_default()
 
@@ -517,7 +535,7 @@ def draw_depth_bar_and_bubbles(
 
     # 刻度文字字型
     try:
-        tick_font = ImageFont.truetype(FONT_PATH, DEPTH_TICK_LABEL_FONT_SIZE)
+        tick_font = load_font(DEPTH_TICK_LABEL_FONT_SIZE)
     except:
         tick_font = base_font
 
@@ -565,7 +583,7 @@ def draw_depth_bar_and_bubbles(
 
     # 泡泡字型
     try:
-        bubble_font = ImageFont.truetype(FONT_PATH, BUBBLE_FONT_SIZE)
+        bubble_font = load_font(BUBBLE_FONT_SIZE)
     except:
         bubble_font = base_font
 
@@ -739,7 +757,7 @@ def render_video(
 
     # --- 字型 ---
     try:
-        base_font = ImageFont.truetype(FONT_PATH, INFO_CARD_FONT_SIZE)
+        base_font = load_font(INFO_CARD_FONT_SIZE)
     except:
         base_font = ImageFont.load_default()
 
