@@ -9,8 +9,9 @@ from pathlib import Path
 from PIL import Image as PILImage, ImageDraw, ImageFont, Image
 import time
 
-# --- FONT PATH 設定 ---
+# --- FONT PATH（只留這一組） ---
 BASE_DIR = Path(__file__).resolve().parent.parent
+# 確認這個檔名要跟 assets/fonts 裡的一模一樣（大小寫也要對）
 FONT_PATH = BASE_DIR / "assets" / "fonts" / "RobotoCondensedBold.ttf"
 
 print(f"[FONT] FONT_PATH = {FONT_PATH}")
@@ -20,6 +21,20 @@ if not FONT_PATH.exists():
 else:
     print(f"[INFO] Font file FOUND: {FONT_PATH}")
 
+
+def load_font(size: int) -> ImageFont.FreeTypeFont:
+    """
+    統一載入字型：
+    - 成功：回傳對應大小的 RobotoCondensedBold.ttf
+    - 失敗：印出警告，改用預設字型
+    """
+    try:
+        f = ImageFont.truetype(str(FONT_PATH), size)
+        print(f"[FONT LOAD] SUCCESS size={size}")
+        return f
+    except Exception as e:
+        print(f"[FONT LOAD] FAILED for size={size}: {e}")
+        return ImageFont.load_default()
 
 
 # --- Pillow ANTIALIAS patch（修補新版 Pillow 沒有 ANTIALIAS 的問題） ---
@@ -48,117 +63,106 @@ LAYOUT_CONFIG = {
 
 # 黃色背板（Board 2，上面那塊）
 BOARD2_ENABLE = True
-BOARD2_WIDTH  = 550
+BOARD2_WIDTH = 550
 BOARD2_HEIGHT = 70
 BOARD2_RADIUS = 13
-BOARD2_COLOR  = (254, 168, 23, 255)   # 你原本調過的鵝黃偏橘
-BOARD2_LEFT   = 480                  # 跟 Mac 版一樣，從左邊算起
-BOARD2_BOTTOM = 175                  # 距離畫面底部的距離（px）
+BOARD2_COLOR = (254, 168, 23, 255)  # 鵝黃偏橘
+BOARD2_LEFT = 480                   # 距離畫面左側
+BOARD2_BOTTOM = 175                 # 距離畫面底部
 
 # 黑色背板（Board 3，下面那塊）
 BOARD3_ENABLE = True
-BOARD3_WIDTH  = 550
+BOARD3_WIDTH = 550
 BOARD3_HEIGHT = 80
 BOARD3_RADIUS = 13
-BOARD3_COLOR  = (0, 0, 0, 255)
-BOARD3_LEFT   = 480
+BOARD3_COLOR = (0, 0, 0, 255)
+BOARD3_LEFT = 480
 BOARD3_BOTTOM = 115
 
 # Board 3 內文字（速率 + Dive Time）
-BOARD3_RATE_FONT_SIZE   = 34
-BOARD3_TIME_FONT_SIZE   = 34
-BOARD3_TEXT_COLOR       = (255, 255, 255, 255)
+BOARD3_RATE_FONT_SIZE = 34
+BOARD3_TIME_FONT_SIZE = 34
+BOARD3_TEXT_COLOR = (255, 255, 255, 255)
 
-BOARD3_RATE_OFFSET_X    = 20   # 從板子左側算起的微調（正數往右）
-BOARD3_RATE_OFFSET_Y    = 0   # 垂直微調（正數往下）
+BOARD3_RATE_OFFSET_X = 20   # 從板子左側算起的 X 微調（正數往右）
+BOARD3_RATE_OFFSET_Y = 0    # 垂直微調（正數往下）
 
-BOARD3_TIME_OFFSET_X    = 20    # 以「置中」為基準的 X 微調
-BOARD3_TIME_OFFSET_Y    = 0   # 垂直微調（正數往下）
-
+BOARD3_TIME_OFFSET_X = 20   # 以「置中」為基準的 X 微調
+BOARD3_TIME_OFFSET_Y = 0    # 垂直微調（正數往下）
 
 # 國旗 + 三碼國碼（放在黃色背板左側）
-FLAG_ENABLE            = True
-FLAG_LEFT_OFFSET       = 15   # 黃色背板左邊到國旗的水平距離
-FLAG_TOP_BOTTOM_MARGIN = 15   # 黃板上下留白，決定國旗高度
-FLAG_ALPHA3_TEXT_GAP   = 6    # 國旗與三碼文字間距
-FLAG_ALPHA3_FONT_SIZE  = 34
+FLAG_ENABLE = True
+FLAG_LEFT_OFFSET = 15        # 黃色背板左邊到國旗的水平距離
+FLAG_TOP_BOTTOM_MARGIN = 15  # 黃板上下留白，決定國旗高度
+FLAG_ALPHA3_TEXT_GAP = 6     # 國旗與三碼文字間距
+FLAG_ALPHA3_FONT_SIZE = 34
 FLAG_ALPHA3_FONT_COLOR = (0, 0, 0, 255)
-FLAG_ALPHA3_OFFSET_Y   = -8   # 三碼文字略微往上
+FLAG_ALPHA3_OFFSET_Y = -8    # 三碼文字略微往上
 
-# 位置微調（你後面可以慢慢調）
+# 位置微調
 COMP_DISC_OFFSET_RIGHT = 15  # 項目靠右對齊時，距離黃板右邊的距離
-COMP_DISC_OFFSET_Y      = -8 # 項目在黃板中的 Y 偏移
+COMP_DISC_OFFSET_Y = -8      # 項目在黃板中的 Y 偏移
 
-COMP_ALPHA3_OFFSET_X = 0     # 三碼國碼額外 X 調整（在國旗下）
+COMP_ALPHA3_OFFSET_X = 0     # 三碼國碼額外 X 調整（在國旗右側）
 # （Y 用上面的 FLAG_ALPHA3_OFFSET_Y）
 
-
 # --- 右上 info 卡 ---
-INFO_CARD_FONT_SIZE = 48              # 字體大小   original = 48
-INFO_TEXT_OFFSET_X = 0                # 👉 info 卡文字整體 X 位移
-INFO_TEXT_OFFSET_Y = -7               # 👉 info 卡文字整體 Y 位移（負值 = 往上）
+INFO_CARD_FONT_SIZE = 48
+INFO_TEXT_OFFSET_X = 0
+INFO_TEXT_OFFSET_Y = -7
 
 # --- 深度刻度文字 ---
-DEPTH_TICK_LABEL_FONT_SIZE = 32
-DEPTH_TICK_LABEL_OFFSET_X = 0         # 👉 刻度數字 X 位移
-DEPTH_TICK_LABEL_OFFSET_Y = -8         # 👉 刻度數字 Y 位移
+#（這裡只保留一個定義，避免前後打架）
+DEPTH_TICK_LABEL_FONT_SIZE = 30
+DEPTH_TICK_LABEL_OFFSET_X = 0
+DEPTH_TICK_LABEL_OFFSET_Y = -8
 
 # --- 泡泡內文字 ---
-BUBBLE_FONT_SIZE = 36
-BUBBLE_TEXT_OFFSET_X = 0              # 👉 泡泡內文字 X 位移
-BUBBLE_TEXT_OFFSET_Y = -10              # 👉 泡泡內文字 Y 位移
+BUBBLE_FONT_SIZE = 32
+BUBBLE_TEXT_OFFSET_X = 0
+BUBBLE_TEXT_OFFSET_Y = -10
 
 # --- 賽事資訊文字（右下模組）---
-COMP_NAME_FONT_SIZE = 34              # 姓名         original = 34
-COMP_SUB_FONT_SIZE  = 34              # 國籍 / 項目  original = 34
-COMP_CODE_FONT_SIZE = 34              # 三碼國碼     original = 34
+COMP_NAME_FONT_SIZE = 34   # 姓名
+COMP_SUB_FONT_SIZE = 34    # 國籍 / 項目
+COMP_CODE_FONT_SIZE = 34   # 三碼國碼
 
-COMP_NAME_OFFSET_X = 30                # 👉 姓名文字 X 位移
-COMP_NAME_OFFSET_Y = -8                # 👉 姓名文字 Y 位移
-COMP_SUB_OFFSET_X  = 0                # 👉 國籍 / 項目 X 位移
-COMP_SUB_OFFSET_Y  = -8                # 👉 國籍 / 項目 Y 位移
-COMP_CODE_OFFSET_X = 0                # 👉 國碼 X 位移
-COMP_CODE_OFFSET_Y = -2                # 👉 國碼 Y 位移
+COMP_NAME_OFFSET_X = 30
+COMP_NAME_OFFSET_Y = -8
+COMP_SUB_OFFSET_X = 0
+COMP_SUB_OFFSET_Y = -8
+COMP_CODE_OFFSET_X = 0
+COMP_CODE_OFFSET_Y = -2
 
 # ----- Layout B：黑背板 + 深度條 + 泡泡 -----
 
 # 黑色背板（寬 x 高）
-DEPTH_PANEL_WIDTH = 100          # px
-DEPTH_PANEL_HEIGHT = 980         # px
-DEPTH_PANEL_LEFT_MARGIN = 40     # 距離畫面左邊的距離（px）
-DEPTH_PANEL_RADIUS = 20          # 🔸背板導角半徑
+DEPTH_PANEL_WIDTH = 100     # px
+DEPTH_PANEL_HEIGHT = 980    # px
+DEPTH_PANEL_LEFT_MARGIN = 40
+DEPTH_PANEL_RADIUS = 20
 
 # 深度條
-DEPTH_BAR_TOTAL_HEIGHT = 850     # 深度條總高度（px）
-DEPTH_TICK_WIDTH = 4             # 刻度線寬度（px）
+DEPTH_BAR_TOTAL_HEIGHT = 850
+DEPTH_TICK_WIDTH = 4
 
 # 刻度長度（px）
-DEPTH_TICK_LEN_10M = 36          # 整十刻度長度
-DEPTH_TICK_LEN_5M = 27           # 整五刻度長度（但非十的倍數）
-DEPTH_TICK_LEN_1M = 22           # 其他刻度長度
-
-# 刻度文字
-DEPTH_TICK_LABEL_FONT_SIZE = 30  # 🔸刻度數字字體大小
+DEPTH_TICK_LEN_10M = 36
+DEPTH_TICK_LEN_5M = 27
+DEPTH_TICK_LEN_1M = 22
 
 # 泡泡標籤
-BUBBLE_WIDTH = 80               # 泡泡主體寬度（px）
-BUBBLE_HEIGHT = 45               # 泡泡主體高度（px）
-BUBBLE_RADIUS = 10               # 泡泡圓角半徑（px）
-BUBBLE_TAIL_WIDTH = 22           # 泡泡指向左邊的小三角形寬度（px）
+BUBBLE_WIDTH = 80
+BUBBLE_HEIGHT = 45
+BUBBLE_RADIUS = 10
+BUBBLE_TAIL_WIDTH = 22
 BUBBLE_TAIL_HEIGHT_RATIO = 0.5  # 泡泡小三角形高度 = BUBBLE_HEIGHT * 這個比例
-BUBBLE_FONT_SIZE = 32            # 泡泡內深度字體大小
 
 # 泡泡顏色
-BUBBLE_CURRENT_COLOR = (254, 168, 23, 255)   # 當前深度泡泡：橘黃色
-BUBBLE_BEST_COLOR = (255, 255, 255, 255)     # 最大深度泡泡：白色
-BUBBLE_TEXT_COLOR_DARK = (0, 0, 0, 255)      # 文字：黑色
-BUBBLE_TEXT_COLOR_LIGHT = (0, 0, 0, 255)     # 目前兩顆都用深色字
-
-# ----- 預留：未來 Layout A / C / D 專用參數可加在這裡 -----
-# 例如：
-# LAYOUT_A_PARAMS = {...}
-# LAYOUT_C_PARAMS = {...}
-# LAYOUT_D_PARAMS = {...}
+BUBBLE_CURRENT_COLOR = (254, 168, 23, 255)  # 當前深度泡泡：橘黃色
+BUBBLE_BEST_COLOR = (255, 255, 255, 255)    # 最大深度泡泡：白色
+BUBBLE_TEXT_COLOR_DARK = (0, 0, 0, 255)
+BUBBLE_TEXT_COLOR_LIGHT = (0, 0, 0, 255)
 
 # ============================================================
 # 小工具函式
@@ -188,11 +192,10 @@ def format_dive_time(seconds: float) -> str:
 
 
 # ============================================================
-# 右下角賽事資訊卡（Layout B）
+# 國碼 / 國旗工具
 # ============================================================
 
 def _infer_country_code_3(nationality: str) -> Tuple[Optional[str], str]:
-
     """
     嘗試從使用者輸入的 nationality 推出三碼國碼：
     - 若有括號，如 'Chinese Taipei (TPE)' -> 回傳 ('TPE', 'Chinese Taipei')
@@ -220,7 +223,6 @@ def _infer_country_code_3(nationality: str) -> Tuple[Optional[str], str]:
 
 
 def _load_flag_png(flags_dir: Path, code3: Optional[str]) -> Optional[Image.Image]:
-
     """
     從 assets/flags 底下載入三碼國旗 PNG（檔名假設為 tpe.png / jpn.png ...）
     """
@@ -234,6 +236,11 @@ def _load_flag_png(flags_dir: Path, code3: Optional[str]) -> Optional[Image.Imag
     except Exception:
         return None
 
+
+# ============================================================
+# 右下角賽事資訊卡（Layout B）
+# ============================================================
+
 def draw_competition_panel_bottom_right(
     base_img: PILImage.Image,
     diver_name: Optional[str],
@@ -245,7 +252,7 @@ def draw_competition_panel_bottom_right(
 ) -> PILImage.Image:
     """
     在畫面右下方畫出：
-    - 黃色 Backplate 2：國旗 + 三碼 + 姓名 + 項目
+    - 黃色 Backplate 2：國旗 + 三碼 / 國籍文字 + 姓名 + 項目
     - 黑色 Backplate 3：速率 + Dive Time
     """
     img = base_img.copy()
@@ -317,7 +324,7 @@ def draw_competition_panel_bottom_right(
             fill=BOARD2_COLOR,
         )
 
-        # ---------- 國旗 + 三碼國碼在黃板左側 ----------
+        # ---------- 國旗 + 三碼國碼 / 國籍文字在黃板左側 ----------
         code3, country_label = _infer_country_code_3(nationality or "")
         flag_img = _load_flag_png(flags_dir, code3) if FLAG_ENABLE else None
 
@@ -325,7 +332,7 @@ def draw_competition_panel_bottom_right(
 
         if FLAG_ENABLE and flag_img is not None:
             margin_tb = int(FLAG_TOP_BOTTOM_MARGIN)
-            left_off  = int(FLAG_LEFT_OFFSET)
+            left_off = int(FLAG_LEFT_OFFSET)
 
             # 依照黃板高度縮放國旗
             target_h = max(1, b2_h - margin_tb * 2)
@@ -362,6 +369,24 @@ def draw_competition_panel_bottom_right(
                         font=font_code,
                         fill=FLAG_ALPHA3_FONT_COLOR,
                     )
+        else:
+            # ❗ 沒有 flag / 找不到 code3 時，至少畫出國籍文字
+            if country_label:
+                try:
+                    font_nat = load_font(int(FLAG_ALPHA3_FONT_SIZE))
+                except Exception:
+                    font_nat = ImageFont.load_default()
+
+                nat_text = str(country_label)
+                tw, th = text_size(draw, nat_text, font_nat)
+                tx = b2_x + int(FLAG_LEFT_OFFSET)
+                ty = b2_y + (b2_h - th) // 2 + int(FLAG_ALPHA3_OFFSET_Y)
+                draw.text(
+                    (tx, ty),
+                    nat_text,
+                    font=font_nat,
+                    fill=FLAG_ALPHA3_FONT_COLOR,
+                )
 
         # ---------- 姓名：置中在黃板 ----------
         if diver_name:
@@ -429,9 +454,8 @@ def draw_speech_bubble(
     tail_w = BUBBLE_TAIL_WIDTH
     tail_h = int(h * BUBBLE_TAIL_HEIGHT_RATIO)
 
-
-    tip_x = left_x                     # 小三角形尖端（貼在背板右邊）
-    base_x = left_x + tail_w          # 三角形與矩形交界
+    tip_x = left_x              # 小三角形尖端（貼在背板右邊）
+    base_x = left_x + tail_w    # 三角形與矩形交界
     rect_x0 = base_x
     rect_x1 = rect_x0 + w
     y0 = center_y - h // 2
@@ -449,9 +473,9 @@ def draw_speech_bubble(
     tri_y_bot = center_y + tail_h // 2
     draw.polygon(
         [
-            (tip_x, center_y),          # 尖端（貼背板）
-            (base_x, tri_y_top),        # 右上
-            (base_x, tri_y_bot),        # 右下
+            (tip_x, center_y),       # 尖端（貼背板）
+            (base_x, tri_y_top),     # 右上
+            (base_x, tri_y_bot),     # 右下
         ],
         fill=fill_color,
     )
@@ -478,19 +502,12 @@ def draw_depth_bar_and_bubbles(
 ):
     """
     Layout B 專用：
-    - 左邊黑色背板（100 x 980 px），左右位置、大小固定，上下置中，導角 DEPTH_PANEL_RADIUS
-    - 深度條總高度固定為 DEPTH_BAR_TOTAL_HEIGHT（例如 850px）
-    - 每 1 m 一個刻度：
-        - 整十刻度長度 = DEPTH_TICK_LEN_10M
-        - 整五刻度長度 = DEPTH_TICK_LEN_5M
-        - 其他刻度長度 = DEPTH_TICK_LEN_1M
-      刻度線寬度 = DEPTH_TICK_WIDTH
-      ✦ 不畫中間直線，只畫橫線刻度
-    - 刻度數字在刻度「左側」，字體大小 DEPTH_TICK_LABEL_FONT_SIZE
-    - 泡泡 1（橘色）：顯示當前深度，隨深度上下移動
-    - 泡泡 2（白色）：當 show_best_bubble=True 時顯示在最大深度位置
-      （也就是：到達最大深度那一刻出現，之後一路顯示）
-    - 兩顆泡泡的小三角形尖端都貼齊黑背板的右側邊界
+    - 左邊黑色背板（100 x 980 px），上下置中
+    - 深度條總高度 DEPTH_BAR_TOTAL_HEIGHT
+    - 每 1 m 一個刻度，10m / 5m / 1m 不同長度
+    - 每 10 m 顯示數字（在刻度左側）
+    - 泡泡 1：當前深度
+    - 泡泡 2：最大深度（show_best_bubble=True 時顯示）
     """
     overlay = base_overlay.copy()
     draw = ImageDraw.Draw(overlay)
@@ -511,7 +528,7 @@ def draw_depth_bar_and_bubbles(
         fill=(0, 0, 0, 200),
     )
 
-    # --- 深度條幾何位置（只決定 Y 範圍，不畫直線） ---
+    # --- 深度條 Y 範圍 ---
     bar_h = DEPTH_BAR_TOTAL_HEIGHT
     bar_y0 = (h - bar_h) // 2
     bar_y1 = bar_y0 + bar_h
@@ -524,9 +541,8 @@ def draw_depth_bar_and_bubbles(
     # 刻度文字字型
     try:
         tick_font = load_font(DEPTH_TICK_LABEL_FONT_SIZE)
-    except:
+    except Exception:
         tick_font = base_font
-
 
     # --- 刻度：每 1 m 一格 ---
     for d in range(0, int(max_d) + 1):
@@ -543,7 +559,7 @@ def draw_depth_bar_and_bubbles(
 
         tick_x_start = tick_x_end - tick_len
 
-        # 刻度線（往左畫，右邊對齊 tick_x_end）
+        # 刻度線
         draw.line(
             [(tick_x_start, y), (tick_x_end, y)],
             fill=(255, 255, 255, 220),
@@ -572,9 +588,8 @@ def draw_depth_bar_and_bubbles(
     # 泡泡字型
     try:
         bubble_font = load_font(BUBBLE_FONT_SIZE)
-    except:
+    except Exception:
         bubble_font = base_font
-
 
     bubble_attach_x = panel_x1  # 小三角形尖端貼齊背板右側
 
@@ -593,7 +608,6 @@ def draw_depth_bar_and_bubbles(
     )
 
     # --- 泡泡 2：最大深度（白色） ---
-    # 交給呼叫端決定什麼時候開始顯示（例如：到達最大深度那一刻後就一直顯示）
     if best_depth > 0 and show_best_bubble:
         best_y = depth_to_y(best_depth)
         best_text = f"{best_depth:.1f}"
@@ -609,6 +623,7 @@ def draw_depth_bar_and_bubbles(
         )
 
     return overlay
+
 
 # ============================================================
 # 主渲染函式（所有 Layout 共用）
@@ -628,7 +643,7 @@ def render_video(
     dive_time_s: Optional[float] = None,   # 目前沒直接用，先保留
     dive_start_s: Optional[float] = None,  # 起始 time_s（深度 >= 0.7m）
     dive_end_s: Optional[float] = None,    # 結束 time_s（回到 0）
-    progress_callback=None,                # ⭐ 新增：由 app.py 傳進來
+    progress_callback=None,                # 由 app.py 傳進來
 ):
     """
     progress_callback(p: float, message: str) 會被用來更新 Streamlit 進度條：
@@ -679,7 +694,7 @@ def render_video(
     if len(depths_d) > 0:
         max_depth_raw = float(np.nanmax(depths_d))
         best_idx = int(np.nanargmax(depths_d))
-        best_time_global = float(times_d[best_idx])  # 🔸最大深度發生的 time_s（log 的時間）
+        best_time_global = float(times_d[best_idx])  # 最大深度發生的 time_s（log 的時間）
     else:
         max_depth_raw = 0.0
         best_time_global = None
@@ -746,7 +761,7 @@ def render_video(
     # --- 字型 ---
     try:
         base_font = load_font(INFO_CARD_FONT_SIZE)
-    except:
+    except Exception:
         base_font = ImageFont.load_default()
 
     t_pre_end = time.perf_counter()
@@ -898,7 +913,7 @@ def render_video(
         audio=True,
         audio_codec="aac",
         fps=clip.fps,
-        # logger=None  # 如果不想在終端機看到 MoviePy 自帶進度條，可以關掉
+        # logger=None
     )
 
     t_encode_end = time.perf_counter()
