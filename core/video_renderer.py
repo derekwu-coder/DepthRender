@@ -83,10 +83,10 @@ COMP_ALPHA3_OFFSET_X = 0     # 三碼國碼額外 X 調整（在國旗下）
 
 # 字型設定
 BASE_DIR = Path(__file__).resolve().parent.parent
-FONT_PATH = str(BASE_DIR / "assets" / "fonts" / "RobotoCondensed-Bold.ttf")
+FONT_PATH = str(BASE_DIR / "assets" / "fonts" / "Roboto Condensed Bold.ttf")
 
 # --- 右上 info 卡 ---
-INFO_CARD_FONT_SIZE = 48              # 字體大小
+INFO_CARD_FONT_SIZE = 48              # 字體大小   original = 48
 INFO_TEXT_OFFSET_X = 0                # 👉 info 卡文字整體 X 位移
 INFO_TEXT_OFFSET_Y = -7               # 👉 info 卡文字整體 Y 位移（負值 = 往上）
 
@@ -98,17 +98,17 @@ DEPTH_TICK_LABEL_OFFSET_Y = -8         # 👉 刻度數字 Y 位移
 # --- 泡泡內文字 ---
 BUBBLE_FONT_SIZE = 36
 BUBBLE_TEXT_OFFSET_X = 0              # 👉 泡泡內文字 X 位移
-BUBBLE_TEXT_OFFSET_Y = -7              # 👉 泡泡內文字 Y 位移
+BUBBLE_TEXT_OFFSET_Y = -10              # 👉 泡泡內文字 Y 位移
 
 # --- 賽事資訊文字（右下模組）---
-COMP_NAME_FONT_SIZE = 34              # 姓名
-COMP_SUB_FONT_SIZE  = 34              # 國籍 / 項目
-COMP_CODE_FONT_SIZE = 34              # 三碼國碼
+COMP_NAME_FONT_SIZE = 34              # 姓名         original = 34
+COMP_SUB_FONT_SIZE  = 34              # 國籍 / 項目  original = 34
+COMP_CODE_FONT_SIZE = 34              # 三碼國碼     original = 34
 
 COMP_NAME_OFFSET_X = 30                # 👉 姓名文字 X 位移
-COMP_NAME_OFFSET_Y = -6                # 👉 姓名文字 Y 位移
+COMP_NAME_OFFSET_Y = -8                # 👉 姓名文字 Y 位移
 COMP_SUB_OFFSET_X  = 0                # 👉 國籍 / 項目 X 位移
-COMP_SUB_OFFSET_Y  = -7                # 👉 國籍 / 項目 Y 位移
+COMP_SUB_OFFSET_Y  = -8                # 👉 國籍 / 項目 Y 位移
 COMP_CODE_OFFSET_X = 0                # 👉 國碼 X 位移
 COMP_CODE_OFFSET_Y = -2                # 👉 國碼 Y 位移
 

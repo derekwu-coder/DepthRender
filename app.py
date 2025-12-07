@@ -67,7 +67,8 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("1️⃣ 上傳手錶數據")
-    watch_file = st.file_uploader("Garmin .fit 或 ATMOS .uddf", type=["fit", "uddf"])
+    watch_file = st.file_uploader("上傳潛水錶原始紀錄檔（.fit / .uddf）",
+                              type=None)  # or 不寫 type 參數
 
 with col2:
     st.subheader("2️⃣ 上傳潛水影片")
