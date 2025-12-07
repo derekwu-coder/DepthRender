@@ -5,3 +5,4 @@ moviepy
 Pillow
 openpyxl
 pyxlsb
+fitparse
