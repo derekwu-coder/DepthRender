@@ -6,3 +6,6 @@ Pillow
 openpyxl
 pyxlsb
 fitparse
+lxml
+matplotlib
+requests
