@@ -93,30 +93,6 @@ COMP_ALPHA3_OFFSET_X = 0     # 三碼國碼額外 X 調整（在國旗下）
 # （Y 用上面的 FLAG_ALPHA3_OFFSET_Y）
 
 
-# 字型設定
-BASE_DIR = Path(__file__).resolve().parent.parent
-FONT_PATH = BASE_DIR / "assets" / "fonts" / "Roboto Condensed Bold.ttf"
-
-print(f"[FONT] FONT_PATH = {FONT_PATH}")
-
-if not FONT_PATH.exists():
-    print(f"[WARN] Font file NOT found: {FONT_PATH}")
-else:
-    print(f"[INFO] Font file FOUND: {FONT_PATH}")
-
-
-def load_font(size: int) -> ImageFont.FreeTypeFont:
-    """
-    統一載入字型：
-    - 成功：回傳對應大小的 Roboto Condensed Bold
-    - 失敗：印出警告，改用預設字型
-    """
-    try:
-        return ImageFont.truetype(str(FONT_PATH), size)  # 這裡才轉成 str
-    except Exception as e:
-        print(f"[WARN] Failed to load font {FONT_PATH} (size={size}): {e}")
-        return ImageFont.load_default()
-
 # --- 右上 info 卡 ---
 INFO_CARD_FONT_SIZE = 48              # 字體大小   original = 48
 INFO_TEXT_OFFSET_X = 0                # 👉 info 卡文字整體 X 位移
