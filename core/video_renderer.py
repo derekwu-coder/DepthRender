@@ -9,32 +9,31 @@ from pathlib import Path
 from PIL import Image as PILImage, ImageDraw, ImageFont, Image
 import time
 
-# --- FONT PATH（只留這一組） ---
-BASE_DIR = Path(__file__).resolve().parent.parent
-# 確認這個檔名要跟 assets/fonts 裡的一模一樣（大小寫也要對）
-FONT_PATH = BASE_DIR / "assets" / "fonts" / "RobotoCondensedBold.ttf"
+# --- 系統字型設定（使用 DejaVuSansCondensed-Bold 系列）---
 
-print(f"[FONT] FONT_PATH = {FONT_PATH}")
-
-if not FONT_PATH.exists():
-    print(f"[WARN] Font file NOT found: {FONT_PATH}")
-else:
-    print(f"[INFO] Font file FOUND: {FONT_PATH}")
-
+SYSTEM_FONTS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
 
 def load_font(size: int) -> ImageFont.FreeTypeFont:
     """
-    統一載入字型：
-    - 成功：回傳對應大小的 RobotoCondensedBold.ttf
-    - 失敗：印出警告，改用預設字型
+    統一載入系統字型：
+    - 依序嘗試 DejaVuSansCondensed-Bold / Bold / Regular
+    - 全部失敗則 fallback 到 Pillow 預設字型
     """
-    try:
-        f = ImageFont.truetype(str(FONT_PATH), size)
-        print(f"[FONT LOAD] SUCCESS size={size}")
-        return f
-    except Exception as e:
-        print(f"[FONT LOAD] FAILED for size={size}: {e}")
-        return ImageFont.load_default()
+    for fp in SYSTEM_FONTS:
+        p = Path(fp)
+        if p.exists():
+            try:
+                print(f"[FONT LOAD] Using {p}, size={size}")
+                return ImageFont.truetype(str(p), size)
+            except Exception as e:
+                print(f"[FONT LOAD] Failed on {p}: {e}")
+
+    print(f"[FONT LOAD] Fallback to default (size={size})")
+    return ImageFont.load_default()
 
 
 # --- Pillow ANTIALIAS patch（修補新版 Pillow 沒有 ANTIALIAS 的問題） ---
@@ -112,20 +111,19 @@ INFO_TEXT_OFFSET_X = 0
 INFO_TEXT_OFFSET_Y = -7
 
 # --- 深度刻度文字 ---
-#（這裡只保留一個定義，避免前後打架）
 DEPTH_TICK_LABEL_FONT_SIZE = 30
 DEPTH_TICK_LABEL_OFFSET_X = 0
 DEPTH_TICK_LABEL_OFFSET_Y = -8
 
 # --- 泡泡內文字 ---
-BUBBLE_FONT_SIZE = 32
+BUBBLE_FONT_SIZE = 32        # original = 32
 BUBBLE_TEXT_OFFSET_X = 0
 BUBBLE_TEXT_OFFSET_Y = -10
 
 # --- 賽事資訊文字（右下模組）---
-COMP_NAME_FONT_SIZE = 34   # 姓名
-COMP_SUB_FONT_SIZE = 34    # 國籍 / 項目
-COMP_CODE_FONT_SIZE = 34   # 三碼國碼
+COMP_NAME_FONT_SIZE = 54   # 姓名         original = 34
+COMP_SUB_FONT_SIZE = 54    # 國籍 / 項目  original = 34
+COMP_CODE_FONT_SIZE = 54   # 三碼國碼     original = 34
 
 COMP_NAME_OFFSET_X = 30
 COMP_NAME_OFFSET_Y = -8
