@@ -9,6 +9,18 @@ from pathlib import Path
 from PIL import Image as PILImage, ImageDraw, ImageFont, Image
 import time
 
+# --- FONT PATH 設定 ---
+BASE_DIR = Path(__file__).resolve().parent.parent
+FONT_PATH = BASE_DIR / "assets" / "fonts" / "RobotoCondensedBold.ttf"
+
+print(f"[FONT] FONT_PATH = {FONT_PATH}")
+
+if not FONT_PATH.exists():
+    print(f"[WARN] Font file NOT found: {FONT_PATH}")
+else:
+    print(f"[INFO] Font file FOUND: {FONT_PATH}")
+
+
 
 # --- Pillow ANTIALIAS patch（修補新版 Pillow 沒有 ANTIALIAS 的問題） ---
 if not hasattr(PILImage, "ANTIALIAS"):
