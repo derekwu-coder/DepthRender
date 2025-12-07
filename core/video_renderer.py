@@ -42,6 +42,18 @@ def load_font(size: int) -> ImageFont.FreeTypeFont:
     print(f"[FONT LOAD] Fallback to default (size={size})")
     return ImageFont.load_default()
 
+def resolve_flags_dir(assets_dir: Path) -> Path:
+    """
+    嘗試在 assets/flags、assets/Flags 裡找國旗資料夾，
+    避免 mac / Linux 檔名大小寫不一致的問題。
+    """
+    candidates = [assets_dir / "flags", assets_dir / "Flags"]
+    for p in candidates:
+        if p.exists():
+            print(f"[FLAGS_DIR] Using {p}")
+            return p
+    print(f"[FLAGS_DIR] No flags dir found under {assets_dir}, fallback to {assets_dir}")
+    return assets_dir
 
 # --- Pillow ANTIALIAS patch（修補新版 Pillow 沒有 ANTIALIAS 的問題） ---
 if not hasattr(PILImage, "ANTIALIAS"):
@@ -380,20 +392,25 @@ def draw_competition_panel_bottom_right(
                         fill=FLAG_ALPHA3_FONT_COLOR,
                     )
         else:
-            # ❗ 沒有 flag / 找不到 code3 時，至少畫出國籍文字
-            if country_label:
+            # ❗ 沒有 flag 檔案時，改用「三碼國碼」優先，其次才是國籍文字
+            label_text = None
+            if code3:
+                label_text = code3.upper()         # 例如 "TWN"
+            elif country_label:
+                label_text = str(country_label)    # 才退回 "Taiwan"
+
+            if label_text:
                 try:
                     font_nat = load_font(int(FLAG_ALPHA3_FONT_SIZE))
                 except Exception:
                     font_nat = ImageFont.load_default()
 
-                nat_text = str(country_label)
-                tw, th = text_size(draw, nat_text, font_nat)
+                tw, th = text_size(draw, label_text, font_nat)
                 tx = b2_x + int(FLAG_LEFT_OFFSET)
                 ty = b2_y + (b2_h - th) // 2 + int(FLAG_ALPHA3_OFFSET_Y)
                 draw.text(
                     (tx, ty),
-                    nat_text,
+                    label_text,
                     font=font_nat,
                     fill=FLAG_ALPHA3_FONT_COLOR,
                 )
@@ -660,7 +677,7 @@ def render_video(
     - p: 0.0 ~ 1.0
     """
 
-    flags_dir = assets_dir / "flags"
+    flags_dir = resolve_flags_dir(assets_dir)
 
     # 小工具：安全呼叫 progress_callback
     def update_progress(p: float, msg: str = ""):
