@@ -1,9 +1,7 @@
-streamlit
+streamlit==1.38.0
 pandas
 numpy
-altair
-Pillow
 moviepy
-fitparse
-lxml
-python-dateutil
+Pillow
+openpyxl
+pyxlsb
