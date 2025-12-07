@@ -1,0 +1,9 @@
+streamlit
+pandas
+numpy
+altair
+Pillow
+moviepy
+fitparse
+lxml
+python-dateutil
