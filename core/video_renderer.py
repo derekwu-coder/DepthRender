@@ -82,7 +82,8 @@ COMP_ALPHA3_OFFSET_X = 0     # 三碼國碼額外 X 調整（在國旗下）
 
 
 # 字型設定
-FONT_PATH = "/System/Library/Fonts/Supplemental/Arial Narrow Bold.ttf"
+BASE_DIR = Path(__file__).resolve().parent.parent
+FONT_PATH = str(BASE_DIR / "assets" / "fonts" / "RobotoCondensed-Bold.ttf")
 
 # --- 右上 info 卡 ---
 INFO_CARD_FONT_SIZE = 48              # 字體大小
