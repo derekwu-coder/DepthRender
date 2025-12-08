@@ -1,8 +1,8 @@
-streamlit==1.38.0
-pandas==2.2.2
-numpy==1.26.4
-moviepy==1.0.3
-Pillow==10.3.0
-openpyxl==3.1.2
-pyxlsb==1.0.10
-fitparse==1.2.0
+streamlit
+pandas
+numpy
+moviepy.editor
+Pillow
+openpyxl
+pyxlsb
+fitparse
