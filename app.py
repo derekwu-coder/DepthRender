@@ -79,28 +79,34 @@ h3 {
         font-size: 0.95rem !important;
     }
 
-    /* 頂部 Logo 在手機稍微小一點，避免撐太寬 */
+    /* 頂部 Logo 在手機稍微小一點 */
     .app-top-bar span:first-child {
         font-size: 2.0rem;
     }
 
     /* 按鈕在手機上拉滿寬度，方便點擊 */
-    .stButton>button {
-        width: 100%;
-    }
-
+    .stButton>button,
     .stDownloadButton>button {
         width: 100%;
     }
 
-    /* ⭐ 讓所有 columns 在手機也能左右各半寬，不再強制一欄占滿整行 */
-    [data-testid="column"] {
-        flex: 1 1 0 !important;   /* 平均分配空間 */
-        min-width: 0 !important;  /* 允許縮到小於預設 min-width */
+    /* ✅ 手機上：所有欄位預設兩欄並排（每欄 50% 寬），自動換行，不會產生橫向捲軸 */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-wrap: wrap !important;   /* 可以自動換行 */
+    }
+
+    div[data-testid="column"] {
+        flex: 1 1 50% !important;     /* 每欄基準 50% 寬 */
+        max-width: 50% !important;
+        box-sizing: border-box;
+        padding-left: 0.25rem;
+        padding-right: 0.25rem;
     }
 }
 </style>
 """
+
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
