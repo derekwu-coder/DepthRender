@@ -23,7 +23,6 @@ st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
 # ==================================
 APP_CSS = """
 <style>
-/* 隱藏 Streamlit 內建菜單 / footer */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
@@ -36,10 +35,22 @@ footer {visibility: hidden;}
     max-width: 1200px;
 }
 
-/* Sticky 頂部列（背景模糊）*/
+/* Sticky 頂部列 */
 .app-top-bar {
     padding: 0.2rem 0.6rem;
     backdrop-filter: blur(6px);
+}
+
+/* 產品標題：桌機版 */
+.app-title-text {
+    font-size: 2.1rem;
+    font-weight: 700;
+    margin: 0;
+}
+.app-title-sub {
+    font-size: 1.2rem;
+    font-weight: 400;
+    margin: 0;
 }
 
 /* 白底卡片容器（主內容） */
@@ -50,7 +61,7 @@ footer {visibility: hidden;}
     box-shadow: 0 8px 20px rgba(15,23,42,0.10);
 }
 
-/* 深色模式下讓卡片變暗 */
+/* 深色模式下讓卡片變暗，不會有一整條白色長條 */
 @media (prefers-color-scheme: dark) {
     .app-card {
         background-color: rgba(15,23,42,0.90);
@@ -65,22 +76,7 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
-/* 產品標題字型 */
-.app-title-text {
-    font-weight: 700;
-    margin: 0;
-}
-
-/* 手機版產品標題縮小（一行不塞爆） */
-@media (max-width: 600px) {
-    .app-title-text {
-        font-size: 1.6rem !important;
-        line-height: 1.6rem !important;
-        text-align: center !important;
-    }
-}
-
-/* 手機優化：卡片 padding / 按鈕寬度 */
+/* ✅ 手機版：調整 padding＋標題字體＋兩欄強制並排 */
 @media (max-width: 768px) {
     .app-card {
         padding: 0.8rem 0.9rem 1.1rem 0.9rem;
@@ -96,26 +92,26 @@ h3 {
     .stDownloadButton>button {
         width: 100%;
     }
-}
 
-/* =========================================================
-   Compare 區塊：手機版 2 欄 / 3 欄（只影響加上 class 的區域）
-   ========================================================= */
-@media (max-width: 768px) {
-    /* 兩欄排版：上傳 A/B、選潛 A/B、FF 深度 A/B、指標 A/B */
-    .cmp-two-col [data-testid="column"] {
-        flex: 0 0 50% !important;
+    /* 產品標題在手機上縮小＋置中 */
+    .app-title-text {
+        font-size: 1.6rem !important;
+        line-height: 1.6rem !important;
+        text-align: center !important;
+    }
+    .app-title-sub {
+        font-size: 0.95rem !important;
+        text-align: center !important;
+    }
+    .app-top-bar {
+        text-align: center !important;
+    }
+
+    /* ⭐ 關鍵：讓所有 st.columns 在手機也維持左右並排（每欄 50% 寬） */
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        flex: 1 1 50% !important;
         width: 50% !important;
-        padding-right: 0.35rem !important;
-    }
-    .cmp-two-col [data-testid="column"]:last-child {
-        padding-right: 0 !important;
-    }
-
-    /* 三欄排版：時間偏移 左鍵 / 文字 / 右鍵 */
-    .cmp-three-col [data-testid="column"] {
-        flex: 0 0 33.3333% !important;
-        width: 33.3333% !important;
+        min-width: 0 !important;
     }
 }
 </style>
