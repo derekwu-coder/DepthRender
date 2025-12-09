@@ -65,7 +65,7 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
-/* 🔹 手機優化（只調整外觀，不強迫欄位橫排） */
+/* 🔹 手機優化 */
 @media (max-width: 768px) {
 
     /* 卡片縮小 padding */
@@ -91,6 +91,12 @@ h3 {
 
     .stDownloadButton>button {
         width: 100%;
+    }
+
+    /* ⭐ 讓所有 columns 在手機也能左右各半寬，不再強制一欄占滿整行 */
+    [data-testid="column"] {
+        flex: 1 1 0 !important;   /* 平均分配空間 */
+        min-width: 0 !important;  /* 允許縮到小於預設 min-width */
     }
 }
 </style>
