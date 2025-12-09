@@ -50,7 +50,7 @@ footer {visibility: hidden;}
     box-shadow: 0 8px 20px rgba(15,23,42,0.10);
 }
 
-/* 深色模式下讓卡片變暗，不會有一整條白色長條 */
+/* 深色模式：卡片自然變暗 */
 @media (prefers-color-scheme: dark) {
     .app-card {
         background-color: rgba(15,23,42,0.90);
@@ -58,16 +58,17 @@ footer {visibility: hidden;}
     }
 }
 
-/* Subheader 標題（st.subheader）- 縮小一點 */
+/* Subheader 字體調整 */
 h3 {
     font-size: 1.05rem !important;
     margin-top: 0.6rem;
     margin-bottom: 0.2rem;
 }
 
-/* 手機優化 */
-
+/* ⛵ 手機優化 */
 @media (max-width: 768px) {
+
+    /* 卡片縮小 padding */
     .app-card {
         padding: 0.8rem 0.9rem 1.1rem 0.9rem;
         border-radius: 12px;
@@ -78,6 +79,20 @@ h3 {
         font-size: 0.95rem !important;
     }
 
+    /* 讓 st.columns 在手機維持左右排列，而不是上下堆疊 */
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;   /* 不要變成 column */
+        flex-wrap: nowrap !important;     /* 不要換行 */
+    }
+
+    /* 每個 column 自動分配寬度（不要固定 50% 避免超出畫面） */
+    div[data-testid="column"] {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;          /* 允許縮小避免橫向捲動 */
+        padding-right: 6px !important;    /* 幫左右留一點間距 */
+    }
+
+    /* 按鈕保持適中大小 */
     .stButton>button {
         width: 100%;
     }
