@@ -122,6 +122,22 @@ div[data-testid="stHorizontalBlock"] > div {
     padding-left: 0.5rem !important;
     padding-right: 0.5rem !important;
 }
+    /* ============================
+       強制 st.columns 在手機也 50% / 50%
+       （讓 A / B 的選單與數值可以左右並排）
+       ============================ */
+
+    /* Streamlit 的每一個 column 容器 */
+    div[data-testid="column"] {
+        flex: 1 1 0 !important;        /* 平均分配寬度 */
+        max-width: 50% !important;     /* 最多只吃一半 */
+        min-width: 0 !important;       /* 允許縮窄 */
+    }
+
+    /* 如果這一行只有一個欄位，就讓它吃滿整行 */
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:only-child {
+        max-width: 100% !important;
+    }
 
 </style>
 """
