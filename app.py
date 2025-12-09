@@ -65,7 +65,7 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
-/* ⛵ 手機優化 */
+/* 🔹 手機優化（只調整外觀，不強迫欄位橫排） */
 @media (max-width: 768px) {
 
     /* 卡片縮小 padding */
@@ -79,20 +79,12 @@ h3 {
         font-size: 0.95rem !important;
     }
 
-    /* 讓 st.columns 在手機維持左右排列，而不是上下堆疊 */
-    div[data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;   /* 不要變成 column */
-        flex-wrap: nowrap !important;     /* 不要換行 */
+    /* 頂部 Logo 在手機稍微小一點，避免撐太寬 */
+    .app-top-bar span:first-child {
+        font-size: 2.0rem;
     }
 
-    /* 每個 column 自動分配寬度（不要固定 50% 避免超出畫面） */
-    div[data-testid="column"] {
-        flex: 1 1 0 !important;
-        min-width: 0 !important;          /* 允許縮小避免橫向捲動 */
-        padding-right: 6px !important;    /* 幫左右留一點間距 */
-    }
-
-    /* 按鈕保持適中大小 */
+    /* 按鈕在手機上拉滿寬度，方便點擊 */
     .stButton>button {
         width: 100%;
     }
@@ -103,6 +95,7 @@ h3 {
 }
 </style>
 """
+
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
 # ==================================
