@@ -23,6 +23,7 @@ st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
 # ==================================
 APP_CSS = """
 <style>
+/* 隱藏 Streamlit 內建菜單 / footer */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
@@ -31,41 +32,14 @@ footer {visibility: hidden;}
     display: flex;
     justify-content: center;
 }
-
 .main > div > div {
     max-width: 1200px;
-    width: 100%;
 }
 
-/* 頂部列：品牌 + 標題區 */
+/* Sticky 頂部列（背景模糊）*/
 .app-top-bar {
-    padding: 0.4rem 0.2rem 0.6rem 0.2rem;
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-}
-
-/* 左邊的小圖示（🌊） */
-.app-top-icon {
-    font-size: 2.2rem;
-    line-height: 2.2rem;
-}
-
-/* 第一行：產品名稱 DepthRender */
-.app-title-text {
-    font-weight: 700;
-    font-size: 2.2rem;
-    line-height: 2.4rem;
-    margin: 0;
-}
-
-/* 第二行：副標題 Dive Overlay Generator */
-.app-title-sub {
-    font-weight: 400;
-    font-size: 1.1rem;
-    line-height: 1.4rem;
-    margin: 0.1rem 0 0;
-    opacity: 0.75;
+    padding: 0.2rem 0.6rem;
+    backdrop-filter: blur(6px);
 }
 
 /* 白底卡片容器（主內容） */
@@ -76,7 +50,7 @@ footer {visibility: hidden;}
     box-shadow: 0 8px 20px rgba(15,23,42,0.10);
 }
 
-/* 深色模式下讓卡片變暗，不會有一整條白色長條 */
+/* 深色模式下讓卡片變暗 */
 @media (prefers-color-scheme: dark) {
     .app-card {
         background-color: rgba(15,23,42,0.90);
@@ -91,7 +65,22 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
-/* 手機優化 */
+/* 產品標題字型 */
+.app-title-text {
+    font-weight: 700;
+    margin: 0;
+}
+
+/* 手機版產品標題縮小（一行不塞爆） */
+@media (max-width: 600px) {
+    .app-title-text {
+        font-size: 1.6rem !important;
+        line-height: 1.6rem !important;
+        text-align: center !important;
+    }
+}
+
+/* 手機優化：卡片 padding / 按鈕寬度 */
 @media (max-width: 768px) {
     .app-card {
         padding: 0.8rem 0.9rem 1.1rem 0.9rem;
@@ -103,39 +92,34 @@ h3 {
         font-size: 0.95rem !important;
     }
 
-    .stButton>button {
-        width: 100%;
-    }
-
+    .stButton>button,
     .stDownloadButton>button {
         width: 100%;
     }
 }
 
-/* ▶ 手機版產品標題縮小，避免斷成三行 ◀ */
-@media (max-width: 600px) {
-    .app-top-bar {
-        justify-content: center;
-        text-align: center;
+/* =========================================================
+   Compare 區塊：手機版 2 欄 / 3 欄（只影響加上 class 的區域）
+   ========================================================= */
+@media (max-width: 768px) {
+    /* 兩欄排版：上傳 A/B、選潛 A/B、FF 深度 A/B、指標 A/B */
+    .cmp-two-col [data-testid="column"] {
+        flex: 0 0 50% !important;
+        width: 50% !important;
+        padding-right: 0.35rem !important;
+    }
+    .cmp-two-col [data-testid="column"]:last-child {
+        padding-right: 0 !important;
     }
 
-    .app-top-icon {
-        font-size: 1.8rem;
-    }
-
-    .app-title-text {
-        font-size: 1.6rem !important;
-        line-height: 1.8rem !important;
-    }
-
-    .app-title-sub {
-        font-size: 0.95rem !important;
-        line-height: 1.3rem !important;
+    /* 三欄排版：時間偏移 左鍵 / 文字 / 右鍵 */
+    .cmp-three-col [data-testid="column"] {
+        flex: 0 0 33.3333% !important;
+        width: 33.3333% !important;
     }
 }
 </style>
 """
-
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
@@ -993,31 +977,35 @@ with st.container():
     # ============================
     with tab_compare:
         st.markdown(
-            f"<h2 style='font-size:1.4rem; margin-top:0.5rem; margin-bottom:0.8rem; font-weight:600;'>"
+            f"<h2 style='font-size:1.4rem; margin-top:0.5rem; "
+            f"margin-bottom:0.8rem; font-weight:600;'>"
             f"{tr('compare_title')}"
             f"</h2>",
             unsafe_allow_html=True,
         )
-
+    
         # -------------------------
-        # 1. 上傳 A / B
+        # 1. 上傳 A / B（手機上並排）
         # -------------------------
-        cmp_col1, cmp_col2 = st.columns(2)
-
-        with cmp_col1:
-            cmp_file_a = st.file_uploader(
-                tr("compare_upload_a"),
-                type=None,
-                key="cmp_file_a",
-            )
-
-        with cmp_col2:
-            cmp_file_b = st.file_uploader(
-                tr("compare_upload_b"),
-                type=None,
-                key="cmp_file_b",
-            )
-
+        with st.container():
+            st.markdown('<div class="cmp-two-col">', unsafe_allow_html=True)
+            cmp_col1, cmp_col2 = st.columns(2)
+    
+            with cmp_col1:
+                cmp_file_a = st.file_uploader(
+                    tr("compare_upload_a"),
+                    type=None,
+                    key="cmp_file_a",
+                )
+    
+            with cmp_col2:
+                cmp_file_b = st.file_uploader(
+                    tr("compare_upload_b"),
+                    type=None,
+                    key="cmp_file_b",
+                )
+            st.markdown('</div>', unsafe_allow_html=True)
+    
         # 解析結果容器
         dives_a = []
         dives_b = []
@@ -1025,93 +1013,96 @@ with st.container():
         dive_b = None
         label_a = None
         label_b = None
-
+    
         # -------------------------
         # 2. 處理數據 A
         # -------------------------
         if cmp_file_a is not None:
             suffix_a = Path(cmp_file_a.name).suffix.lower()
-
+    
             if suffix_a == ".fit":
                 file_bytes_a = cmp_file_a.read()
                 dives_a = parse_garmin_fit_to_dives(BytesIO(file_bytes_a))
-
+    
             elif suffix_a == ".uddf":
                 dive_a = parse_atmos_uddf(BytesIO(cmp_file_a.read()))
                 if dive_a is not None and len(dive_a) > 0:
                     max_depth_a = dive_a["depth_m"].max()
                     label_a = f"ATMOS A ({max_depth_a:.1f} m)"
-
+    
         # -------------------------
         # 3. 處理數據 B
         # -------------------------
         if cmp_file_b is not None:
             suffix_b = Path(cmp_file_b.name).suffix.lower()
-
+    
             if suffix_b == ".fit":
                 file_bytes_b = cmp_file_b.read()
                 dives_b = parse_garmin_fit_to_dives(BytesIO(file_bytes_b))
-
+    
             elif suffix_b == ".uddf":
                 dive_b = parse_atmos_uddf(BytesIO(cmp_file_b.read()))
                 if dive_b is not None and len(dive_b) > 0:
                     max_depth_b = dive_b["depth_m"].max()
                     label_b = f"ATMOS B ({max_depth_b:.1f} m)"
-
+    
         # -------------------------
         # 4. Garmin 多潛選擇：A / B 並排顯示
         # -------------------------
         if dives_a or dives_b:
-            sel_col_a, sel_col_b = st.columns(2)
-
-            with sel_col_a:
-                if dives_a:
-                    options_a = [
-                        f"Dive #{i+1}（{df['depth_m'].max():.1f} m）"
-                        for i, df in enumerate(dives_a)
-                    ]
-                    idx_a = st.selectbox(
-                        tr("compare_select_dive_a"),
-                        options=list(range(len(dives_a))),
-                        format_func=lambda i: options_a[i],
-                        key="cmp_select_a",
-                    )
-                    dive_a = dives_a[idx_a]
-                    label_a = options_a[idx_a]
-
-            with sel_col_b:
-                if dives_b:
-                    options_b = [
-                        f"Dive #{i+1}（{df['depth_m'].max():.1f} m）"
-                        for i, df in enumerate(dives_b)
-                    ]
-                    idx_b = st.selectbox(
-                        tr("compare_select_dive_b"),
-                        options=list(range(len(dives_b))),
-                        format_func=lambda i: options_b[i],
-                        key="cmp_select_b",
-                    )
-                    dive_b = dives_b[idx_b]
-                    label_b = options_b[idx_b]
-
+            with st.container():
+                st.markdown('<div class="cmp-two-col">', unsafe_allow_html=True)
+                sel_col_a, sel_col_b = st.columns(2)
+    
+                with sel_col_a:
+                    if dives_a:
+                        options_a = [
+                            f"Dive #{i+1}（{df['depth_m'].max():.1f} m）"
+                            for i, df in enumerate(dives_a)
+                        ]
+                        idx_a = st.selectbox(
+                            tr("compare_select_dive_a"),
+                            options=list(range(len(dives_a))),
+                            format_func=lambda i: options_a[i],
+                            key="cmp_select_a",
+                        )
+                        dive_a = dives_a[idx_a]
+                        label_a = options_a[idx_a]
+    
+                with sel_col_b:
+                    if dives_b:
+                        options_b = [
+                            f"Dive #{i+1}（{df['depth_m'].max():.1f} m）"
+                            for i, df in enumerate(dives_b)
+                        ]
+                        idx_b = st.selectbox(
+                            tr("compare_select_dive_b"),
+                            options=list(range(len(dives_b))),
+                            format_func=lambda i: options_b[i],
+                            key="cmp_select_b",
+                        )
+                        dive_b = dives_b[idx_b]
+                        label_b = options_b[idx_b]
+    
+                st.markdown('</div>', unsafe_allow_html=True)
+    
         # -------------------------
         # 5. 初始化平滑視窗 / 時間偏移狀態
-        #    （平滑控制 UI 放在圖表下方，但這裡先讀值來算）
         # -------------------------
         if "cmp_smooth_level" not in st.session_state:
             st.session_state["cmp_smooth_level"] = 2  # 預設 2 秒
-
+    
         smooth_level = int(st.session_state["cmp_smooth_level"])
-
+    
         if "cmp_align_offset_b" not in st.session_state:
             st.session_state["cmp_align_offset_b"] = 0.0
-
+    
         # -------------------------
         # 6. 準備重採樣後的 df
         # -------------------------
         df_a = prepare_dive_curve(dive_a, smooth_window=smooth_level) if dive_a is not None else None
         df_b = prepare_dive_curve(dive_b, smooth_window=smooth_level) if dive_b is not None else None
-
+    
         if (df_a is None) or (df_b is None):
             st.info(tr("compare_no_data"))
         else:
@@ -1122,44 +1113,50 @@ with st.container():
             if label_b is None:
                 max_depth_b = df_b["depth_m"].max()
                 label_b = f"Dive B ({max_depth_b:.1f} m)"
-
+    
             # -------------------------
             # 7. Free Fall 開始深度控制（左右各一組）
             # -------------------------
             max_depth_a = float(df_a["depth_m"].max())
             max_depth_b = float(df_b["depth_m"].max())
-
-            ff_col_a, ff_col_b = st.columns(2)
-            with ff_col_a:
-                ff_start_a = st.number_input(
-                    tr("compare_ff_depth_label_a"),
-                    min_value=0.0,
-                    max_value=max_depth_a,
-                    step=1.0,
-                    value=min(15.0, max_depth_a),
-                    key="cmp_ff_depth_a",
-                )
-            with ff_col_b:
-                ff_start_b = st.number_input(
-                    tr("compare_ff_depth_label_b"),
-                    min_value=0.0,
-                    max_value=max_depth_b,
-                    step=1.0,
-                    value=min(15.0, max_depth_b),
-                    key="cmp_ff_depth_b",
-                )
-
+    
+            with st.container():
+                st.markdown('<div class="cmp-two-col">', unsafe_allow_html=True)
+                ff_col_a, ff_col_b = st.columns(2)
+    
+                with ff_col_a:
+                    ff_start_a = st.number_input(
+                        tr("compare_ff_depth_label_a"),
+                        min_value=0.0,
+                        max_value=max_depth_a,
+                        step=1.0,
+                        value=min(15.0, max_depth_a),
+                        key="cmp_ff_depth_a",
+                    )
+                with ff_col_b:
+                    ff_start_b = st.number_input(
+                        tr("compare_ff_depth_label_b"),
+                        min_value=0.0,
+                        max_value=max_depth_b,
+                        step=1.0,
+                        value=min(15.0, max_depth_b),
+                        key="cmp_ff_depth_b",
+                    )
+    
+                st.markdown('</div>', unsafe_allow_html=True)
+    
             # -------------------------
             # 8. 計算各種平均速率
             # -------------------------
             metrics_a = compute_dive_metrics(df_a, dive_a, ff_start_a)
             metrics_b = compute_dive_metrics(df_b, dive_b, ff_start_b)
-
+    
             def fmt_mps(value: Optional[float]) -> str:
                 if value is None or np.isnan(value):
                     return tr("compare_metric_not_available")
-                return tr("compare_metric_unit_mps", value=value)
-
+                # 你之前想改成小數點第 2 位，可以在這裡改 format
+                return tr("compare_metric_unit_mps", value=round(value, 2))
+    
             def render_metric_block(title: str, value: Optional[float]):
                 """子標題和數值之間不留空白行，且子標題字體略大。"""
                 value_str = fmt_mps(value)
@@ -1176,198 +1173,195 @@ with st.container():
                     """,
                     unsafe_allow_html=True,
                 )
-
+    
             # -------------------------
             # 9. A / B 指標顯示（行距縮短 + 子標題放大）
             # -------------------------
-            m_col_a, m_col_b = st.columns(2)
-
-            with m_col_a:
-                st.markdown(f"### {label_a}")
-                render_metric_block(tr("compare_desc_rate_label"), metrics_a["descent_avg"])
-                render_metric_block(tr("compare_asc_rate_label"), metrics_a["ascent_avg"])
-                render_metric_block(tr("compare_ff_rate_label"), metrics_a["ff_avg"])
-
-            with m_col_b:
-                st.markdown(f"### {label_b}")
-                render_metric_block(tr("compare_desc_rate_label"), metrics_b["descent_avg"])
-                render_metric_block(tr("compare_asc_rate_label"), metrics_b["ascent_avg"])
-                render_metric_block(tr("compare_ff_rate_label"), metrics_b["ff_avg"])
-
+            with st.container():
+                st.markdown('<div class="cmp-two-col">', unsafe_allow_html=True)
+                m_col_a, m_col_b = st.columns(2)
+    
+                with m_col_a:
+                    st.markdown(f"### {label_a}")
+                    render_metric_block(tr("compare_desc_rate_label"), metrics_a["descent_avg"])
+                    render_metric_block(tr("compare_asc_rate_label"),  metrics_a["ascent_avg"])
+                    render_metric_block(tr("compare_ff_rate_label"),   metrics_a["ff_avg"])
+    
+                with m_col_b:
+                    st.markdown(f"### {label_b}")
+                    render_metric_block(tr("compare_desc_rate_label"), metrics_b["descent_avg"])
+                    render_metric_block(tr("compare_asc_rate_label"),  metrics_b["ascent_avg"])
+                    render_metric_block(tr("compare_ff_rate_label"),   metrics_b["ff_avg"])
+    
+                st.markdown('</div>', unsafe_allow_html=True)
+    
             st.markdown("---")
-
+    
             # -------------------------
-            # 10. 調整 B 的時間偏移（移到圖表上方）
+            # 10. 調整 B 的時間偏移（移到圖表上方，3 欄排版）
             # -------------------------
             st.markdown(f"**{tr('compare_align_label')}**")
-
-            align_col1, align_col2, align_col3 = st.columns([1, 2, 1])
-
-            with align_col1:
-                if st.button("◀ -0.2 s", key="cmp_align_minus"):
-                    st.session_state["cmp_align_offset_b"] = max(
-                        -20.0, st.session_state["cmp_align_offset_b"] - 0.2
+    
+            with st.container():
+                st.markdown('<div class="cmp-three-col">', unsafe_allow_html=True)
+                align_col1, align_col2, align_col3 = st.columns([1, 2, 1])
+    
+                with align_col1:
+                    if st.button("◀ -0.2 s", key="cmp_align_minus"):
+                        st.session_state["cmp_align_offset_b"] = max(
+                            -20.0, st.session_state["cmp_align_offset_b"] - 0.2
+                        )
+    
+                with align_col2:
+                    st.markdown(
+                        f"<div style='text-align:center; font-size:1.05rem; "
+                        f"margin-top:0.25rem; margin-bottom:0.25rem;'>"
+                        f"{tr('compare_align_current', offset=st.session_state['cmp_align_offset_b'])}"
+                        f"</div>",
+                        unsafe_allow_html=True,
                     )
-
-            with align_col2:
-                st.markdown(
-                    f"<div style='text-align:center; font-size:1.05rem; "
-                    f"margin-top:0.25rem; margin-bottom:0.25rem;'>"
-                    f"{tr('compare_align_current', offset=st.session_state['cmp_align_offset_b'])}"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-
-            with align_col3:
-                if st.button("+0.2 s ▶", key="cmp_align_plus"):
-                    st.session_state["cmp_align_offset_b"] = min(
-                        20.0, st.session_state["cmp_align_offset_b"] + 0.2
-                    )
-
+    
+                with align_col3:
+                    if st.button("+0.2 s ▶", key="cmp_align_plus"):
+                        st.session_state["cmp_align_offset_b"] = min(
+                            20.0, st.session_state["cmp_align_offset_b"] + 0.2
+                        )
+    
+                st.markdown('</div>', unsafe_allow_html=True)
+    
             align_offset_b = float(st.session_state["cmp_align_offset_b"])
-
+    
             # -------------------------
             # 11. 準備繪圖用資料（含時間偏移）
             # -------------------------
             plot_a_depth = df_a[["time_s", "depth_m"]].copy()
             plot_a_depth["series"] = label_a
             plot_a_depth["time_plot"] = plot_a_depth["time_s"]
-
+    
             plot_b_depth = df_b[["time_s", "depth_m"]].copy()
             plot_b_depth["series"] = label_b
             plot_b_depth["time_plot"] = plot_b_depth["time_s"] + align_offset_b
-
+    
             depth_plot_df = pd.concat([plot_a_depth, plot_b_depth], ignore_index=True)
-
-            # 🚫 X 軸：只保留 time_plot >= 0 的點（不畫負時間）
-            depth_plot_df = depth_plot_df[depth_plot_df["time_plot"] >= 0].copy()
-
-            # 🚫 深度 Y 軸：把 < 0 的噪聲剪掉
+    
+            # 深度負值直接剪掉，避免 Y 軸往下多拉一截
             depth_plot_df["depth_plot"] = depth_plot_df["depth_m"].clip(lower=0.0)
-
+    
             plot_a_rate = df_a[["time_s", "rate_abs_mps_smooth"]].copy()
             plot_a_rate["series"] = label_a
             plot_a_rate["time_plot"] = plot_a_rate["time_s"]
-
+    
             plot_b_rate = df_b[["time_s", "rate_abs_mps_smooth"]].copy()
             plot_b_rate["series"] = label_b
             plot_b_rate["time_plot"] = plot_b_rate["time_s"] + align_offset_b
-
+    
             rate_plot_df = pd.concat([plot_a_rate, plot_b_rate], ignore_index=True)
-
-            # 🚫 速率圖 X 軸：同樣只保留 time_plot >= 0
-            rate_plot_df = rate_plot_df[rate_plot_df["time_plot"] >= 0].copy()
-
-            # 如果被剪掉之後沒有資料，就不要畫圖
-            if len(depth_plot_df) == 0 or len(rate_plot_df) == 0:
-                st.info(tr("compare_no_data"))
-            else:
-                # -------------------------
-                # 11-1. X / Y 軸 domain 設定
-                # -------------------------
-                # X 軸：0 ~ 所有資料中的最大 time_plot
-                max_time_plot = float(
-                    max(depth_plot_df["time_plot"].max(), rate_plot_df["time_plot"].max())
+    
+            # -------------------------
+            # 11-1. X / Y 軸 domain 設定（X 軸鎖定 0～max，Y 不顯示負數）
+            # -------------------------
+            max_time_plot = float(
+                max(depth_plot_df["time_plot"].max(), rate_plot_df["time_plot"].max())
+            )
+            if max_time_plot < 0:
+                max_time_plot = 0.0
+    
+            max_depth_plot = float(depth_plot_df["depth_plot"].max())
+            max_depth_plot = max(max_depth_plot, 0.0)
+    
+            max_rate_plot = float(rate_plot_df["rate_abs_mps_smooth"].max())
+            max_rate_domain = max(0.5, np.ceil(max_rate_plot * 2.0) / 2.0)
+    
+            # -------------------------
+            # 12. 深度 vs 時間（比較）— 不顯示圖例
+            # -------------------------
+            depth_chart_cmp = (
+                alt.Chart(depth_plot_df)
+                .mark_line(interpolate="monotone")
+                .encode(
+                    x=alt.X(
+                        "time_plot:Q",
+                        title=tr("axis_time_seconds"),
+                        scale=alt.Scale(domain=[0, max_time_plot], nice=False),
+                    ),
+                    y=alt.Y(
+                        "depth_plot:Q",
+                        title=tr("axis_depth_m"),
+                        scale=alt.Scale(
+                            domain=[max_depth_plot, 0],  # 反轉，且不顯示 < 0
+                            nice=False,
+                        ),
+                    ),
+                    color=alt.Color(
+                        "series:N",
+                        title=tr("compare_series_legend"),
+                        legend=None,  # 這裡不要圖例
+                    ),
+                    tooltip=[
+                        alt.Tooltip("series:N", title=tr("compare_series_legend")),
+                        alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
+                        alt.Tooltip("depth_plot:Q", title=tr("tooltip_depth"), format=".1f"),
+                    ],
                 )
-                max_time_plot = max(max_time_plot, 0.0)
-
-                # 深度 Y 軸：0 ~ 最大深度（反轉顯示），不顯示負值
-                max_depth_plot = float(depth_plot_df["depth_plot"].max())
-                max_depth_plot = max(max_depth_plot, 0.0)
-
-                # 速率 Y 軸：0 ~ 最大速率，往上取到 0.5 的倍數
-                max_rate_plot = float(rate_plot_df["rate_abs_mps_smooth"].max())
-                max_rate_domain = max(0.5, np.ceil(max_rate_plot * 2.0) / 2.0)
-
-                # ✅ 只縮放 X 軸
-                depth_zoom = alt.selection_interval(bind="scales", encodings=["x"])
-                rate_zoom  = alt.selection_interval(bind="scales", encodings=["x"])
-
-                # -------------------------
-                # 12. 深度 vs 時間（比較）👉 不顯示 legend
-                # -------------------------
-                depth_chart_cmp = (
-                    alt.Chart(depth_plot_df)
-                    .mark_line()
-                    .encode(
-                        x=alt.X(
-                            "time_plot:Q",
-                            title=tr("axis_time_seconds"),
-                        ),
-                        y=alt.Y(
-                            "depth_m:Q",
-                            title=tr("axis_depth_m"),
-                            scale=alt.Scale(reverse=True),
-                        ),
-                        # ❌ 不顯示圖例（資料來源）
-                        color=alt.Color(
-                            "series:N",
-                            legend=None
-                        ),
-                        tooltip=[
-                            alt.Tooltip("series:N", title=tr("compare_series_legend")),
-                            alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
-                            alt.Tooltip("depth_m:Q", title=tr("tooltip_depth"), format=".1f"),
-                        ],
-                    )
-                    .properties(
-                        title=tr("compare_depth_chart_title"),
-                        height=320,
-                    )
+                .properties(
+                    title=tr("compare_depth_chart_title"),
+                    height=320,
                 )
-                st.altair_chart(depth_chart_cmp, use_container_width=True)
-
-                # -------------------------
-                # 13. 速率 vs 時間（比較）👉 保留 legend 並移到底下
-                # -------------------------
-                rate_chart_cmp = (
-                    alt.Chart(rate_plot_df)
-                    .mark_line(interpolate="basis")
-                    .encode(
-                        x=alt.X(
-                            "time_plot:Q",
-                            title=tr("axis_time_seconds"),
-                        ),
-                        y=alt.Y(
-                            "rate_abs_mps_smooth:Q",
-                            title=tr("axis_rate_mps"),
-                            scale=alt.Scale(domain=[0, 3]),
-                        ),
-                        color=alt.Color(
-                            "series:N",
-                            title=tr("compare_series_legend"),
-                            legend=alt.Legend(orient="bottom")  # ⬅️ 圖例移到圖表下方
-                        ),
-                        tooltip=[
-                            alt.Tooltip("series:N", title=tr("compare_series_legend")),
-                            alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
-                            alt.Tooltip("rate_abs_mps_smooth:Q", title=tr("tooltip_rate"), format=".2f"),
-                        ],
-                    )
-                    .properties(
-                        title=tr("compare_rate_chart_title"),
-                        height=360,   # 可以略增高度，避免圖例擠太近
-                    )
+            )
+    
+            # -------------------------
+            # 13. 速率 vs 時間（比較）— 圖例放在下方
+            # -------------------------
+            rate_chart_cmp = (
+                alt.Chart(rate_plot_df)
+                .mark_line(interpolate="monotone")
+                .encode(
+                    x=alt.X(
+                        "time_plot:Q",
+                        title=tr("axis_time_seconds"),
+                        scale=alt.Scale(domain=[0, max_time_plot], nice=False),
+                    ),
+                    y=alt.Y(
+                        "rate_abs_mps_smooth:Q",
+                        title=tr("axis_rate_mps"),
+                        scale=alt.Scale(domain=[0, max_rate_domain], nice=False),
+                    ),
+                    color=alt.Color(
+                        "series:N",
+                        title=tr("compare_series_legend"),
+                        legend=alt.Legend(orient="bottom"),
+                    ),
+                    tooltip=[
+                        alt.Tooltip("series:N", title=tr("compare_series_legend")),
+                        alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
+                        alt.Tooltip("rate_abs_mps_smooth:Q", title=tr("tooltip_rate"), format=".2f"),
+                    ],
                 )
-                st.altair_chart(rate_chart_cmp, use_container_width=True)
-
-                # -------------------------
-                # 14. 速率平滑視窗（圖表下面、縮小並貼最右邊）
-                # -------------------------
-                spacer_l, spacer_mid, smooth_col = st.columns([14, 2, 2])
-                with smooth_col:
-                    st.markdown(
-                        f"<div style='text-align:right; font-size:0.85rem; margin-bottom:2px;'>"
-                        f"{tr('compare_smooth_label')}"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.selectbox(
-                        "",
-                        options=[1, 2, 3],
-                        key="cmp_smooth_level",
-                        label_visibility="collapsed",
-                    )
-
+                .properties(
+                    title=tr("compare_rate_chart_title"),
+                    height=320,
+                )
+            )
+    
+            st.altair_chart(depth_chart_cmp, use_container_width=True)
+            st.altair_chart(rate_chart_cmp, use_container_width=True)
+    
+            # -------------------------
+            # 14. 速率平滑視窗（圖表下面、縮小並貼最右邊）
+            # -------------------------
+            spacer_l, spacer_mid, smooth_col = st.columns([10, 1, 1])
+            with smooth_col:
+                st.markdown(
+                    f"<div style='text-align:right; font-size:0.85rem; margin-bottom:2px;'>"
+                    f"{tr('compare_smooth_label')}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                st.selectbox(
+                    "",
+                    options=[1, 2, 3],
+                    key="cmp_smooth_level",  # 保持同一個 key，改變會觸發重新計算
+                    label_visibility="collapsed",
+                )
 
     st.markdown('</div>', unsafe_allow_html=True)
