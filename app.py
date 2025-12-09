@@ -50,7 +50,7 @@ footer {visibility: hidden;}
     box-shadow: 0 8px 20px rgba(15,23,42,0.10);
 }
 
-/* 深色模式：卡片自然變暗 */
+/* 深色模式下讓卡片變暗 */
 @media (prefers-color-scheme: dark) {
     .app-card {
         background-color: rgba(15,23,42,0.90);
@@ -58,19 +58,18 @@ footer {visibility: hidden;}
     }
 }
 
-/* Subheader 字體調整 */
+/* Subheader 標題（st.subheader）- 縮小一點 */
 h3 {
     font-size: 1.05rem !important;
     margin-top: 0.6rem;
     margin-bottom: 0.2rem;
 }
 
-/* 🔹 手機優化 */
+/* 手機優化 */
 @media (max-width: 768px) {
 
-    /* 卡片縮小 padding，避免左右超出 */
     .app-card {
-        padding: 0.8rem 0.7rem 1.1rem 0.7rem;
+        padding: 0.8rem 0.9rem 1.1rem 0.9rem;
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(15,23,42,0.15);
     }
@@ -79,43 +78,29 @@ h3 {
         font-size: 0.95rem !important;
     }
 
-    /* 頂部 Logo 在手機稍微小一點 */
-    .app-top-bar span:first-child {
-        font-size: 2.0rem;
-    }
-
-    /* 按鈕在手機上拉滿寬度，方便點擊 */
-    .stButton>button {
-        width: 100%;
-    }
-
+    .stButton>button,
     .stDownloadButton>button {
         width: 100%;
     }
 
-    /* ⭐ 關鍵：強制所有水平區塊在手機維持「左右排列」，
-       並讓每個 column 只佔 1/2 寬度，這樣 A/B 就能並排顯示 */
-    [data-testid="stHorizontalBlock"] {
-        display: flex !important;
+    /* 讓所有 st.columns 在手機上仍保持左右並排，
+       而不是被 Streamlit 自動改成上下堆疊 */
+    div[data-testid="stHorizontalBlock"] {
         flex-direction: row !important;
-        flex-wrap: wrap !important;
-        column-gap: 0 !important;
+        flex-wrap: nowrap !important;
+        align-items: flex-start;
     }
 
-    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
-        flex: 0 0 50% !important;     /* 每欄 50% */
+    /* 每一個 column 只佔一半寬度（或更小），避免全部吃滿整行 */
+    div[data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
         max-width: 50% !important;
-        min-width: 0 !important;      /* 允許縮小，不要撐爆螢幕 */
-        padding-left: 0.25rem !important;
-        padding-right: 0.25rem !important;
     }
 
-    /* 避免個別 widget 撐寬：select / input 乖乖待在自己的 column 裡 */
-    [data-baseweb="select"],
-    .stNumberInput,
-    .stFileUploader,
-    .stTextInput {
-        width: 100% !important;
+    /* 確保欄位裡面的元件不會再把寬度撐爆 */
+    div[data-testid="stHorizontalBlock"] > div > div {
+        max-width: 100% !important;
     }
 }
 </style>
