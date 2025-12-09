@@ -24,7 +24,7 @@ APP_CSS = """
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* 讓主內容置中，並限制最大寬度 */
+/* 讓整個主內容置中、限制最大寬度 */
 .main > div {
     display: flex;
     justify-content: center;
@@ -32,7 +32,6 @@ footer {visibility: hidden;}
 .main > div > div {
     max-width: 1200px;
     width: 100%;
-    padding: 0 12px;
 }
 
 /* 白底卡片容器（主內容） */
@@ -43,20 +42,7 @@ footer {visibility: hidden;}
     box-shadow: 0 8px 20px rgba(15,23,42,0.10);
 }
 
-/* 頂部品牌列 */
-.app-top-bar {
-    padding: 0.4rem 0.2rem 0.6rem 0.2rem;
-}
-
-/* 產品標題文字（可被 media query 調整） */
-.app-title-text {
-    font-size: 2.0rem;
-    line-height: 2.1rem;
-    font-weight: 700;
-    margin: 0.1rem 0;
-}
-
-/* 深色模式下卡片顏色 */
+/* 深色模式下卡片變暗一點 */
 @media (prefers-color-scheme: dark) {
     .app-card {
         background-color: rgba(15,23,42,0.90);
@@ -64,58 +50,81 @@ footer {visibility: hidden;}
     }
 }
 
-/* Subheader 標題縮小一點 */
+/* Sticky 頂部列 */
+.app-top-bar {
+    padding: 0.2rem 0.6rem;
+    backdrop-filter: blur(6px);
+}
+
+/* Subheader 標題（st.subheader）- 縮小一點 */
 h3 {
     font-size: 1.05rem !important;
     margin-top: 0.6rem;
     margin-bottom: 0.2rem;
 }
 
-/* 讓所有輸入元件自然撐滿所在 column */
-.stFileUploader, .stSelectbox, .stNumberInput, .stSlider, .stTextInput {
-    width: 100% !important;
+/* 預設整體左右留一點空間（桌機） */
+.block-container {
+    padding-top: 1.5rem !important;
+    padding-bottom: 3rem !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
 }
 
-/* 手機優化：螢幕 <= 768px 時調整排版 */
+/* 所有 columns 的間距稍微縮小一點 */
+.stHorizontalBlock {
+    gap: 0.6rem !important;
+}
+
+/* 手機優化：兩欄並排、不產生橫向捲軸 */
 @media (max-width: 768px) {
+    /* 手機左右邊界縮小 */
+    .block-container {
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !entire !important;
+    }
+
     .app-card {
-        padding: 0.8rem 0.6rem 1.1rem 0.6rem;
-        border-radius: 14px;
+        padding: 0.8rem 0.9rem 1.1rem 0.9rem;
+        border-radius: 12px;
         box-shadow: 0 4px 12px rgba(15,23,42,0.15);
     }
 
-    /* 產品標題縮小，避免斷太多行 */
-    .app-title-text {
-        font-size: 1.6rem !important;
-        line-height: 1.6rem !important;
-        text-align: left !important;
+    /* 讓所有 st.columns(2) 的容器用 grid，一行 2 欄 */
+    .stHorizontalBlock {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        column-gap: 0.6rem !important;
     }
 
-    h3 {
-        font-size: 0.95rem !important;
+    /* 每一個 column 占 1 格，避免再被撐滿一整行 */
+    .stHorizontalBlock > div[data-testid="column"] {
+        max-width: 100% !important;
     }
 
-    .stButton>button,
-    .stDownloadButton>button {
+    /* 手機上標題稍微縮小，避免換行太多 */
+    .app-top-bar span {
+        font-size: 1.4rem !important;
+    }
+    h1, .block-container h1 {
+        font-size: 1.4rem !important;
+    }
+    h2, .block-container h2 {
+        font-size: 1.2rem !important;
+    }
+    h3, .block-container h3 {
+        font-size: 1.0rem !important;
+    }
+
+    /* 按鈕在手機維持整行寬度 */
+    .stButton > button,
+    .stDownloadButton > button {
         width: 100%;
-    }
-
-    /* Streamlit 的水平區塊：兩欄並排，各 50% */
-    .stHorizontalBlock .stColumn {
-        flex: 1 1 50% !important;
-        max-width: 50% !important;
-        min-width: 0 !important;
-        padding-right: 0.25rem;
-        padding-left: 0.25rem;
-    }
-
-    /* 上傳區、選單、不再溢出整個寬度 */
-    .stFileUploader, .stSelectbox, .stNumberInput, .stSlider, .stTextInput {
-        width: 100% !important;
     }
 }
 </style>
 """
+
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
 # ==================================
