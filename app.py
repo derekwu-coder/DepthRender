@@ -68,9 +68,9 @@ h3 {
 /* 🔹 手機優化 */
 @media (max-width: 768px) {
 
-    /* 卡片縮小 padding */
+    /* 卡片縮小 padding，避免左右超出 */
     .app-card {
-        padding: 0.8rem 0.9rem 1.1rem 0.9rem;
+        padding: 0.8rem 0.7rem 1.1rem 0.7rem;
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(15,23,42,0.15);
     }
@@ -85,28 +85,41 @@ h3 {
     }
 
     /* 按鈕在手機上拉滿寬度，方便點擊 */
-    .stButton>button,
+    .stButton>button {
+        width: 100%;
+    }
+
     .stDownloadButton>button {
         width: 100%;
     }
 
-    /* ✅ 手機上：所有欄位預設兩欄並排（每欄 50% 寬），自動換行，不會產生橫向捲軸 */
-    div[data-testid="stHorizontalBlock"] {
+    /* ⭐ 關鍵：強制所有水平區塊在手機維持「左右排列」，
+       並讓每個 column 只佔 1/2 寬度，這樣 A/B 就能並排顯示 */
+    [data-testid="stHorizontalBlock"] {
         display: flex !important;
-        flex-wrap: wrap !important;   /* 可以自動換行 */
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        column-gap: 0 !important;
     }
 
-    div[data-testid="column"] {
-        flex: 1 1 50% !important;     /* 每欄基準 50% 寬 */
+    [data-testid="stHorizontalBlock"] > [data-testid="column"] {
+        flex: 0 0 50% !important;     /* 每欄 50% */
         max-width: 50% !important;
-        box-sizing: border-box;
-        padding-left: 0.25rem;
-        padding-right: 0.25rem;
+        min-width: 0 !important;      /* 允許縮小，不要撐爆螢幕 */
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
+    }
+
+    /* 避免個別 widget 撐寬：select / input 乖乖待在自己的 column 裡 */
+    [data-baseweb="select"],
+    .stNumberInput,
+    .stFileUploader,
+    .stTextInput {
+        width: 100% !important;
     }
 }
 </style>
 """
-
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
