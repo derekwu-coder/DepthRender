@@ -36,10 +36,39 @@ footer {visibility: hidden;}
     max-width: 1200px;
 }
 
-/* Sticky 頂部列 */
+/* --- 頂部品牌列 --- */
 .app-top-bar {
-    padding: 0.2rem 0.6rem;
-    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.2rem 0.6rem 0.6rem;
+}
+
+.app-top-icon {
+    font-size: 1.6rem;
+}
+
+.app-title-text {
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1.9rem;
+}
+
+.app-title-sub {
+    font-size: 1.0rem;
+    opacity: 0.8;
+}
+
+/* 手機版產品標題縮小 */
+@media (max-width: 600px) {
+    .app-title-text {
+        font-size: 1.5rem !important;
+        line-height: 1.6rem !important;
+        text-align: left !important;
+    }
+    .app-title-sub {
+        font-size: 0.9rem !important;
+    }
 }
 
 /* 白底卡片容器（主內容） */
@@ -65,7 +94,7 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
-/* 手機優化 */
+/* 手機優化：沿用 v1.2 的並排寫法 */
 @media (max-width: 768px) {
 
     .app-card {
@@ -91,11 +120,13 @@ h3 {
         align-items: flex-start;
     }
 
-    /* 每一個 column 只佔一半寬度（或更小），避免全部吃滿整行 */
+    /* 每一個 column 只佔一半寬度，避免吃滿整行 */
     div[data-testid="stHorizontalBlock"] > div {
         flex: 1 1 0 !important;
         min-width: 0 !important;
         max-width: 50% !important;
+        padding-left: 0.35rem;
+        padding-right: 0.35rem;
     }
 
     /* 確保欄位裡面的元件不會再把寬度撐爆 */
@@ -105,6 +136,7 @@ h3 {
 }
 </style>
 """
+
 
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
