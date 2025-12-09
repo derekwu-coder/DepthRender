@@ -65,22 +65,7 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
-/* 在手機上也保持 st.columns 左右並排，不要自動變成上下 */
-@media (max-width: 768px) {
-    /* 這個是每一組欄位的外層容器 */
-    div[data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-    }
-
-    /* 每一個 column 平分寬度，避免被擠成一條 */
-    div[data-testid="column"] {
-        flex: 1 1 0 !important;
-        width: 50% !important;
-        min-width: 0 !important;
-    }
-}
-
+/* 手機優化 */
 
 @media (max-width: 768px) {
     .app-card {
