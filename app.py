@@ -1191,7 +1191,10 @@ with st.container():
 
             depth_plot_df = pd.concat([plot_a_depth, plot_b_depth], ignore_index=True)
 
-            # 深度負值直接剪掉（例如感測雜訊的 -0.1 m），避免 Y 軸往下多拉一截
+            # 🚫 X 軸：只保留 time_plot >= 0 的點（不畫負時間）
+            depth_plot_df = depth_plot_df[depth_plot_df["time_plot"] >= 0].copy()
+
+            # 🚫 深度 Y 軸：把 < 0 的噪聲剪掉
             depth_plot_df["depth_plot"] = depth_plot_df["depth_m"].clip(lower=0.0)
 
             plot_a_rate = df_a[["time_s", "rate_abs_mps_smooth"]].copy()
@@ -1204,121 +1207,143 @@ with st.container():
 
             rate_plot_df = pd.concat([plot_a_rate, plot_b_rate], ignore_index=True)
 
-            # -------------------------
-            # 11-1. X / Y 軸 domain 設定（X 軸鎖定 0～max，Y 不顯示負數）
-            # -------------------------
-            # X 軸：從 0 開始，到所有資料中最大的 time_plot
-            max_time_plot = float(
-                max(depth_plot_df["time_plot"].max(), rate_plot_df["time_plot"].max())
-            )
-            if max_time_plot < 0:
-                max_time_plot = 0.0
+            # 🚫 速率圖 X 軸：同樣只保留 time_plot >= 0
+            rate_plot_df = rate_plot_df[rate_plot_df["time_plot"] >= 0].copy()
 
-            # 深度 Y 軸：0 ~ 最大深度（反轉），不顯示 < 0
-            max_depth_plot = float(depth_plot_df["depth_plot"].max())
-            max_depth_plot = max(max_depth_plot, 0.0)
+            # 如果被剪掉之後沒有資料，就不要畫圖
+            if len(depth_plot_df) == 0 or len(rate_plot_df) == 0:
+                st.info(tr("compare_no_data"))
+            else:
+                # -------------------------
+                # 11-1. X / Y 軸 domain 設定
+                # -------------------------
+                # X 軸：0 ~ 所有資料中的最大 time_plot
+                max_time_plot = float(
+                    max(depth_plot_df["time_plot"].max(), rate_plot_df["time_plot"].max())
+                )
+                max_time_plot = max(max_time_plot, 0.0)
 
-            # 速率 Y 軸：0 ~ 最大速率，往上取到 0.5 的倍數，避免看起來剛好卡邊
-            max_rate_plot = float(rate_plot_df["rate_abs_mps_smooth"].max())
-            max_rate_domain = max(0.5, np.ceil(max_rate_plot * 2.0) / 2.0)
+                # 深度 Y 軸：0 ~ 最大深度（反轉顯示），不顯示負值
+                max_depth_plot = float(depth_plot_df["depth_plot"].max())
+                max_depth_plot = max(max_depth_plot, 0.0)
 
-            # ✅ 只綁 Y 軸到 scales（X 軸 domain 一直維持 [0, max_time_plot]）
-            #   => X 軸被「鎖定」，只能縮放 Y
-            depth_zoom = alt.selection_interval(bind="scales", encodings=["x"])
-            rate_zoom = alt.selection_interval(bind="scales", encodings=["x"])
+                # 速率 Y 軸：0 ~ 最大速率，往上取到 0.5 的倍數
+                max_rate_plot = float(rate_plot_df["rate_abs_mps_smooth"].max())
+                max_rate_domain = max(0.5, np.ceil(max_rate_plot * 2.0) / 2.0)
 
-            # -------------------------
-            # 12. 深度 vs 時間（比較）
-            # -------------------------
-            depth_chart_cmp = (
-                alt.Chart(depth_plot_df)
-                .mark_line()
-                .encode(
-                    x=alt.X(
-                        "time_plot:Q",
-                        title=tr("axis_time_seconds"),
-                        scale=alt.Scale(domain=[0, max_time_plot], nice=False),
-                    ),
-                    y=alt.Y(
-                        "depth_plot:Q",  # 用剪掉負值後的欄位
-                        title=tr("axis_depth_m"),
-                        scale=alt.Scale(
-                            domain=[max_depth_plot, 0],  # 反轉，且不顯示 < 0
-                            nice=False,
+                # ✅ 只縮放 X 軸
+                depth_zoom = alt.selection_interval(bind="scales", encodings=["x"])
+                rate_zoom  = alt.selection_interval(bind="scales", encodings=["x"])
+
+                # -------------------------
+                # 12. 深度 vs 時間（比較）👉 不顯示 legend
+                # -------------------------
+                depth_chart_cmp = (
+                    alt.Chart(depth_plot_df)
+                    .mark_line()
+                    .encode(
+                        x=alt.X(
+                            "time_plot:Q",
+                            title=tr("axis_time_seconds"),
+                            scale=alt.Scale(
+                                domain=[0, max_time_plot],
+                                nice=False,
+                                domainMin=0,   # 不往左超過 0
+                                clamp=True,    # 縮放時也不超過
+                            ),
                         ),
-                    ),
-                    color=alt.Color(
-                        "series:N",
-                        title=tr("compare_series_legend"),
-                    ),
-                    tooltip=[
-                        alt.Tooltip("series:N", title=tr("compare_series_legend")),
-                        alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
-                        alt.Tooltip("depth_plot:Q", title=tr("tooltip_depth"), format=".1f"),
-                    ],
+                        y=alt.Y(
+                            "depth_plot:Q",
+                            title=tr("axis_depth_m"),
+                            scale=alt.Scale(
+                                domain=[max_depth_plot, 0],  # 上淺下深
+                                nice=False,
+                                clamp=True,
+                            ),
+                        ),
+                        color=alt.Color(
+                            "series:N",
+                            title=tr("compare_series_legend"),
+                            legend=None,  # ❌ 深度圖不要顯示圖例
+                        ),
+                        tooltip=[
+                            alt.Tooltip("series:N", title=tr("compare_series_legend")),
+                            alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
+                            alt.Tooltip("depth_plot:Q", title=tr("tooltip_depth"), format=".1f"),
+                        ],
+                    )
+                    .properties(
+                        title=tr("compare_depth_chart_title"),
+                        height=320,
+                    )
+                    .add_selection(depth_zoom)
                 )
-                .properties(
-                    title=tr("compare_depth_chart_title"),
-                    height=320,
-                )
-                .add_selection(depth_zoom)  # 拖選只會改 Y 軸範圍
-            )
 
-            # -------------------------
-            # 13. 速率 vs 時間（比較）
-            # -------------------------
-            rate_chart_cmp = (
-                alt.Chart(rate_plot_df)
-                .mark_line()
-                .encode(
-                    x=alt.X(
-                        "time_plot:Q",
-                        title=tr("axis_time_seconds"),
-                        scale=alt.Scale(domain=[0, max_time_plot], nice=False),
-                    ),
-                    y=alt.Y(
-                        "rate_abs_mps_smooth:Q",
-                        title=tr("axis_rate_mps"),
-                        scale=alt.Scale(domain=[0, max_rate_domain], nice=False),
-                    ),
-                    color=alt.Color(
-                        "series:N",
-                        title=tr("compare_series_legend"),
-                    ),
-                    tooltip=[
-                        alt.Tooltip("series:N", title=tr("compare_series_legend")),
-                        alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
-                        alt.Tooltip("rate_abs_mps_smooth:Q", title=tr("tooltip_rate"), format=".2f"),
-                    ],
+                # -------------------------
+                # 13. 速率 vs 時間（比較）👉 保留 legend 並移到底下
+                # -------------------------
+                rate_chart_cmp = (
+                    alt.Chart(rate_plot_df)
+                    .mark_line()
+                    .encode(
+                        x=alt.X(
+                            "time_plot:Q",
+                            title=tr("axis_time_seconds"),
+                            scale=alt.Scale(
+                                domain=[0, max_time_plot],
+                                nice=False,
+                                domainMin=0,
+                                clamp=True,
+                            ),
+                        ),
+                        y=alt.Y(
+                            "rate_abs_mps_smooth:Q",
+                            title=tr("axis_rate_mps"),
+                            scale=alt.Scale(
+                                domain=[0, max_rate_domain],
+                                nice=False,
+                                domainMin=0,  # 速率 Y 軸也鎖住 >= 0
+                                clamp=True,
+                            ),
+                        ),
+                        color=alt.Color(
+                            "series:N",
+                            title=tr("compare_series_legend"),
+                            legend=alt.Legend(orient="bottom"),  # ✅ 只有速率圖有 legend
+                        ),
+                        tooltip=[
+                            alt.Tooltip("series:N", title=tr("compare_series_legend")),
+                            alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
+                            alt.Tooltip("rate_abs_mps_smooth:Q", title=tr("tooltip_rate"), format=".2f"),
+                        ],
+                    )
+                    .properties(
+                        title=tr("compare_rate_chart_title"),
+                        height=320,
+                    )
+                    .add_selection(rate_zoom)
                 )
-                .properties(
-                    title=tr("compare_rate_chart_title"),
-                    height=320,
-                )
-                .add_selection(rate_zoom)  # 拖選只會改 Y 軸範圍
-            )
 
-            # ✅ 只畫一次圖
-            st.altair_chart(depth_chart_cmp, use_container_width=True)
-            st.altair_chart(rate_chart_cmp, use_container_width=True)
+                st.altair_chart(depth_chart_cmp, use_container_width=True)
+                st.altair_chart(rate_chart_cmp, use_container_width=True)
 
-            # -------------------------
-            # 14. 速率平滑視窗（圖表下面、縮小並貼最右邊）
-            # -------------------------
-            spacer_l, spacer_mid, smooth_col = st.columns([14, 2, 2])
-            with smooth_col:
-                st.markdown(
-                    f"<div style='text-align:right; font-size:0.85rem; margin-bottom:2px;'>"
-                    f"{tr('compare_smooth_label')}"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-                st.selectbox(
-                    "",
-                    options=[1, 2, 3],
-                    key="cmp_smooth_level",  # 保持同一個 key
-                    label_visibility="collapsed",
-                )
+                # -------------------------
+                # 14. 速率平滑視窗（圖表下面、縮小並貼最右邊）
+                # -------------------------
+                spacer_l, spacer_mid, smooth_col = st.columns([10, 1, 1])
+                with smooth_col:
+                    st.markdown(
+                        f"<div style='text-align:right; font-size:0.85rem; margin-bottom:2px;'>"
+                        f"{tr('compare_smooth_label')}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.selectbox(
+                        "",
+                        options=[1, 2, 3],
+                        key="cmp_smooth_level",
+                        label_visibility="collapsed",
+                    )
 
 
     st.markdown('</div>', unsafe_allow_html=True)
