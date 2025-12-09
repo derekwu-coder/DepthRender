@@ -196,7 +196,7 @@ TRANSLATIONS = {
         "nationality_missing_columns": "Nationality.csv 缺少必要欄位：{missing}",
 
         # Compare tab
-        "compare_title": "📊 雙潛水數據比較",
+        "compare_title": "📊 潛水數據比較",
         "compare_upload_a": "上傳數據 A（.fit / .uddf）",
         "compare_upload_b": "上傳數據 B（.fit / .uddf）",
         "compare_select_dive_a": "數據A 要比較的那一潛：",
@@ -204,8 +204,8 @@ TRANSLATIONS = {
         "compare_smooth_label": "速率平滑度",
         "compare_align_label": "調整數據 B 的時間偏移（秒，用來對齊兩組曲線）",
         "compare_no_data": "請先上傳並選擇兩組有效的潛水數據。",
-        "compare_depth_chart_title": "深度 vs 時間（雙曲線比較）",
-        "compare_rate_chart_title": "速率 vs 時間（雙曲線比較）",
+        "compare_depth_chart_title": "深度 vs 時間",
+        "compare_rate_chart_title": "速率 vs 時間",
         "compare_series_legend": "數據來源",
         "compare_align_current": "偏移：{offset:.1f} 秒",
         "compare_desc_rate_label": "下潛速率 (m/s)",
