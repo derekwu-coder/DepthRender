@@ -65,7 +65,23 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
-/* 手機優化 */
+/* 在手機上也保持 st.columns 左右並排，不要自動變成上下 */
+@media (max-width: 768px) {
+    /* 這個是每一組欄位的外層容器 */
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+    }
+
+    /* 每一個 column 平分寬度，避免被擠成一條 */
+    div[data-testid="column"] {
+        flex: 1 1 0 !important;
+        width: 50% !important;
+        min-width: 0 !important;
+    }
+}
+
+
 @media (max-width: 768px) {
     .app-card {
         padding: 0.8rem 0.9rem 1.1rem 0.9rem;
@@ -1330,7 +1346,7 @@ with st.container():
                 # -------------------------
                 # 14. 速率平滑視窗（圖表下面、縮小並貼最右邊）
                 # -------------------------
-                spacer_l, spacer_mid, smooth_col = st.columns([10, 1, 1])
+                spacer_l, spacer_mid, smooth_col = st.columns([14, 2, 2])
                 with smooth_col:
                     st.markdown(
                         f"<div style='text-align:right; font-size:0.85rem; margin-bottom:2px;'>"
