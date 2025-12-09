@@ -107,37 +107,26 @@ h3 {
         text-align: center !important;
     }
 
-    /* ⭐ 關鍵：讓所有 st.columns 在手機也維持左右並排（每欄 50% 寬） */
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
-        flex: 1 1 50% !important;
-        width: 50% !important;
-        min-width: 0 !important;
-    }
+/* -------------------------------------------------
+   統一控制 Streamlit 的兩欄佈局（st.columns）
+   - 不論桌機 / 手機都維持兩欄並排
+   - 每欄固定 50% 寬
+   ------------------------------------------------- */
 
+/* st.columns 外層容器：強制不要換行 */
+section.main div[data-testid="stHorizontalBlock"] {
+    display: flex !important;
+    flex-wrap: nowrap !important;        /* ⭐ 關鍵：禁止在手機自動換行 */
 }
-/* 🔧 強制 Streamlit columns 在手機端也能左右並排（v1.2 邏輯） */
-div[data-testid="stHorizontalBlock"] > div {
-    flex: 1 1 0 !important;      /* 讓兩欄各占一半的空間 */
-    max-width: 50% !important;  /* 限制欄寬不要超過 50% */
-    padding-left: 0.5rem !important;
-    padding-right: 0.5rem !important;
+
+/* 每一欄：固定 50% 寬度，左右留一點 padding */
+section.main div[data-testid="stHorizontalBlock"] > div {
+    flex: 0 0 50% !important;            /* 固定 50% */
+    max-width: 50% !important;
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+    box-sizing: border-box;
 }
-    /* ============================
-       強制 st.columns 在手機也 50% / 50%
-       （讓 A / B 的選單與數值可以左右並排）
-       ============================ */
-
-    /* Streamlit 的每一個 column 容器 */
-    div[data-testid="column"] {
-        flex: 1 1 0 !important;        /* 平均分配寬度 */
-        max-width: 50% !important;     /* 最多只吃一半 */
-        min-width: 0 !important;       /* 允許縮窄 */
-    }
-
-    /* 如果這一行只有一個欄位，就讓它吃滿整行 */
-    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:only-child {
-        max-width: 100% !important;
-    }
 
 </style>
 """
