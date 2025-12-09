@@ -113,7 +113,16 @@ h3 {
         width: 50% !important;
         min-width: 0 !important;
     }
+
 }
+/* 🔧 強制 Streamlit columns 在手機端也能左右並排（v1.2 邏輯） */
+div[data-testid="stHorizontalBlock"] > div {
+    flex: 1 1 0 !important;      /* 讓兩欄各占一半的空間 */
+    max-width: 50% !important;  /* 限制欄寬不要超過 50% */
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+}
+
 </style>
 """
 
