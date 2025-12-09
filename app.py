@@ -34,12 +34,38 @@ footer {visibility: hidden;}
 
 .main > div > div {
     max-width: 1200px;
+    width: 100%;
 }
 
-/* Sticky 頂部列 */
+/* 頂部列：品牌 + 標題區 */
 .app-top-bar {
-    padding: 0.2rem 0.6rem;
-    backdrop-filter: blur(6px);
+    padding: 0.4rem 0.2rem 0.6rem 0.2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+/* 左邊的小圖示（🌊） */
+.app-top-icon {
+    font-size: 2.2rem;
+    line-height: 2.2rem;
+}
+
+/* 第一行：產品名稱 DepthRender */
+.app-title-text {
+    font-weight: 700;
+    font-size: 2.2rem;
+    line-height: 2.4rem;
+    margin: 0;
+}
+
+/* 第二行：副標題 Dive Overlay Generator */
+.app-title-sub {
+    font-weight: 400;
+    font-size: 1.1rem;
+    line-height: 1.4rem;
+    margin: 0.1rem 0 0;
+    opacity: 0.75;
 }
 
 /* 白底卡片容器（主內容） */
@@ -50,7 +76,7 @@ footer {visibility: hidden;}
     box-shadow: 0 8px 20px rgba(15,23,42,0.10);
 }
 
-/* 深色模式下讓卡片變暗 */
+/* 深色模式下讓卡片變暗，不會有一整條白色長條 */
 @media (prefers-color-scheme: dark) {
     .app-card {
         background-color: rgba(15,23,42,0.90);
@@ -67,7 +93,6 @@ h3 {
 
 /* 手機優化 */
 @media (max-width: 768px) {
-
     .app-card {
         padding: 0.8rem 0.9rem 1.1rem 0.9rem;
         border-radius: 12px;
@@ -78,33 +103,39 @@ h3 {
         font-size: 0.95rem !important;
     }
 
-    .stButton>button,
-    .stDownloadButton>button {
+    .stButton>button {
         width: 100%;
     }
 
-    /* 讓所有 st.columns 在手機上仍保持左右並排，
-       而不是被 Streamlit 自動改成上下堆疊 */
-    div[data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        align-items: flex-start;
+    .stDownloadButton>button {
+        width: 100%;
+    }
+}
+
+/* ▶ 手機版產品標題縮小，避免斷成三行 ◀ */
+@media (max-width: 600px) {
+    .app-top-bar {
+        justify-content: center;
+        text-align: center;
     }
 
-    /* 每一個 column 只佔一半寬度（或更小），避免全部吃滿整行 */
-    div[data-testid="stHorizontalBlock"] > div {
-        flex: 1 1 0 !important;
-        min-width: 0 !important;
-        max-width: 50% !important;
+    .app-top-icon {
+        font-size: 1.8rem;
     }
 
-    /* 確保欄位裡面的元件不會再把寬度撐爆 */
-    div[data-testid="stHorizontalBlock"] > div > div {
-        max-width: 100% !important;
+    .app-title-text {
+        font-size: 1.6rem !important;
+        line-height: 1.8rem !important;
+    }
+
+    .app-title-sub {
+        font-size: 0.95rem !important;
+        line-height: 1.3rem !important;
     }
 }
 </style>
 """
+
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
@@ -310,8 +341,10 @@ def tr(key: str, **kwargs) -> str:
 def set_language():
     """讓 selectbox 改變時更新 session_state['lang']"""
     label_to_code = {v: k for k, v in LANG_OPTIONS.items()}
-    selected_label = st.session_state.get("_lang_select", LANG_OPTIONS["zh"])
+    # 🔁 這裡改成新的 key 名稱
+    selected_label = st.session_state.get("_lang_select_top", LANG_OPTIONS["zh"])
     st.session_state["lang"] = label_to_code.get(selected_label, "zh")
+
 
 # -------------------------------
 # 頂部：左邊品牌、右邊語言選單
@@ -319,16 +352,14 @@ def set_language():
 top_left, top_right = st.columns([8, 1])
 
 with top_left:
-    # 使用自訂頂部列，搭配 CSS
     st.markdown(
         f"""
         <div class="app-top-bar">
-            <span style="font-size: 2.5rem; font-weight: 700;">  
-                🌊 {tr('top_brand')}
-            </span>
-            <span style="font-size: 0.9rem; opacity: 0.7; margin-left: 0.4rem;">
-                Dive Overlay Generator
-            </span>
+            <div class="app-top-icon">🌊</div>
+            <div>
+                <div class="app-title-text">{tr('top_brand')}</div>
+                <div class="app-title-sub">Dive Overlay Generator</div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -339,7 +370,8 @@ with top_right:
     st.selectbox(
         tr("language_label"),
         options=list(LANG_OPTIONS.values()),
-        key="_lang_select",
+        # ✅ 新的 key 名稱，避免跟舊的撞在一起
+        key="_lang_select_top",
         index=list(LANG_OPTIONS.keys()).index(st.session_state["lang"]),
         on_change=set_language,
     )
@@ -651,7 +683,7 @@ with st.container():
                     dive_df = dive_df.sort_values("time_s").reset_index(drop=True)
 
                 # 重採樣 + 速率
-                df_rate = prepare_dive_curve(dive_df, smooth_window=3)
+                df_rate = prepare_dive_curve(dive_df, smooth_window=2)
                 if df_rate is not None:
                     t_min = df_rate["time_s"].min()
                     t_resample_max = df_rate["time_s"].max()
@@ -712,14 +744,13 @@ with st.container():
                                 title=tr("depth_chart_title"),
                                 height=300,
                             )
-                            .interactive()
                         )
                         st.altair_chart(depth_chart, use_container_width=True)
 
                     with col_rate:
                         rate_chart = (
                             alt.Chart(df_rate)
-                            .mark_line()
+                            .mark_line(interpolate="basis")  # 平滑曲線
                             .encode(
                                 x=alt.X(
                                     "time_s:Q",
@@ -740,7 +771,6 @@ with st.container():
                                 title=tr("rate_chart_title"),
                                 height=300,
                             )
-                            .interactive()
                         )
                         st.altair_chart(rate_chart, use_container_width=True)
 
@@ -1263,71 +1293,50 @@ with st.container():
                         x=alt.X(
                             "time_plot:Q",
                             title=tr("axis_time_seconds"),
-                            scale=alt.Scale(
-                                domain=[0, max_time_plot],
-                                nice=False,
-                                domainMin=0,   # 不往左超過 0
-                                clamp=True,    # 縮放時也不超過
-                            ),
                         ),
                         y=alt.Y(
-                            "depth_plot:Q",
+                            "depth_m:Q",
                             title=tr("axis_depth_m"),
-                            scale=alt.Scale(
-                                domain=[max_depth_plot, 0],  # 上淺下深
-                                nice=False,
-                                clamp=True,
-                            ),
+                            scale=alt.Scale(reverse=True),
                         ),
+                        # ❌ 不顯示圖例（資料來源）
                         color=alt.Color(
                             "series:N",
-                            title=tr("compare_series_legend"),
-                            legend=None,  # ❌ 深度圖不要顯示圖例
+                            legend=None
                         ),
                         tooltip=[
                             alt.Tooltip("series:N", title=tr("compare_series_legend")),
                             alt.Tooltip("time_plot:Q", title=tr("tooltip_time"), format=".1f"),
-                            alt.Tooltip("depth_plot:Q", title=tr("tooltip_depth"), format=".1f"),
+                            alt.Tooltip("depth_m:Q", title=tr("tooltip_depth"), format=".1f"),
                         ],
                     )
                     .properties(
                         title=tr("compare_depth_chart_title"),
                         height=320,
                     )
-                    .add_selection(depth_zoom)
                 )
+                st.altair_chart(depth_chart_cmp, use_container_width=True)
 
                 # -------------------------
                 # 13. 速率 vs 時間（比較）👉 保留 legend 並移到底下
                 # -------------------------
                 rate_chart_cmp = (
                     alt.Chart(rate_plot_df)
-                    .mark_line()
+                    .mark_line(interpolate="basis")
                     .encode(
                         x=alt.X(
                             "time_plot:Q",
                             title=tr("axis_time_seconds"),
-                            scale=alt.Scale(
-                                domain=[0, max_time_plot],
-                                nice=False,
-                                domainMin=0,
-                                clamp=True,
-                            ),
                         ),
                         y=alt.Y(
                             "rate_abs_mps_smooth:Q",
                             title=tr("axis_rate_mps"),
-                            scale=alt.Scale(
-                                domain=[0, max_rate_domain],
-                                nice=False,
-                                domainMin=0,  # 速率 Y 軸也鎖住 >= 0
-                                clamp=True,
-                            ),
+                            scale=alt.Scale(domain=[0, 3]),
                         ),
                         color=alt.Color(
                             "series:N",
                             title=tr("compare_series_legend"),
-                            legend=alt.Legend(orient="bottom"),  # ✅ 只有速率圖有 legend
+                            legend=alt.Legend(orient="bottom")  # ⬅️ 圖例移到圖表下方
                         ),
                         tooltip=[
                             alt.Tooltip("series:N", title=tr("compare_series_legend")),
@@ -1337,12 +1346,9 @@ with st.container():
                     )
                     .properties(
                         title=tr("compare_rate_chart_title"),
-                        height=320,
+                        height=360,   # 可以略增高度，避免圖例擠太近
                     )
-                    .add_selection(rate_zoom)
                 )
-
-                st.altair_chart(depth_chart_cmp, use_container_width=True)
                 st.altair_chart(rate_chart_cmp, use_container_width=True)
 
                 # -------------------------
