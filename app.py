@@ -23,113 +23,82 @@ st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
 # ==================================
 APP_CSS = """
 <style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-
-/* 讓內容置中並限制最大寬度 */
-.main > div {
-    display: flex;
-    justify-content: center;
-}
-.main > div > div {
-    max-width: 1200px;
+/* ===== 整體版面寬度 ===== */
+.main .block-container {
+    max-width: 900px;
+    padding-top: 1.6rem;
+    padding-bottom: 3rem;
 }
 
-/* Sticky 頂部列 */
+/* ===== 頂部品牌區 ===== */
 .app-top-bar {
-    padding: 0.2rem 0.6rem;
-    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
 }
 
-/* 產品標題：桌機版 */
+.app-top-icon {
+    font-size: 1.6rem;
+}
+
 .app-title-text {
-    font-size: 2.1rem;
+    font-size: 1.4rem;
     font-weight: 700;
-    margin: 0;
+    line-height: 1.4rem;
 }
+
 .app-title-sub {
-    font-size: 1.2rem;
-    font-weight: 400;
-    margin: 0;
+    font-size: 0.9rem;
+    opacity: 0.8;
 }
 
-/* 白底卡片容器（主內容） */
-.app-card {
-    background-color: rgba(255,255,255,0.90);
-    border-radius: 18px;
-    padding: 1rem 1.2rem 1.4rem 1.2rem;
-    box-shadow: 0 8px 20px rgba(15,23,42,0.10);
-}
-
-/* 深色模式下讓卡片變暗，不會有一整條白色長條 */
-@media (prefers-color-scheme: dark) {
-    .app-card {
-        background-color: rgba(15,23,42,0.90);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.60);
-    }
-}
-
-/* Subheader 標題（st.subheader）- 縮小一點 */
-h3 {
-    font-size: 1.05rem !important;
-    margin-top: 0.6rem;
-    margin-bottom: 0.2rem;
-}
-
-/* ✅ 手機版：調整 padding＋標題字體＋兩欄強制並排 */
-@media (max-width: 768px) {
-    .app-card {
-        padding: 0.8rem 0.9rem 1.1rem 0.9rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(15,23,42,0.15);
-    }
-
-    h3 {
-        font-size: 0.95rem !important;
-    }
-
-    .stButton>button,
-    .stDownloadButton>button {
-        width: 100%;
-    }
-
-    /* 產品標題在手機上縮小＋置中 */
+/* 手機上把標題再縮小一點，避免斷太多行 */
+@media (max-width: 600px) {
     .app-title-text {
-        font-size: 1.6rem !important;
-        line-height: 1.6rem !important;
-        text-align: center !important;
+        font-size: 1.15rem;
+        line-height: 1.2rem;
     }
     .app-title-sub {
-        font-size: 0.95rem !important;
-        text-align: center !important;
+        font-size: 0.8rem;
     }
-    .app-top-bar {
-        text-align: center !important;
-    }
-
-/* -------------------------------------------------
-   統一控制 Streamlit 的兩欄佈局（st.columns）
-   - 不論桌機 / 手機都維持兩欄並排
-   - 每欄固定 50% 寬
-   ------------------------------------------------- */
-
-/* st.columns 外層容器：強制不要換行 */
-section.main div[data-testid="stHorizontalBlock"] {
-    display: flex !important;
-    flex-wrap: nowrap !important;        /* ⭐ 關鍵：禁止在手機自動換行 */
 }
 
-/* 每一欄：固定 50% 寬度，左右留一點 padding */
-section.main div[data-testid="stHorizontalBlock"] > div {
-    flex: 0 0 50% !important;            /* 固定 50% */
+/* ===== Tabs 樣式（顏色你原本的就好，如果有別的 CSS 可以加回來） ===== */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.75rem;
+}
+
+.stTabs [data-baseweb="tab"] {
+    padding: 0.35rem 0.9rem;
+    border-radius: 999px;
+    font-size: 0.95rem;
+}
+
+/* ===== 關鍵：所有 st.columns 的水平區塊，一律兩欄各 50% ===== */
+/* 這個寫法就是 v1.2 那種「暴力固定 50%」的版本，手機 / iPad 都會並排 */
+div[data-testid="stHorizontalBlock"] {
+    gap: 0rem !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div {
+    flex: 1 1 0 !important;
+    width: 50% !important;
     max-width: 50% !important;
     padding-left: 0.4rem;
     padding-right: 0.4rem;
-    box-sizing: border-box;
 }
+
+/* 讓每一欄裡面的第一層容器吃滿欄寬（避免 widget 自己縮在中間）  */
+div[data-testid="stHorizontalBlock"] > div > div:first-child {
+    width: 100% !important;
+}
+
+/* ===== 你若還有其他客製樣式（按鈕、字型大小等等），可以繼續加在這行下面 ===== */
 
 </style>
 """
+
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
