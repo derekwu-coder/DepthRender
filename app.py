@@ -117,77 +117,42 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
-/* =====================================================
-   自訂 Tabs：膠囊樣式 + header 下方固定
-   ===================================================== */
+/* ======================================================
+   🌑 極度隱藏 Tab 背景 + pill highlight + 下方 bar
+   ====================================================== */
 
-/* Tabs 容器本身：拿掉底線與陰影，清掉背景 bar */
+/* 讓 stTabs 整塊本身不要多餘底線/陰影 */
 div[data-testid="stTabs"] {
     border-bottom: none !important;
     box-shadow: none !important;
     background: transparent !important;
 }
 
-/* 🔴 Streamlit 用來畫「移動的膠囊長條」的元件（上面那條 pill） */
-div[data-baseweb="tab-highlight"] {
-    background: transparent !important;   /* 顏色透明 → 看不到 */
-    box-shadow: none !important;         /* 陰影拿掉 */
-    border-radius: 0 !important;
-    height: 0 !important;                /* 壓扁 */
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-}
-
-/* 🔵 有些版本會另外有一條底部 bar 元件（下方細線／bar） */
-div[data-baseweb="tab-border"] {
-    background: transparent !important;   /* 顏色和背景一致 */
-    box-shadow: none !important;         /* 不要陰影 */
-    border: none !important;             /* 拿掉任何 border */
-    height: 0 !important;                /* 拉到看不到 */
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* 保險起見，把 stTabs 內所有可能的底線都淡化 */
-div[data-testid="stTabs"] {
-    border-bottom: none !important;
-    box-shadow: none !important;
-}
-
-/* 把 stTabs 內元素的下邊框顏色也調成透明，避免殘留一條灰線 */
-div[data-testid="stTabs"] * {
-    border-bottom-color: transparent !important;
-}
-
-/* Tabs 上下距離再壓縮一點，讓 bar 和上下文字靠近一些，不那麼「懸空」 */
-div[data-testid="stTabs"] + div {
-    margin-top: 0.1rem !important;  /* tab 下方第一個內容區塊的上邊距 */
-}
-
-
-/* Tabs 外層 tablist：固定在 header 底下，並加一條和背景同色的底條 */
+/* Tabs 的 tablist：上面那條長條所在的區域 */
 div[data-testid="stTabs"] div[role="tablist"] {
-    position: fixed;             
-    top: 56px;                   
+    position: fixed;
+    top: 56px;  /* 仍然固定在 header 下方 */
     left: 0;
     right: 0;
     z-index: 90;
-    padding: 0.20rem 0.6rem 0.25rem 0.6rem;  /* 稍微壓縮上下 padding，讓上下距離更近 */
-    margin: 0;
-    background: rgba(255,255,255,0.98) !important;  /* 近似白色，和主背景融合 */
+
+    padding: 0.15rem 0.4rem 0.20rem 0.4rem !important;
+    margin-bottom: 0 !important;
+
+    /* 亮色模式下，融入亮色背景 */
+    background: #f8fafc !important;
     border-bottom: none !important;
     box-shadow: none !important;
 }
 
-/* 深色模式下，改成跟 Streamlit 深色背景更接近的顏色 */
+/* 深色模式：改成你量到的背景色 #0C0F15 */
 @media (prefers-color-scheme: dark) {
     div[data-testid="stTabs"] div[role="tablist"] {
-        background: #0e1117 !important;  /* 接近 Streamlit dark theme 背景色 */
+        background: #0C0F15 !important;
     }
 }
 
-/* 再保險把 tablist 上下可能的裝飾線全部拔掉 */
+/* 移除 tablist 可能附加的裝飾 bar（避免多一層亮條）*/
 div[data-testid="stTabs"] div[role="tablist"]::before,
 div[data-testid="stTabs"] div[role="tablist"]::after {
     content: none !important;
@@ -196,69 +161,50 @@ div[data-testid="stTabs"] div[role="tablist"]::after {
     box-shadow: none !important;
 }
 
-/* 一般（淺色模式）下的膠囊 tab 樣式 */
-div[data-testid="stTabs"] button[role="tab"] {
-    border-radius: 999px !important;        
-    padding: 0.20rem 0.75rem !important;    /* 縮小 padding，騰出空間 */
-    margin-right: 0.35rem !important;
-    border: 1px solid rgba(148,163,184,0.7) !important;  
-    background-color: #f3f4f6 !important;   
-    color: #111827 !important;              
-    font-size: 0.82rem !important;          /* 字體縮小一級 */
-    font-weight: 500 !important;
+/* 👉 這個就是那條會動的 pill / highlight bar */
+div[data-baseweb="tab-highlight"] {
+    /* 讓它顏色跟背景一樣，等於融掉 */
+    background: #f8fafc !important;
     box-shadow: none !important;
-    outline: none !important;
-}
-
-/* 取消 Streamlit 原本的底線 / 紅線效果（不論選取與否） */
-div[data-testid="stTabs"] button[role="tab"]::after {
-    content: none !important;
     border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
+    height: 0.10rem !important;
 }
 
-/* 再把可能的下邊框顏色也歸零，避免紅線 */
-div[data-testid="stTabs"] button[role="tab"] {
-    border-bottom-width: 1px !important;
-    border-bottom-color: rgba(148,163,184,0.7) !important;
-}
-
-/* 被選中的 tab（淺色模式）：淡藍色膠囊（恢復你原本的設定） */
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-    background-color: #dbeafe !important;    /* light blue */
-    border-color: #38bdf8 !important;        /* cyan-ish */
-    border-bottom-color: #38bdf8 !important;
-    color: #0f172a !important;               /* slate-900 */
-    box-shadow: none !important;
-}
-
-/* 深色模式下 tabs 的顏色配置 */
+/* 深色模式下，把 pill 顏色也改成 #0C0F15，直接消失在背景裡 */
 @media (prefers-color-scheme: dark) {
-
-    /* tablist 在深色模式底條改成深色，避免下面內容被「吃掉」時有對比 */
-    div[data-testid="stTabs"] div[role="tablist"] {
-        background: rgba(15,23,42,0.98) !important;
-    }
-
-    /* 未選取：深灰膠囊 */
-    div[data-testid="stTabs"] button[role="tab"] {
-        background-color: #111827 !important;      
-        border-color: rgba(55,65,81,0.9) !important;
-        border-bottom-color: rgba(55,65,81,0.9) !important;
-        color: #e5e7eb !important;                 
-        font-size: 0.80rem !important;             /* 深色模式字體也小一點 */
-    }
-
-    /* 已選取：淡藍膠囊（不是白色） */
-    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-        background-color: #0ea5e9 !important;      /* cyan-500 稍微亮一點的藍 */
-        border-color: #0ea5e9 !important;
-        border-bottom-color: #0ea5e9 !important;
-        color: #0b1120 !important;                 /* slate-950，深藍底上的深字色 */
-        box-shadow: none !important;
+    div[data-baseweb="tab-highlight"] {
+        background: #0C0F15 !important;
     }
 }
+
+/* 這個通常是 Tabs 底部那條長 bar，用同色把它「蓋掉」 */
+div[data-baseweb="tab-border"] {
+    background: #f8fafc !important;
+    box-shadow: none !important;
+    border: none !important;
+    height: 0.10rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* 深色模式下，底部 bar 也改成 #0C0F15 */
+@media (prefers-color-scheme: dark) {
+    div[data-baseweb="tab-border"] {
+        background: #0C0F15 !important;
+    }
+}
+
+/* 再補一刀：所有可能的底線邊框直接透明，避免殘留灰線 */
+div[data-testid="stTabs"] * {
+    border-color: transparent !important;
+    border-bottom-color: transparent !important;
+}
+
+/* Tabs 底部與內文的距離再微縮一點，看起來更緊貼 */
+div[data-testid="stTabs"] + div {
+    margin-top: 0.20rem !important;
+}
+
 
 /* ======================================================
    🌟 手機優化區（以下 100% 保證效果正確） 
@@ -1332,13 +1278,6 @@ with st.container():
     # Tab 2：潛水數據比較功能
     # ============================
     with tab_compare:
-        st.markdown(
-            f"<h2 style='font-size:1.4rem; margin-top:0.5rem; "
-            f"margin-bottom:0.8rem; font-weight:600;'>"
-            f"{tr('compare_title')}"
-            f"</h2>",
-            unsafe_allow_html=True,
-        )
     
         # -------------------------
         # 1. 上傳 A / B（手機上並排）
