@@ -136,14 +136,13 @@ div[data-testid="stTabs"] div[role="tablist"] {
     right: 0;
     z-index: 90;
 
-    padding: 0.15rem 0.4rem 0.20rem 0.4rem !important;
+    padding: 0 0.4rem 0.20rem 0.4rem !important;
     margin-bottom: 0 !important;
 
     background: #f8fafc !important;
     border-bottom: none !important;
     box-shadow: none !important;
 }
-
 
 /* 深色模式：改成你實際量到的 #0E1117 */
 @media (prefers-color-scheme: dark) {
@@ -161,8 +160,9 @@ div[data-testid="stTabs"] div[role="tablist"]::after {
     box-shadow: none !important;
 }
 
-/* 👉 移動中的 pill / highlight 完全隱藏 */
+/* 👉 移動中的 pill / highlight：直接關掉整個元素 */
 div[data-baseweb="tab-highlight"] {
+    display: none !important;          /* 最直接：整條不畫 */
     background: transparent !important;
     box-shadow: none !important;
     border: none !important;
@@ -170,9 +170,10 @@ div[data-baseweb="tab-highlight"] {
     opacity: 0 !important;
 }
 
-/* 深色模式一樣維持隱藏（保險用）*/
+/* 深色模式保險再蓋一次 */
 @media (prefers-color-scheme: dark) {
     div[data-baseweb="tab-highlight"] {
+        display: none !important;
         background: transparent !important;
         opacity: 0 !important;
     }
