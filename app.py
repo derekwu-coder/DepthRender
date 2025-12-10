@@ -118,7 +118,7 @@ h3 {
 }
 
 /* ======================================================
-   🌑 極度隱藏 Tab 背景 + pill highlight + 下方 bar
+   🌑 Tabs 外觀：背景融入 + 保留膠囊造型
    ====================================================== */
 
 /* 讓 stTabs 整塊本身不要多餘底線/陰影 */
@@ -131,7 +131,7 @@ div[data-testid="stTabs"] {
 /* Tabs 的 tablist：上面那條長條所在的區域 */
 div[data-testid="stTabs"] div[role="tablist"] {
     position: fixed;
-    top: 56px;  /* 仍然固定在 header 下方 */
+    top: 56px;  /* 固定在 header 下方 */
     left: 0;
     right: 0;
     z-index: 90;
@@ -139,16 +139,16 @@ div[data-testid="stTabs"] div[role="tablist"] {
     padding: 0.15rem 0.4rem 0.20rem 0.4rem !important;
     margin-bottom: 0 !important;
 
-    /* 亮色模式下，融入亮色背景 */
+    /* 亮色模式：貼近 Streamlit 淺色背景 */
     background: #f8fafc !important;
     border-bottom: none !important;
     box-shadow: none !important;
 }
 
-/* 深色模式：改成你量到的背景色 #0C0F15 */
+/* 深色模式：改成你實際量到的 #0E1117 */
 @media (prefers-color-scheme: dark) {
     div[data-testid="stTabs"] div[role="tablist"] {
-        background: #0C0F15 !important;
+        background: #0E1117 !important;
     }
 }
 
@@ -161,19 +161,18 @@ div[data-testid="stTabs"] div[role="tablist"]::after {
     box-shadow: none !important;
 }
 
-/* 👉 這個就是那條會動的 pill / highlight bar */
+/* 👉 這個就是會滑動的 pill / highlight bar：用背景色把它「融掉」 */
 div[data-baseweb="tab-highlight"] {
-    /* 讓它顏色跟背景一樣，等於融掉 */
-    background: #f8fafc !important;
+    background: #f8fafc !important;  /* 淺色模式同背景 */
     box-shadow: none !important;
     border: none !important;
     height: 0.10rem !important;
 }
 
-/* 深色模式下，把 pill 顏色也改成 #0C0F15，直接消失在背景裡 */
+/* 深色模式下，把 pill 顏色也改成 #0E1117，直接消失在背景裡 */
 @media (prefers-color-scheme: dark) {
     div[data-baseweb="tab-highlight"] {
-        background: #0C0F15 !important;
+        background: #0E1117 !important;
     }
 }
 
@@ -187,24 +186,63 @@ div[data-baseweb="tab-border"] {
     padding: 0 !important;
 }
 
-/* 深色模式下，底部 bar 也改成 #0C0F15 */
+/* 深色模式下，底部 bar 也改成 #0E1117（跟背景完全融在一起） */
 @media (prefers-color-scheme: dark) {
     div[data-baseweb="tab-border"] {
-        background: #0C0F15 !important;
+        background: #0E1117 !important;
     }
 }
 
-/* 再補一刀：所有可能的底線邊框直接透明，避免殘留灰線 */
-div[data-testid="stTabs"] * {
-    border-color: transparent !important;
-    border-bottom-color: transparent !important;
+/* ⭐ 真正的膠囊 tab 按鈕樣式（這一段是你現在少掉的，所以膠囊會消失） */
+div[data-testid="stTabs"] button[role="tab"] {
+    border-radius: 999px !important;        /* 膠囊形狀 */
+    padding: 0.25rem 0.9rem !important;
+    margin-right: 0.45rem !important;
+    border: 1px solid rgba(148,163,184,0.7) !important;  /* gray-ish 邊框 */
+    background-color: #f3f4f6 !important;   /* 淺灰 */
+    color: #111827 !important;              /* 深字 */
+    font-size: 0.88rem !important;          /* 稍微小一點，手機不會太霸佔 */
+    font-weight: 500 !important;
+    box-shadow: none !important;
 }
 
-/* Tabs 底部與內文的距離再微縮一點，看起來更緊貼 */
+/* 取消 Streamlit 原本的 underline */
+div[data-testid="stTabs"] button[role="tab"]::after {
+    content: none !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+/* 被選中的 tab（淺色模式）：淡藍色膠囊 */
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+    background-color: #dbeafe !important;    /* light blue */
+    border-color: #38bdf8 !important;        /* cyan-ish */
+    color: #0f172a !important;               /* slate-900 */
+}
+
+/* 深色模式下 tabs 的顏色配置 */
+@media (prefers-color-scheme: dark) {
+
+    /* 未選取：深灰膠囊 */
+    div[data-testid="stTabs"] button[role="tab"] {
+        background-color: #111827 !important;
+        border-color: rgba(55,65,81,0.9) !important;
+        color: #e5e7eb !important;
+    }
+
+    /* 已選取：稍亮一點的藍灰膠囊 */
+    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+        background-color: #1f2937 !important;   /* 深藍灰 */
+        border-color: #38bdf8 !important;
+        color: #e5f2ff !important;
+    }
+}
+
+/* Tabs 底部與內文的距離再縮一點 */
 div[data-testid="stTabs"] + div {
     margin-top: 0.20rem !important;
 }
-
 
 /* ======================================================
    🌟 手機優化區（以下 100% 保證效果正確） 
