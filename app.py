@@ -716,7 +716,7 @@ with st.container():
                     df_sorted = dive_df.sort_values("time_s").reset_index(drop=True)
                     start_rows = df_sorted[df_sorted["depth_m"] >= 0.7]
                     if not start_rows.empty:
-                        t_start = start_rows["time_s"].iloc[0]
+                        t_start = df_sorted.loc[start_rows.index[0], "time_s"]
                         after = df_sorted[df_sorted["time_s"] >= t_start]
                         end_candidates = after[after["depth_m"] <= 0.05]
 
@@ -734,64 +734,62 @@ with st.container():
                         ss = int(round(dive_time_s % 60))
                         st.info(tr("dive_time_detected", mm=mm, ss=ss))
 
-                    # 3️⃣ 左右並排圖表
+                    # 3️⃣ 潛水曲線預覽：改成「上下兩張圖」
                     st.subheader(tr("preview_subheader"))
 
-                    col_depth, col_rate = st.columns(2)
-
-                    with col_depth:
-                        depth_chart = (
-                            alt.Chart(df_rate)
-                            .mark_line()
-                            .encode(
-                                x=alt.X(
-                                    "time_s:Q",
-                                    title=tr("axis_time_seconds"),
-                                    scale=alt.Scale(domain=[t_min, max_display_time]),
-                                ),
-                                y=alt.Y(
-                                    "depth_m:Q",
-                                    title=tr("axis_depth_m"),
-                                    scale=alt.Scale(reverse=True),
-                                ),
-                                tooltip=[
-                                    alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
-                                    alt.Tooltip("depth_m:Q", title=tr("tooltip_depth"), format=".1f"),
-                                ],
-                            )
-                            .properties(
-                                title=tr("depth_chart_title"),
-                                height=300,
-                            )
+                    # 深度 vs 時間
+                    depth_chart = (
+                        alt.Chart(df_rate)
+                        .mark_line()
+                        .encode(
+                            x=alt.X(
+                                "time_s:Q",
+                                title=tr("axis_time_seconds"),
+                                scale=alt.Scale(domain=[t_min, max_display_time]),
+                            ),
+                            y=alt.Y(
+                                "depth_m:Q",
+                                title=tr("axis_depth_m"),
+                                scale=alt.Scale(reverse=True),
+                            ),
+                            tooltip=[
+                                alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
+                                alt.Tooltip("depth_m:Q", title=tr("tooltip_depth"), format=".1f"),
+                            ],
                         )
-                        st.altair_chart(depth_chart, use_container_width=True)
-
-                    with col_rate:
-                        rate_chart = (
-                            alt.Chart(df_rate)
-                            .mark_line(interpolate="basis")  # 平滑曲線
-                            .encode(
-                                x=alt.X(
-                                    "time_s:Q",
-                                    title=tr("axis_time_seconds"),
-                                    scale=alt.Scale(domain=[t_min, max_display_time]),
-                                ),
-                                y=alt.Y(
-                                    "rate_abs_mps_smooth:Q",
-                                    title=tr("axis_rate_mps"),
-                                    scale=alt.Scale(domain=[0, 3]),
-                                ),
-                                tooltip=[
-                                    alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
-                                    alt.Tooltip("rate_abs_mps_smooth:Q", title=tr("tooltip_rate"), format=".2f"),
-                                ],
-                            )
-                            .properties(
-                                title=tr("rate_chart_title"),
-                                height=300,
-                            )
+                        .properties(
+                            title=tr("depth_chart_title"),
+                            height=300,
                         )
-                        st.altair_chart(rate_chart, use_container_width=True)
+                    )
+                    st.altair_chart(depth_chart, use_container_width=True)
+
+                    # 速率 vs 時間（平滑曲線）
+                    rate_chart = (
+                        alt.Chart(df_rate)
+                        .mark_line(interpolate="basis")
+                        .encode(
+                            x=alt.X(
+                                "time_s:Q",
+                                title=tr("axis_time_seconds"),
+                                scale=alt.Scale(domain=[t_min, max_display_time]),
+                            ),
+                            y=alt.Y(
+                                "rate_abs_mps_smooth:Q",
+                                title=tr("axis_rate_mps"),
+                                scale=alt.Scale(domain=[0, 3]),
+                            ),
+                            tooltip=[
+                                alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
+                                alt.Tooltip("rate_abs_mps_smooth:Q", title=tr("tooltip_rate"), format=".2f"),
+                            ],
+                        )
+                        .properties(
+                            title=tr("rate_chart_title"),
+                            height=300,
+                        )
+                    )
+                    st.altair_chart(rate_chart, use_container_width=True)
 
                     st.caption(
                         tr(
@@ -802,6 +800,7 @@ with st.container():
                             max_depth=df_rate["depth_m"].max(),
                         )
                     )
+
 
         # --- 4. 設定時間偏移 & 版型選擇 ---
         st.subheader(tr("align_layout_subheader"))
