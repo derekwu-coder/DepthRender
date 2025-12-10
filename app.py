@@ -36,20 +36,27 @@ footer {visibility: hidden;}
     max-width: 1200px;
 }
 
-/* ===== 頂部品牌列：包成一個 sticky header ===== */
+/* ===== 主內容往下推一點，騰出 header 空間 ===== */
+.block-container {
+    padding-top: 80px;   /* 可以視覺再微調，例如 72~90px */
+}
+
+/* ===== 頂部品牌列：包成一個 fixed header ===== */
 .app-header-row {
-    position: sticky;
+    position: fixed;         /* 原本是 sticky，改成 fixed 綁在視窗 */
     top: 0;
-    z-index: 50;
+    left: 0;
+    right: 0;
+    z-index: 100;
     padding: 0.25rem 0.1rem 0.35rem 0.1rem;
     backdrop-filter: blur(10px);
-    background: rgba(248,250,252,0.90);  /* 淺色模式淡底 */
+    background: rgba(248,250,252,0.96);  /* 淺色模式淡底 */
 }
 
 /* 深色模式下 header 背景 */
 @media (prefers-color-scheme: dark) {
     .app-header-row {
-        background: rgba(15,23,42,0.96);
+        background: rgba(15,23,42,0.98);
     }
 }
 
@@ -114,15 +121,33 @@ h3 {
    自訂 Tabs：膠囊樣式 + header 下方固定
    ===================================================== */
 
-/* Tabs 外層 tablist：貼在 header 底下、移除底線與背景 bar */
-div[data-testid="stTabs"] > div[role="tablist"] {
-    position: sticky;
-    top: 64px;                     /* 約略等於 header 高度，可視覺再微調 */
-    z-index: 40;
-    padding: 0.2rem 0.1rem 0.4rem 0.1rem;
-    margin-bottom: 0.6rem;
+/* Tabs 容器本身：拿掉底線與陰影，清掉背景 bar */
+div[data-testid="stTabs"] {
+    border-bottom: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+/* Tabs 外層 tablist：固定在 header 底下 */
+div[data-testid="stTabs"] div[role="tablist"] {
+    position: fixed;             /* 固定在視窗，而不是 sticky */
+    top: 56px;                   /* header 底下，視覺可以再調 52~64px */
+    left: 0;
+    right: 0;
+    z-index: 90;
+    padding: 0.2rem 0.6rem 0.35rem 0.6rem;
+    margin-bottom: 0;            /* 固定時不用底下空間 */
     background: transparent !important;
     border-bottom: none !important;
+    box-shadow: none !important;
+}
+
+/* 移除 tablist 可能附加的上方/下方裝飾 bar */
+div[data-testid="stTabs"] div[role="tablist"]::before,
+div[data-testid="stTabs"] div[role="tablist"]::after {
+    content: none !important;
+    border: none !important;
+    background: transparent !important;
     box-shadow: none !important;
 }
 
@@ -141,6 +166,7 @@ div[data-testid="stTabs"] button[role="tab"] {
 
 /* 取消 Streamlit 原本的底線效果（不論選取與否） */
 div[data-testid="stTabs"] button[role="tab"]::after {
+    content: none !important;
     border: none !important;
     background: transparent !important;
     box-shadow: none !important;
@@ -169,10 +195,8 @@ div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
     }
 
     /* 已選取：淡藍膠囊 */
-    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-        background-color: #0ea5e9 !important;      /* cyan-500 */
-        border-color: #0ea5e9 !important;
-        color: #0b1120 !important;                 /* slate-950 */
+    div[data-testid="stTabs"] div[role="tablist"] {
+        background: transparent !important;
     }
 }
 
