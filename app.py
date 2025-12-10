@@ -257,6 +257,16 @@ TRANSLATIONS = {
         "compare_ff_rate_label": "Free Fall 速率 (m/s)",
         "compare_metric_unit_mps": "{value:.2f} m/s",
         "compare_metric_not_available": "—",
+        
+        # Overlay rate analysis (單一潛水速率分析)
+        "overlay_rate_section_title": "潛水速率分析",
+        "overlay_ff_depth_label": "FF 開始深度 (m)",
+        "overlay_desc_rate_label": "下潛速率 (m/s)",
+        "overlay_asc_rate_label": "上升速率 (m/s)",
+        "overlay_ff_rate_label": "Free Fall 速率 (m/s)",
+        "overlay_metric_unit_mps": "{value:.2f} m/s",
+        "overlay_metric_not_available": "—",
+
     },
     "en": {
         "app_title": "Dive Overlay Generator",
@@ -343,6 +353,16 @@ TRANSLATIONS = {
         "compare_ff_rate_label": "Free-fall Descent Rate (m/s)",
         "compare_metric_unit_mps": "{value:.2f} m/s",
         "compare_metric_not_available": "—",
+        
+        # Overlay rate analysis (single-dive metrics)
+        "overlay_rate_section_title": "Dive speed metrics",
+        "overlay_ff_depth_label": "FF start depth (m)",
+        "overlay_desc_rate_label": "Descent speed (m/s)",
+        "overlay_asc_rate_label": "Ascent speed (m/s)",
+        "overlay_ff_rate_label": "Free-fall speed (m/s)",
+        "overlay_metric_unit_mps": "{value:.2f} m/s",
+        "overlay_metric_not_available": "—",
+
     },
 }
 
@@ -675,7 +695,7 @@ with st.container():
                 st.info(tr("uddf_detected"))
                 dive_df = parse_atmos_uddf(BytesIO(watch_file.read()))
 
-        # --- 3. 顯示時間–深度曲線供確認 ---
+        # --- 3. 顯示時間–深度曲線供確認 + 速率分析 ---
         if dive_df is not None:
             if len(dive_df) == 0:
                 st.warning(tr("no_depth_samples"))
@@ -701,7 +721,7 @@ with st.container():
                     )
                     dive_df = dive_df.sort_values("time_s").reset_index(drop=True)
 
-                # 重採樣 + 速率
+                # 重採樣 + 速率（2 秒平滑，和比較頁一致）
                 df_rate = prepare_dive_curve(dive_df, smooth_window=2)
                 if df_rate is not None:
                     t_min = df_rate["time_s"].min()
@@ -716,7 +736,7 @@ with st.container():
                     df_sorted = dive_df.sort_values("time_s").reset_index(drop=True)
                     start_rows = df_sorted[df_sorted["depth_m"] >= 0.7]
                     if not start_rows.empty:
-                        t_start = df_sorted.loc[start_rows.index[0], "time_s"]
+                        t_start = start_rows["time_s"].iloc[0]
                         after = df_sorted[df_sorted["time_s"] >= t_start]
                         end_candidates = after[after["depth_m"] <= 0.05]
 
@@ -734,62 +754,64 @@ with st.container():
                         ss = int(round(dive_time_s % 60))
                         st.info(tr("dive_time_detected", mm=mm, ss=ss))
 
-                    # 3️⃣ 潛水曲線預覽：改成「上下兩張圖」
+                    # 3️⃣ 左右並排圖表
                     st.subheader(tr("preview_subheader"))
 
-                    # 深度 vs 時間
-                    depth_chart = (
-                        alt.Chart(df_rate)
-                        .mark_line()
-                        .encode(
-                            x=alt.X(
-                                "time_s:Q",
-                                title=tr("axis_time_seconds"),
-                                scale=alt.Scale(domain=[t_min, max_display_time]),
-                            ),
-                            y=alt.Y(
-                                "depth_m:Q",
-                                title=tr("axis_depth_m"),
-                                scale=alt.Scale(reverse=True),
-                            ),
-                            tooltip=[
-                                alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
-                                alt.Tooltip("depth_m:Q", title=tr("tooltip_depth"), format=".1f"),
-                            ],
-                        )
-                        .properties(
-                            title=tr("depth_chart_title"),
-                            height=300,
-                        )
-                    )
-                    st.altair_chart(depth_chart, use_container_width=True)
+                    col_depth, col_rate = st.columns(2)
 
-                    # 速率 vs 時間（平滑曲線）
-                    rate_chart = (
-                        alt.Chart(df_rate)
-                        .mark_line(interpolate="basis")
-                        .encode(
-                            x=alt.X(
-                                "time_s:Q",
-                                title=tr("axis_time_seconds"),
-                                scale=alt.Scale(domain=[t_min, max_display_time]),
-                            ),
-                            y=alt.Y(
-                                "rate_abs_mps_smooth:Q",
-                                title=tr("axis_rate_mps"),
-                                scale=alt.Scale(domain=[0, 3]),
-                            ),
-                            tooltip=[
-                                alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
-                                alt.Tooltip("rate_abs_mps_smooth:Q", title=tr("tooltip_rate"), format=".2f"),
-                            ],
+                    with col_depth:
+                        depth_chart = (
+                            alt.Chart(df_rate)
+                            .mark_line()
+                            .encode(
+                                x=alt.X(
+                                    "time_s:Q",
+                                    title=tr("axis_time_seconds"),
+                                    scale=alt.Scale(domain=[t_min, max_display_time]),
+                                ),
+                                y=alt.Y(
+                                    "depth_m:Q",
+                                    title=tr("axis_depth_m"),
+                                    scale=alt.Scale(reverse=True),
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
+                                    alt.Tooltip("depth_m:Q", title=tr("tooltip_depth"), format=".1f"),
+                                ],
+                            )
+                            .properties(
+                                title=tr("depth_chart_title"),
+                                height=300,
+                            )
                         )
-                        .properties(
-                            title=tr("rate_chart_title"),
-                            height=300,
+                        st.altair_chart(depth_chart, use_container_width=True)
+
+                    with col_rate:
+                        rate_chart = (
+                            alt.Chart(df_rate)
+                            .mark_line(interpolate="basis")  # 平滑曲線
+                            .encode(
+                                x=alt.X(
+                                    "time_s:Q",
+                                    title=tr("axis_time_seconds"),
+                                    scale=alt.Scale(domain=[t_min, max_display_time]),
+                                ),
+                                y=alt.Y(
+                                    "rate_abs_mps_smooth:Q",
+                                    title=tr("axis_rate_mps"),
+                                    scale=alt.Scale(domain=[0, 3]),
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
+                                    alt.Tooltip("rate_abs_mps_smooth:Q", title=tr("tooltip_rate"), format=".2f"),
+                                ],
+                            )
+                            .properties(
+                                title=tr("rate_chart_title"),
+                                height=300,
+                            )
                         )
-                    )
-                    st.altair_chart(rate_chart, use_container_width=True)
+                        st.altair_chart(rate_chart, use_container_width=True)
 
                     st.caption(
                         tr(
@@ -801,6 +823,63 @@ with st.container():
                         )
                     )
 
+                    # ==========================
+                    # 🌊 新增：潛水速率分析區塊
+                    # ==========================
+                    st.subheader(tr("overlay_rate_section_title"))
+
+                    # 取得本潛水最大深度，設定 FF 起始深度輸入
+                    max_depth_overlay = float(df_rate["depth_m"].max())
+                    ff_start_overlay = st.number_input(
+                        tr("overlay_ff_depth_label"),
+                        min_value=0.0,
+                        max_value=max_depth_overlay,
+                        step=1.0,
+                        value=min(15.0, max_depth_overlay),
+                        key="overlay_ff_depth",
+                    )
+
+                    # 使用與比較頁面相同的計算公式
+                    metrics_overlay = compute_dive_metrics(
+                        df_rate=df_rate,
+                        dive_df_raw=dive_df,
+                        ff_start_depth_m=ff_start_overlay,
+                    )
+
+                    def fmt_mps_overlay(value: Optional[float]) -> str:
+                        if value is None or np.isnan(value):
+                            return tr("overlay_metric_not_available")
+                        return tr("overlay_metric_unit_mps", value=round(value, 2))
+
+                    def render_metric_block_overlay(title: str, value: Optional[float]):
+                        value_str = fmt_mps_overlay(value)
+                        st.markdown(
+                            f"""
+                            <div style="margin-bottom:6px;">
+                                <div style="font-weight:700; font-size:1.05rem; margin-top:0; margin-bottom:0;">
+                                    {title}
+                                </div>
+                                <div style="font-size:0.95rem; margin-top:0; margin-bottom:0.1rem;">
+                                    {value_str}
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                    # 單欄佔滿手機寬度顯示三個指標
+                    render_metric_block_overlay(
+                        tr("overlay_desc_rate_label"),
+                        metrics_overlay["descent_avg"],
+                    )
+                    render_metric_block_overlay(
+                        tr("overlay_asc_rate_label"),
+                        metrics_overlay["ascent_avg"],
+                    )
+                    render_metric_block_overlay(
+                        tr("overlay_ff_rate_label"),
+                        metrics_overlay["ff_avg"],
+                    )
 
         # --- 4. 設定時間偏移 & 版型選擇 ---
         st.subheader(tr("align_layout_subheader"))
