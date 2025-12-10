@@ -36,12 +36,29 @@ footer {visibility: hidden;}
     max-width: 1200px;
 }
 
-/* ===== 頂部品牌列 ===== */
+/* ===== 頂部品牌列：包成一個 sticky header ===== */
+.app-header-row {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 0.25rem 0.1rem 0.35rem 0.1rem;
+    backdrop-filter: blur(10px);
+    background: rgba(248,250,252,0.90);  /* 淺色模式淡底 */
+}
+
+/* 深色模式下 header 背景 */
+@media (prefers-color-scheme: dark) {
+    .app-header-row {
+        background: rgba(15,23,42,0.96);
+    }
+}
+
+/* 內層品牌列內容 */
 .app-top-bar {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.2rem 0.6rem 0.6rem;
+    padding: 0.2rem 0.6rem 0.4rem;
 }
 
 .app-top-icon {
@@ -91,6 +108,72 @@ h3 {
     font-size: 1.05rem !important;
     margin-top: 0.6rem;
     margin-bottom: 0.2rem;
+}
+
+/* =====================================================
+   自訂 Tabs：膠囊樣式 + header 下方固定
+   ===================================================== */
+
+/* Tabs 外層 tablist：貼在 header 底下、移除底線與背景 bar */
+div[data-testid="stTabs"] > div[role="tablist"] {
+    position: sticky;
+    top: 64px;                     /* 約略等於 header 高度，可視覺再微調 */
+    z-index: 40;
+    padding: 0.2rem 0.1rem 0.4rem 0.1rem;
+    margin-bottom: 0.6rem;
+    background: transparent !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+}
+
+/* 一般（淺色模式）下的膠囊 tab 樣式 */
+div[data-testid="stTabs"] button[role="tab"] {
+    border-radius: 999px !important;        /* 膠囊形狀 */
+    padding: 0.25rem 1.0rem !important;
+    margin-right: 0.45rem !important;
+    border: 1px solid rgba(148,163,184,0.7) !important;  /* gray-400-ish */
+    background-color: #f3f4f6 !important;   /* gray-100 */
+    color: #111827 !important;              /* gray-900 */
+    font-size: 0.92rem !important;
+    font-weight: 500 !important;
+    box-shadow: none !important;
+}
+
+/* 取消 Streamlit 原本的底線效果（不論選取與否） */
+div[data-testid="stTabs"] button[role="tab"]::after {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+/* 被選中的 tab（淺色模式）：淡藍色 */
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+    background-color: #dbeafe !important;    /* light blue */
+    border-color: #38bdf8 !important;        /* cyan-ish */
+    color: #0f172a !important;               /* slate-900 */
+}
+
+/* 深色模式下 tabs 的顏色配置 */
+@media (prefers-color-scheme: dark) {
+
+    /* tablist 在深色模式也不再加長條背景，只保留透明底 */
+    div[data-testid="stTabs"] > div[role="tablist"] {
+        background: transparent !important;
+    }
+
+    /* 未選取：深灰膠囊 */
+    div[data-testid="stTabs"] button[role="tab"] {
+        background-color: #111827 !important;      /* slate-900 */
+        border-color: rgba(55,65,81,0.9) !important;  /* slate-700 */
+        color: #e5e7eb !important;                 /* gray-200 */
+    }
+
+    /* 已選取：淡藍膠囊 */
+    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+        background-color: #0ea5e9 !important;      /* cyan-500 */
+        border-color: #0ea5e9 !important;
+        color: #0b1120 !important;                 /* slate-950 */
+    }
 }
 
 /* ======================================================
@@ -403,10 +486,11 @@ def set_language():
     selected_label = st.session_state.get("_lang_select_top", LANG_OPTIONS["zh"])
     st.session_state["lang"] = label_to_code.get(selected_label, "zh")
 
+# -------------------------------
+# 頂部：左邊品牌、右邊語言選單（整排 sticky）
+# -------------------------------
+st.markdown("<div class='app-header-row'>", unsafe_allow_html=True)
 
-# -------------------------------
-# 頂部：左邊品牌、右邊語言選單
-# -------------------------------
 top_left, top_right = st.columns([8, 1])
 
 with top_left:
@@ -428,11 +512,12 @@ with top_right:
     st.selectbox(
         tr("language_label"),
         options=list(LANG_OPTIONS.values()),
-        # ✅ 新的 key 名稱，避免跟舊的撞在一起
         key="_lang_select_top",
         index=list(LANG_OPTIONS.keys()).index(st.session_state["lang"]),
         on_change=set_language,
     )
+
+st.markdown("</div>", unsafe_allow_html=True)
 
 # 讀取國籍 / 國碼清單
 @st.cache_data
