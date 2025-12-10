@@ -136,13 +136,14 @@ div[data-testid="stTabs"] div[role="tablist"] {
     right: 0;
     z-index: 90;
 
-    padding: 0 0.4rem 0.20rem 0.4rem !important;
+    padding: 0rem 0.4rem 0.20rem 0.4rem !important;
     margin-bottom: 0 !important;
 
     background: #f8fafc !important;
     border-bottom: none !important;
     box-shadow: none !important;
 }
+
 
 /* 深色模式：改成你實際量到的 #0E1117 */
 @media (prefers-color-scheme: dark) {
