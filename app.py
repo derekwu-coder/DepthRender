@@ -38,7 +38,7 @@ footer {visibility: hidden;}
 
 /* ===== 主內容往下推一點，騰出 header 空間 ===== */
 .block-container {
-    padding-top: 80px;   /* 可以視覺再微調，例如 72~90px */
+    padding-top: 112px;   /* header + tabs 的總高度，大約 100~120 之間自己可以微調 */
 }
 
 /* ===== 頂部品牌列：包成一個 fixed header ===== */
@@ -128,21 +128,29 @@ div[data-testid="stTabs"] {
     background: transparent !important;
 }
 
-/* Tabs 外層 tablist：固定在 header 底下 */
+/* 🔴 Streamlit 用來畫「移動的膠囊長條」的元件（你看到那條有陰影、兩頭圓的 bar） */
+div[data-baseweb="tab-highlight"] {
+    background: transparent !important;   /* 直接隱藏顏色 */
+    box-shadow: none !important;         /* 移除陰影效果 */
+    border-radius: 0 !important;         /* 不要圓角 */
+    height: 0 !important;                /* 壓扁 */
+}
+
+/* Tabs 外層 tablist：固定在 header 底下，並加一條和背景同色的底條 */
 div[data-testid="stTabs"] div[role="tablist"] {
-    position: fixed;             /* 固定在視窗，而不是 sticky */
-    top: 56px;                   /* header 底下，視覺可以再調 52~64px */
+    position: fixed;             
+    top: 56px;                   /* header 底下，可視覺微調 */
     left: 0;
     right: 0;
     z-index: 90;
-    padding: 0.2rem 0.6rem 0.35rem 0.6rem;
-    margin-bottom: 0;            /* 固定時不用底下空間 */
-    background: transparent !important;
+    padding: 0.25rem 0.8rem 0.35rem 0.8rem;
+    margin: 0;
+    background: rgba(248,250,252,0.96) !important;   /* 和 header 類似的背景，形成一整條 bar */
     border-bottom: none !important;
     box-shadow: none !important;
 }
 
-/* 移除 tablist 可能附加的上方/下方裝飾 bar */
+/* 再保險把 tablist 上下可能的裝飾線全部拔掉 */
 div[data-testid="stTabs"] div[role="tablist"]::before,
 div[data-testid="stTabs"] div[role="tablist"]::after {
     content: none !important;
@@ -153,18 +161,19 @@ div[data-testid="stTabs"] div[role="tablist"]::after {
 
 /* 一般（淺色模式）下的膠囊 tab 樣式 */
 div[data-testid="stTabs"] button[role="tab"] {
-    border-radius: 999px !important;        /* 膠囊形狀 */
-    padding: 0.25rem 1.0rem !important;
-    margin-right: 0.45rem !important;
-    border: 1px solid rgba(148,163,184,0.7) !important;  /* gray-400-ish */
-    background-color: #f3f4f6 !important;   /* gray-100 */
-    color: #111827 !important;              /* gray-900 */
-    font-size: 0.92rem !important;
+    border-radius: 999px !important;        
+    padding: 0.20rem 0.75rem !important;    /* 縮小 padding，騰出空間 */
+    margin-right: 0.35rem !important;
+    border: 1px solid rgba(148,163,184,0.7) !important;  
+    background-color: #f3f4f6 !important;   
+    color: #111827 !important;              
+    font-size: 0.82rem !important;          /* 字體縮小一級 */
     font-weight: 500 !important;
     box-shadow: none !important;
+    outline: none !important;
 }
 
-/* 取消 Streamlit 原本的底線效果（不論選取與否） */
+/* 取消 Streamlit 原本的底線 / 紅線效果（不論選取與否） */
 div[data-testid="stTabs"] button[role="tab"]::after {
     content: none !important;
     border: none !important;
@@ -172,31 +181,45 @@ div[data-testid="stTabs"] button[role="tab"]::after {
     box-shadow: none !important;
 }
 
-/* 被選中的 tab（淺色模式）：淡藍色 */
+/* 再把可能的下邊框顏色也歸零，避免紅線 */
+div[data-testid="stTabs"] button[role="tab"] {
+    border-bottom-width: 1px !important;
+    border-bottom-color: rgba(148,163,184,0.7) !important;
+}
+
+/* 被選中的 tab（淺色模式）：淡藍色膠囊（恢復你原本的設定） */
 div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
     background-color: #dbeafe !important;    /* light blue */
     border-color: #38bdf8 !important;        /* cyan-ish */
+    border-bottom-color: #38bdf8 !important;
     color: #0f172a !important;               /* slate-900 */
+    box-shadow: none !important;
 }
 
 /* 深色模式下 tabs 的顏色配置 */
 @media (prefers-color-scheme: dark) {
 
-    /* tablist 在深色模式也不再加長條背景，只保留透明底 */
-    div[data-testid="stTabs"] > div[role="tablist"] {
-        background: transparent !important;
+    /* tablist 在深色模式底條改成深色，避免下面內容被「吃掉」時有對比 */
+    div[data-testid="stTabs"] div[role="tablist"] {
+        background: rgba(15,23,42,0.98) !important;
     }
 
     /* 未選取：深灰膠囊 */
     div[data-testid="stTabs"] button[role="tab"] {
-        background-color: #111827 !important;      /* slate-900 */
-        border-color: rgba(55,65,81,0.9) !important;  /* slate-700 */
-        color: #e5e7eb !important;                 /* gray-200 */
+        background-color: #111827 !important;      
+        border-color: rgba(55,65,81,0.9) !important;
+        border-bottom-color: rgba(55,65,81,0.9) !important;
+        color: #e5e7eb !important;                 
+        font-size: 0.80rem !important;             /* 深色模式字體也小一點 */
     }
 
-    /* 已選取：淡藍膠囊 */
-    div[data-testid="stTabs"] div[role="tablist"] {
-        background: transparent !important;
+    /* 已選取：淡藍膠囊（不是白色） */
+    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+        background-color: #0ea5e9 !important;      /* cyan-500 稍微亮一點的藍 */
+        border-color: #0ea5e9 !important;
+        border-bottom-color: #0ea5e9 !important;
+        color: #0b1120 !important;                 /* slate-950，深藍底上的深字色 */
+        box-shadow: none !important;
     }
 }
 
@@ -284,8 +307,8 @@ TRANSLATIONS = {
         "top_brand": "DepthRender",
         "language_label": "🌐 語言",
 
-        "tab_overlay_title": "🎬 疊加影片產生器",
-        "tab_compare_title": "📊 潛水數據比較",
+        "tab_overlay_title": "疊加影片產生器",
+        "tab_compare_title": "潛水數據比較",
         "compare_coming_soon": "這裡未來會加入不同潛水之間的曲線比較功能，例如：\n\n- 深度曲線對比\n- 速率 / FF 比例比較\n- 不同比賽 / 不同天的表現差異",
 
         # Overlay tab
@@ -390,8 +413,8 @@ TRANSLATIONS = {
         "top_brand": "DepthRender",
         "language_label": "🌐 Language",
 
-        "tab_overlay_title": "🎬 Overlay Generator",
-        "tab_compare_title": "📊 Dive Comparison",
+        "tab_overlay_title": "Overlay Generator",
+        "tab_compare_title": "Dive Comparison",
         "compare_coming_soon": "This tab will later provide dive-to-dive comparison, such as:\n\n- Depth curve comparison\n- Speed / free-fall ratio\n- Performance across different sessions / competitions",
 
         # Overlay tab
