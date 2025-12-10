@@ -131,7 +131,7 @@ div[data-testid="stTabs"] {
 /* Tabs 的 tablist：上面那條長條所在的區域 */
 div[data-testid="stTabs"] div[role="tablist"] {
     position: fixed;
-    top: 56px;  /* 固定在 header 下方 */
+    top: 64px;  /* 原本 56px → 稍微往下移，避免被吃掉 */
     left: 0;
     right: 0;
     z-index: 90;
@@ -139,11 +139,11 @@ div[data-testid="stTabs"] div[role="tablist"] {
     padding: 0.15rem 0.4rem 0.20rem 0.4rem !important;
     margin-bottom: 0 !important;
 
-    /* 亮色模式：貼近 Streamlit 淺色背景 */
     background: #f8fafc !important;
     border-bottom: none !important;
     box-shadow: none !important;
 }
+
 
 /* 深色模式：改成你實際量到的 #0E1117 */
 @media (prefers-color-scheme: dark) {
@@ -161,18 +161,20 @@ div[data-testid="stTabs"] div[role="tablist"]::after {
     box-shadow: none !important;
 }
 
-/* 👉 這個就是會滑動的 pill / highlight bar：用背景色把它「融掉」 */
+/* 👉 移動中的 pill / highlight 完全隱藏 */
 div[data-baseweb="tab-highlight"] {
-    background: #f8fafc !important;  /* 淺色模式同背景 */
+    background: transparent !important;
     box-shadow: none !important;
     border: none !important;
-    height: 0.10rem !important;
+    height: 0 !important;
+    opacity: 0 !important;
 }
 
-/* 深色模式下，把 pill 顏色也改成 #0E1117，直接消失在背景裡 */
+/* 深色模式一樣維持隱藏（保險用）*/
 @media (prefers-color-scheme: dark) {
     div[data-baseweb="tab-highlight"] {
-        background: #0E1117 !important;
+        background: transparent !important;
+        opacity: 0 !important;
     }
 }
 
@@ -196,7 +198,7 @@ div[data-baseweb="tab-border"] {
 /* ⭐ 真正的膠囊 tab 按鈕樣式（這一段是你現在少掉的，所以膠囊會消失） */
 div[data-testid="stTabs"] button[role="tab"] {
     border-radius: 999px !important;        /* 膠囊形狀 */
-    padding: 0.25rem 0.9rem !important;
+    padding: 0.18rem 0.9rem !important;
     margin-right: 0.45rem !important;
     border: 1px solid rgba(148,163,184,0.7) !important;  /* gray-ish 邊框 */
     background-color: #f3f4f6 !important;   /* 淺灰 */
