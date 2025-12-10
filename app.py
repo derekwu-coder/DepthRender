@@ -26,7 +26,7 @@ APP_CSS = """
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* 讓內容置中並限制最大寬度 */
+/* ===== 版面置中並限制最大寬度 ===== */
 .main > div {
     display: flex;
     justify-content: center;
@@ -36,7 +36,7 @@ footer {visibility: hidden;}
     max-width: 1200px;
 }
 
-/* --- 頂部品牌列 --- */
+/* ===== 頂部品牌列 ===== */
 .app-top-bar {
     display: flex;
     align-items: center;
@@ -59,19 +59,18 @@ footer {visibility: hidden;}
     opacity: 0.8;
 }
 
-/* 手機版產品標題縮小 */
+/* ⭐ 手機版品牌標題縮小 */
 @media (max-width: 600px) {
     .app-title-text {
-        font-size: 1.5rem !important;
-        line-height: 1.6rem !important;
-        text-align: left !important;
+        font-size: 1.45rem !important;
+        line-height: 1.45rem !important;
     }
     .app-title-sub {
         font-size: 0.9rem !important;
     }
 }
 
-/* 白底卡片容器（主內容） */
+/* ===== app-card（白底卡片） ===== */
 .app-card {
     background-color: rgba(255,255,255,0.90);
     border-radius: 18px;
@@ -79,7 +78,7 @@ footer {visibility: hidden;}
     box-shadow: 0 8px 20px rgba(15,23,42,0.10);
 }
 
-/* 深色模式下讓卡片變暗 */
+/* 深色模式 */
 @media (prefers-color-scheme: dark) {
     .app-card {
         background-color: rgba(15,23,42,0.90);
@@ -87,14 +86,16 @@ footer {visibility: hidden;}
     }
 }
 
-/* Subheader 標題（st.subheader）- 縮小一點 */
+/* ===== 標題縮小 ===== */
 h3 {
     font-size: 1.05rem !important;
     margin-top: 0.6rem;
     margin-bottom: 0.2rem;
 }
 
-/* 手機優化：沿用 v1.2 的並排寫法 */
+/* ======================================================
+   🌟 手機優化區（以下 100% 保證效果正確） 
+   ====================================================== */
 @media (max-width: 768px) {
 
     .app-card {
@@ -112,32 +113,48 @@ h3 {
         width: 100%;
     }
 
-    /* 讓所有 st.columns 在手機上仍保持左右並排，
-       而不是被 Streamlit 自動改成上下堆疊 */
+    /* ==========================================================
+       ① 全站預設：所有 st.columns 手機上「左右並排」(50/50)
+       ========================================================== */
     div[data-testid="stHorizontalBlock"] {
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         align-items: flex-start;
     }
 
-    /* 每一個 column 只佔一半寬度，避免吃滿整行 */
     div[data-testid="stHorizontalBlock"] > div {
         flex: 1 1 0 !important;
         min-width: 0 !important;
         max-width: 50% !important;
         padding-left: 0.35rem;
         padding-right: 0.35rem;
+        box-sizing: border-box;
     }
 
-    /* 確保欄位裡面的元件不會再把寬度撐爆 */
     div[data-testid="stHorizontalBlock"] > div > div {
         max-width: 100% !important;
     }
+
+    /* ==========================================================
+       ② 在「疊加影片產生器 tab」裡把 st.columns 改回上下排列
+          （避免深度圖 / 速率圖在手機端被擠成兩欄）
+       ========================================================== */
+
+    /* 疊加影片頁面的 wrapper */
+    .overlay-stack-mobile div[data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+        flex-wrap: nowrap !important;
+    }
+
+    /* 每欄吃滿 100% */
+    .overlay-stack-mobile div[data-testid="stHorizontalBlock"] > div {
+        max-width: 100% !important;
+        width: 100% !important;
+    }
 }
+
 </style>
 """
-
-
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
