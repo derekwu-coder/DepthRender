@@ -845,17 +845,18 @@ with st.container():
                     max_depth = float(df_rate["depth_m"].max())
                     default_ff = min(15.0, max_depth)
 
-                    ff_start = st.number_input(
+                    ff_start_overlay = st.number_input(
                         tr("overlay_ff_depth_label"),
                         min_value=0.0,
                         max_value=max_depth,
                         step=1.0,
                         value=default_ff,
-                        key="overlay_ff_depth",
+                        key="overlay_ff_depth_main",   # ✅ 全新的、不會和其他地方重複的 key
                     )
 
+
                     # 使用與「潛水數據比較」相同的公式
-                    metrics_overlay = compute_dive_metrics(df_rate, dive_df, ff_start)
+                    metrics_overlay = compute_dive_metrics(df_rate, dive_df, ff_start_overlay)
 
                     def fmt_mps_local(value: Optional[float]) -> str:
                         if value is None or np.isnan(value):
