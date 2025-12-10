@@ -128,26 +128,63 @@ div[data-testid="stTabs"] {
     background: transparent !important;
 }
 
-/* 🔴 Streamlit 用來畫「移動的膠囊長條」的元件（你看到那條有陰影、兩頭圓的 bar） */
+/* 🔴 Streamlit 用來畫「移動的膠囊長條」的元件（上面那條 pill） */
 div[data-baseweb="tab-highlight"] {
-    background: transparent !important;   /* 直接隱藏顏色 */
-    box-shadow: none !important;         /* 移除陰影效果 */
-    border-radius: 0 !important;         /* 不要圓角 */
+    background: transparent !important;   /* 顏色透明 → 看不到 */
+    box-shadow: none !important;         /* 陰影拿掉 */
+    border-radius: 0 !important;
     height: 0 !important;                /* 壓扁 */
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
 }
+
+/* 🔵 有些版本會另外有一條底部 bar 元件（下方細線／bar） */
+div[data-baseweb="tab-border"] {
+    background: transparent !important;   /* 顏色和背景一致 */
+    box-shadow: none !important;         /* 不要陰影 */
+    border: none !important;             /* 拿掉任何 border */
+    height: 0 !important;                /* 拉到看不到 */
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* 保險起見，把 stTabs 內所有可能的底線都淡化 */
+div[data-testid="stTabs"] {
+    border-bottom: none !important;
+    box-shadow: none !important;
+}
+
+/* 把 stTabs 內元素的下邊框顏色也調成透明，避免殘留一條灰線 */
+div[data-testid="stTabs"] * {
+    border-bottom-color: transparent !important;
+}
+
+/* Tabs 上下距離再壓縮一點，讓 bar 和上下文字靠近一些，不那麼「懸空」 */
+div[data-testid="stTabs"] + div {
+    margin-top: 0.1rem !important;  /* tab 下方第一個內容區塊的上邊距 */
+}
+
 
 /* Tabs 外層 tablist：固定在 header 底下，並加一條和背景同色的底條 */
 div[data-testid="stTabs"] div[role="tablist"] {
     position: fixed;             
-    top: 56px;                   /* header 底下，可視覺微調 */
+    top: 56px;                   
     left: 0;
     right: 0;
     z-index: 90;
-    padding: 0.25rem 0.8rem 0.35rem 0.8rem;
+    padding: 0.20rem 0.6rem 0.25rem 0.6rem;  /* 稍微壓縮上下 padding，讓上下距離更近 */
     margin: 0;
-    background: rgba(248,250,252,0.96) !important;   /* 和 header 類似的背景，形成一整條 bar */
+    background: rgba(255,255,255,0.98) !important;  /* 近似白色，和主背景融合 */
     border-bottom: none !important;
     box-shadow: none !important;
+}
+
+/* 深色模式下，改成跟 Streamlit 深色背景更接近的顏色 */
+@media (prefers-color-scheme: dark) {
+    div[data-testid="stTabs"] div[role="tablist"] {
+        background: #0e1117 !important;  /* 接近 Streamlit dark theme 背景色 */
+    }
 }
 
 /* 再保險把 tablist 上下可能的裝飾線全部拔掉 */
@@ -781,13 +818,6 @@ with st.container():
     # Tab 1：疊加影片產生器
     # ============================
     with tab_overlay:
-        # 主功能標題
-        st.markdown(
-            f"<h1 style='font-size:2.1rem; margin-top:0.5rem; margin-bottom:0.6rem; font-weight:700;'>"
-            f"{tr('app_title')}"
-            f"</h1>",
-            unsafe_allow_html=True,
-        )
 
         # --- 1. 上傳區 ---
         col1, col2 = st.columns(2)
