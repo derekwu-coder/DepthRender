@@ -131,7 +131,7 @@ div[data-testid="stTabs"] {
 /* Tabs 的 tablist：上面那條長條所在的區域 */
 div[data-testid="stTabs"] div[role="tablist"] {
     position: fixed;
-    top: 56px;  /* 往上靠一點，讓長條更貼近 header 底部 */
+    top: 60px;  /* 往上靠一點，讓長條更貼近 header 底部 */
     left: 0;
     right: 0;
     z-index: 90;
