@@ -1200,7 +1200,7 @@ with st.container():
         
         # 4) 依照 v_ref / t_ref_for_align 去算 time_offset
         if (v_ref is not None) and (t_ref_for_align is not None):
-            time_offset = v_ref - t_ref_for_align
+            time_offset = t_ref_for_align - v_ref
             st.caption(f"目前計算出的偏移：{time_offset:+.2f} 秒（會套用到渲染）")
         else:
             time_offset = 0.0
