@@ -433,6 +433,16 @@ TRANSLATIONS = {
         "overlay_ff_rate_label": "Free Fall 速率 (m/s)",
         "overlay_metric_unit_mps": "{value:.2f} m/s",
         "overlay_metric_not_available": "—",
+        
+        "align_mode_label": "對齊方式",
+        "align_mode_start": "對齊下潛時間 (開始躬身)",
+        "align_mode_bottom": "對齊最深時間 (轉身/摘到 tag)",
+        "align_mode_end": "對齊出水時間 (手錶出水)",
+        
+        "align_mode_label": "對齊方式",
+        "align_mode_start": "對齊下潛時間 (開始躬身)",
+        "align_mode_bottom": "對齊最深時間 (轉身/摘到 tag)",
+        "align_mode_end": "對齊出水時間 (手錶出水)",
 
     },
     "en": {
@@ -538,6 +548,16 @@ TRANSLATIONS = {
         "overlay_ff_rate_label": "Free-fall speed (m/s)",
         "overlay_metric_unit_mps": "{value:.2f} m/s",
         "overlay_metric_not_available": "—",
+        
+        "align_mode_label": "Alignment mode",
+        "align_mode_start": "Align descent time (start of duck dive)",
+        "align_mode_bottom": "Align bottom time (turn / tag grab)",
+        "align_mode_end": "Align surfacing time (watch exits water)",
+        
+        "align_mode_label": "Alignment mode",
+        "align_mode_start": "Align descent time (start of duck dive)",
+        "align_mode_bottom": "Align bottom time (turn / tag grab)",
+        "align_mode_end": "Align surfacing time (watch exits water)",
 
     },
 }
@@ -892,8 +912,16 @@ with st.container():
                     )
                     dive_df = dive_df.sort_values("time_s").reset_index(drop=True)
 
-                # 重採樣 + 速率（固定用 2 秒平滑）
-                df_rate = prepare_dive_curve(dive_df, smooth_window=2)
+                # 重採樣 + 速率（讓使用者選擇平滑度 1 / 2 / 3 秒）
+                if "overlay_smooth_level" not in st.session_state:
+                    st.session_state["overlay_smooth_level"] = 1  # 預設 1 秒
+
+                smooth_level_overlay = int(st.session_state["overlay_smooth_level"])
+
+                df_rate = prepare_dive_curve(
+                    dive_df,
+                    smooth_window=smooth_level_overlay,
+                )
 
                 # ====== 偵測 Dive Time（不再用 st.info 顯示，而是放到數據區） ======
                 dive_time_s = None
@@ -953,6 +981,10 @@ with st.container():
                     st.altair_chart(depth_chart, use_container_width=True)
 
                     # 速率 vs 時間（平滑線）
+                    # 給速率圖用的動態 Y 軸上限（最小 0.5，每 0.5 一級）
+                    max_rate_plot = float(df_rate["rate_abs_mps_smooth"].max())
+                    max_rate_domain = max(0.5, np.ceil(max_rate_plot * 2.0) / 2.0)
+
                     rate_chart = (
                         alt.Chart(df_rate)
                         .mark_line(interpolate="basis")
@@ -965,7 +997,7 @@ with st.container():
                             y=alt.Y(
                                 "rate_abs_mps_smooth:Q",
                                 title=tr("axis_rate_mps"),
-                                scale=alt.Scale(domain=[0, 3]),
+                                scale=alt.Scale(domain=[0, max_rate_domain]),
                             ),
                             tooltip=[
                                 alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
@@ -977,18 +1009,35 @@ with st.container():
                             height=300,
                         )
                     )
+
                     st.altair_chart(rate_chart, use_container_width=True)
 
-                    # 原始資料說明
-                    st.caption(
-                        tr(
-                            "preview_caption",
-                            n_points=len(dive_df),
-                            t_min=df_rate["time_s"].min(),
-                            t_max=df_rate["time_s"].max(),
-                            max_depth=df_rate["depth_m"].max(),
+                    # 在速率圖下方放「速率平滑度」選單（靠右，小一點）
+                    spacer_l, spacer_mid, smooth_col_overlay = st.columns([10, 1, 1])
+                    with smooth_col_overlay:
+                        st.markdown(
+                            f"<div style='text-align:right; font-size:0.85rem; margin-bottom:2px;'>"
+                            f"{tr('compare_smooth_label')}"
+                            f"</div>",
+                            unsafe_allow_html=True,
                         )
-                    )
+                        st.selectbox(
+                            "",
+                            options=[1, 2, 3],
+                            key="overlay_smooth_level",   # 用一樣的 key，控制 df_rate 平滑度
+                            label_visibility="collapsed",
+                        )
+
+                    # 原始資料說明
+                    #st.caption(
+                    #    tr(
+                    #        "preview_caption",
+                    #        n_points=len(dive_df),
+                    #        t_min=df_rate["time_s"].min(),
+                    #        t_max=df_rate["time_s"].max(),
+                    #        max_depth=df_rate["depth_m"].max(),
+                    #    )
+                    #)
 
                     # ====== 3-2. 潛水速率分析（含 Dive Time） ======
                     st.markdown(f"### {tr('overlay_speed_analysis_title')}")
@@ -1055,80 +1104,94 @@ with st.container():
                         fmt_mps_local(metrics_overlay["ff_avg"]),
                     )
 
-
-                    # ==========================
-                    # 🌊 新增：潛水速率分析區塊
-                    # ==========================
-                    st.subheader(tr("overlay_rate_section_title"))
-
-                    # 取得本潛水最大深度，設定 FF 起始深度輸入
-                    max_depth_overlay = float(df_rate["depth_m"].max())
-                    ff_start_overlay = st.number_input(
-                        tr("overlay_ff_depth_label"),
-                        min_value=0.0,
-                        max_value=max_depth_overlay,
-                        step=1.0,
-                        value=min(15.0, max_depth_overlay),
-                        key="overlay_ff_depth",
-                    )
-
-                    # 使用與比較頁面相同的計算公式
-                    metrics_overlay = compute_dive_metrics(
-                        df_rate=df_rate,
-                        dive_df_raw=dive_df,
-                        ff_start_depth_m=ff_start_overlay,
-                    )
-
-                    def fmt_mps_overlay(value: Optional[float]) -> str:
-                        if value is None or np.isnan(value):
-                            return tr("overlay_metric_not_available")
-                        return tr("overlay_metric_unit_mps", value=round(value, 2))
-
-                    def render_metric_block_overlay(title: str, value: Optional[float]):
-                        value_str = fmt_mps_overlay(value)
-                        st.markdown(
-                            f"""
-                            <div style="margin-bottom:6px;">
-                                <div style="font-weight:700; font-size:1.05rem; margin-top:0; margin-bottom:0;">
-                                    {title}
-                                </div>
-                                <div style="font-size:0.95rem; margin-top:0; margin-bottom:0.1rem;">
-                                    {value_str}
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-
-                    # 單欄佔滿手機寬度顯示三個指標
-                    render_metric_block_overlay(
-                        tr("overlay_desc_rate_label"),
-                        metrics_overlay["descent_avg"],
-                    )
-                    render_metric_block_overlay(
-                        tr("overlay_asc_rate_label"),
-                        metrics_overlay["ascent_avg"],
-                    )
-                    render_metric_block_overlay(
-                        tr("overlay_ff_rate_label"),
-                        metrics_overlay["ff_avg"],
-                    )
-
         # --- 4. 設定時間偏移 & 版型選擇 ---
         st.subheader(tr("align_layout_subheader"))
-
-        col3, col4 = st.columns(2)
-
-        with col3:
-            time_offset = st.slider(
-                tr("time_offset_label"),
-                min_value=-20.0,
-                max_value=20.0,
-                value=0.0,
-                step=0.1,
-                help=tr("time_offset_help"),
-                key="overlay_time_offset",
-            )
+        
+        # 1) 先讓使用者選對齊模式（已多語系化）
+        align_mode = st.radio(
+            tr("align_mode_label"),
+            options=["start", "bottom", "end"],
+            format_func=lambda m: {
+                "start": tr("align_mode_start"),   # 對齊下潛時間 (開始躬身)
+                "bottom": tr("align_mode_bottom"), # 對齊最深時間 (轉身/摘到 tag)
+                "end": tr("align_mode_end"),       # 對齊出水時間 (手錶出水)
+            }[m],
+            horizontal=False,
+            key="overlay_align_mode",
+        )
+        
+        # 2) 影片時間輸入：slider 粗調 + 按鍵微調
+        video_duration_sec = st.session_state.get("video_duration_sec", 300.0)
+        
+        # 初始化 fine offset
+        if "overlay_align_fine" not in st.session_state:
+            st.session_state["overlay_align_fine"] = 0.0
+        
+        # 2-1) Slider：0 ~ 影片長度，0.1 秒粒度
+        base_time_s = st.slider(
+            "粗略設定對齊的影片時間 (秒)",
+            min_value=0.0,
+            max_value=float(video_duration_sec),
+            value=0.0,
+            step=0.1,
+            key="overlay_align_base",
+        )
+        
+        # 2-2) 微調按鍵：每次 ±0.02 秒
+        col_minus, col_info, col_plus = st.columns([1, 2, 1])
+        
+        with col_minus:
+            if st.button("◀ -0.02 s", key="overlay_align_minus"):
+                st.session_state["overlay_align_fine"] -= 0.02
+        
+        with col_plus:
+            if st.button("+0.02 s ▶", key="overlay_align_plus"):
+                st.session_state["overlay_align_fine"] += 0.02
+        
+        fine_offset_s = st.session_state["overlay_align_fine"]
+        
+        # 2-3) 計算實際對齊時間，限制在 [0, video_duration_sec]
+        v_ref = base_time_s + fine_offset_s
+        v_ref = max(0.0, min(v_ref, float(video_duration_sec)))
+        
+        def format_time_str(sec: float) -> str:
+            sec = max(0.0, sec)
+            mm = int(sec // 60)
+            s_rem = sec - mm * 60
+            ss = int(s_rem)
+            cs = int(round((s_rem - ss) * 100))  # centiseconds
+            if cs == 100:
+                ss += 1
+                cs = 0
+            return f"{mm:02d}:{ss:02d}.{cs:02d}"
+        
+        st.caption(
+            f"目前對齊的影片時間：{format_time_str(v_ref)} "
+            f"(base={base_time_s:.1f}s, fine={fine_offset_s:+.2f}s)"
+        )
+        
+        # 3) 準備三種手錶事件時間（沿用你原本的邏輯）
+        t_ref = None
+        if df_rate is not None and dive_df is not None:
+            if align_mode == "start":
+                t_ref = dive_start_s
+            elif align_mode == "end":
+                t_ref = dive_end_s
+            elif align_mode == "bottom":
+                raw = dive_df.sort_values("time_s").reset_index(drop=True)
+                after = raw[raw["time_s"] >= dive_start_s]
+                within = after[after["time_s"] <= dive_end_s]
+                if not within.empty:
+                    idx_bottom = within["depth_m"].idxmax()
+                    t_ref = float(within.loc[idx_bottom, "time_s"])
+        
+        # 4) 依照 v_ref / t_ref 去算 time_offset（跟你目前邏輯一致）
+        if v_ref is not None and t_ref is not None:
+            time_offset = v_ref - t_ref
+            st.caption(f"目前計算出的偏移：{time_offset:+.2f} 秒（會套用到渲染）")
+        else:
+            time_offset = 0.0
+            st.caption("尚未偵測到潛水事件或影片時間，暫時使用 0 秒偏移。")
 
         # ------------ 動態 Layout 設定區 ------------
         LAYOUTS_DIR = ASSETS_DIR / "layouts"
@@ -1166,13 +1229,13 @@ with st.container():
 
         layout_ids = [cfg["id"] for cfg in layouts_config]
 
-        with col4:
-            selected_id = st.selectbox(
-                tr("layout_select_label"),
-                options=layout_ids,
-                format_func=lambda i: tr(f"layout_{i.lower()}_label"),
-                key="overlay_layout_id",
-            )
+        # 這裡不再用 col4，直接全寬顯示版型選擇
+        selected_id = st.selectbox(
+            tr("layout_select_label"),
+            options=layout_ids,
+            format_func=lambda i: tr(f"layout_{i.lower()}_label"),
+            key="overlay_layout_id",
+        )
 
         def load_layout_image(cfg, is_selected: bool):
             img_path = LAYOUTS_DIR / cfg["filename"]
@@ -1317,6 +1380,7 @@ with st.container():
 
                 except Exception as e:
                     st.error(tr("render_error", error=e))
+
                     
     # ============================
     # Tab 2：潛水數據比較功能
