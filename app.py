@@ -443,6 +443,14 @@ TRANSLATIONS = {
         "align_mode_start": "對齊下潛時間 (開始躬身)",
         "align_mode_bottom": "對齊最深時間 (轉身/摘到 tag)",
         "align_mode_end": "對齊出水時間 (手錶出水)",
+        
+        "align_mode_label": "對齊方式",
+        "align_mode_start": "對齊下潛時間 (開始躬身)",
+        "align_mode_bottom": "對齊最深時間 (轉身/摘到tag)",
+        "align_mode_end": "對齊出水時間 (手錶出水)",
+        "align_video_time_label": "影片時間（mm:ss.ss，例如 01:10.05）",
+        "align_video_time_help": "請輸入分鐘:秒.小數，秒與小數最多 2 位，例如 00:03.18",
+        "align_video_time_invalid": "影片時間格式不正確，請使用 mm:ss 或 mm:ss.ss，例如 00:03.18",
 
     },
     "en": {
@@ -558,6 +566,14 @@ TRANSLATIONS = {
         "align_mode_start": "Align descent time (start of duck dive)",
         "align_mode_bottom": "Align bottom time (turn / tag grab)",
         "align_mode_end": "Align surfacing time (watch exits water)",
+        
+        "align_mode_label": "Alignment mode",
+        "align_mode_start": "Align descent time (start of duck dive)",
+        "align_mode_bottom": "Align bottom time (turn / tag grab)",
+        "align_mode_end": "Align surfacing time (watch exits water)",
+        "align_video_time_label": "Video time (mm:ss.ss, e.g. 01:10.05)",
+        "align_video_time_help": "Use mm:ss or mm:ss.ss, with up to 2 decimal places, e.g. 00:03.18",
+        "align_video_time_invalid": "Invalid video time format. Please use mm:ss or mm:ss.ss, e.g. 00:03.18",
 
     },
 }
@@ -1107,91 +1123,88 @@ with st.container():
         # --- 4. 設定時間偏移 & 版型選擇 ---
         st.subheader(tr("align_layout_subheader"))
         
-        # 1) 先讓使用者選對齊模式（已多語系化）
+        # 1) 先讓使用者選對齊模式
         align_mode = st.radio(
             tr("align_mode_label"),
             options=["start", "bottom", "end"],
             format_func=lambda m: {
-                "start": tr("align_mode_start"),   # 對齊下潛時間 (開始躬身)
-                "bottom": tr("align_mode_bottom"), # 對齊最深時間 (轉身/摘到 tag)
-                "end": tr("align_mode_end"),       # 對齊出水時間 (手錶出水)
+                "start": tr("align_mode_start"),    # 對齊下潛時間 (開始躬身)
+                "bottom": tr("align_mode_bottom"),  # 對齊最深時間 (轉身/摘到tag)
+                "end": tr("align_mode_end"),        # 對齊出水時間 (手錶出水)
             }[m],
             horizontal=False,
             key="overlay_align_mode",
         )
         
-        # 2) 影片時間輸入：slider 粗調 + 按鍵微調
-        video_duration_sec = st.session_state.get("video_duration_sec", 300.0)
-        
-        # 初始化 fine offset
-        if "overlay_align_fine" not in st.session_state:
-            st.session_state["overlay_align_fine"] = 0.0
-        
-        # 2-1) Slider：0 ~ 影片長度，0.1 秒粒度
-        base_time_s = st.slider(
-            "粗略設定對齊的影片時間 (秒)",
-            min_value=0.0,
-            max_value=float(video_duration_sec),
-            value=0.0,
-            step=0.1,
-            key="overlay_align_base",
+        # 2) 手動輸入「影片時間」，格式 mm:ss 或 mm:ss.ss
+        video_time_str = st.text_input(
+            tr("align_video_time_label"),
+            value="00:00.00",
+            key="overlay_align_video_time",
+            help=tr("align_video_time_help"),
         )
         
-        # 2-2) 微調按鍵：每次 ±0.02 秒
-        col_minus, col_info, col_plus = st.columns([1, 2, 1])
+        def parse_time_str_to_seconds_safe(s: str):
+            """
+            支援格式：
+              - mm:ss
+              - mm:ss.ss
+            若格式錯誤，回傳 None。
+            """
+            s = (s or "").strip()
+            if not s:
+                return 0.0
         
-        with col_minus:
-            if st.button("◀ -0.02 s", key="overlay_align_minus"):
-                st.session_state["overlay_align_fine"] -= 0.02
+            try:
+                parts = s.split(":")
+                if len(parts) != 2:
+                    return None
         
-        with col_plus:
-            if st.button("+0.02 s ▶", key="overlay_align_plus"):
-                st.session_state["overlay_align_fine"] += 0.02
+                mm_str, ss_str = parts[0].strip(), parts[1].strip()
+                mm = int(mm_str)
         
-        fine_offset_s = st.session_state["overlay_align_fine"]
+                # 秒數（含小數）
+                ss = float(ss_str)
         
-        # 2-3) 計算實際對齊時間，限制在 [0, video_duration_sec]
-        v_ref = base_time_s + fine_offset_s
-        v_ref = max(0.0, min(v_ref, float(video_duration_sec)))
+                if mm < 0 or ss < 0:
+                    return None
         
-        def format_time_str(sec: float) -> str:
-            sec = max(0.0, sec)
-            mm = int(sec // 60)
-            s_rem = sec - mm * 60
-            ss = int(s_rem)
-            cs = int(round((s_rem - ss) * 100))  # centiseconds
-            if cs == 100:
-                ss += 1
-                cs = 0
-            return f"{mm:02d}:{ss:02d}.{cs:02d}"
+                return mm * 60.0 + ss
+            except Exception:
+                return None
         
-        st.caption(
-            f"目前對齊的影片時間：{format_time_str(v_ref)} "
-            f"(base={base_time_s:.1f}s, fine={fine_offset_s:+.2f}s)"
-        )
+        v_ref = parse_time_str_to_seconds_safe(video_time_str)
         
-        # 3) 準備三種手錶事件時間（沿用你原本的邏輯）
-        t_ref = None
+        if v_ref is None:
+            st.warning(tr("align_video_time_invalid"))
+        
+        # 3) 準備三種手錶事件時間（仍然用你前面算好的 dive_start_s / dive_end_s）
+        t_ref_raw = None
         if df_rate is not None and dive_df is not None:
             if align_mode == "start":
-                t_ref = dive_start_s
+                t_ref_raw = dive_start_s
             elif align_mode == "end":
-                t_ref = dive_end_s
+                t_ref_raw = dive_end_s
             elif align_mode == "bottom":
                 raw = dive_df.sort_values("time_s").reset_index(drop=True)
                 after = raw[raw["time_s"] >= dive_start_s]
                 within = after[after["time_s"] <= dive_end_s]
                 if not within.empty:
                     idx_bottom = within["depth_m"].idxmax()
-                    t_ref = float(within.loc[idx_bottom, "time_s"])
+                    t_ref_raw = float(within.loc[idx_bottom, "time_s"])
         
-        # 4) 依照 v_ref / t_ref 去算 time_offset（跟你目前邏輯一致）
-        if v_ref is not None and t_ref is not None:
-            time_offset = v_ref - t_ref
+        # 🔧 只在「對齊邏輯」裡移除那 1 秒 offset，其它地方不動
+        t_ref_for_align = None
+        if t_ref_raw is not None:
+            t_ref_for_align = t_ref_raw - 1.0   # ➜ 抵消你前面統一 +1.0 的影響
+        
+        # 4) 依照 v_ref / t_ref_for_align 去算 time_offset
+        if (v_ref is not None) and (t_ref_for_align is not None):
+            time_offset = v_ref - t_ref_for_align
             st.caption(f"目前計算出的偏移：{time_offset:+.2f} 秒（會套用到渲染）")
         else:
             time_offset = 0.0
-            st.caption("尚未偵測到潛水事件或影片時間，暫時使用 0 秒偏移。")
+            st.caption("時間格式不正確或尚未偵測到潛水事件，暫時使用 0 秒偏移。")
 
         # ------------ 動態 Layout 設定區 ------------
         LAYOUTS_DIR = ASSETS_DIR / "layouts"
