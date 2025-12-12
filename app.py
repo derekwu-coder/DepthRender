@@ -32,7 +32,7 @@ footer {visibility: hidden;}
 
 /* ===== Reserve space for fixed header + fixed tabs ===== */
 .block-container{
-  padding-top: 128px;   /* adjust if header/tabs overlap */
+  padding-top: var(--block-pad, 128px);   /* adjust if header/tabs overlap */
 }
 
 /* ===== Fixed top header (brand + language) ===== */
@@ -74,7 +74,7 @@ footer {visibility: hidden;}
 div[data-testid="stTabs"]{ border-bottom:none !important; box-shadow:none !important; background:transparent !important; }
 div[data-testid="stTabs"] div[role="tablist"]{
   position: fixed;
-  top: 78px;           /* just under header */
+  top: var(--tabs-top, 78px);           /* just under header */
   left: 0; right: 0;
   z-index: 110;
   padding: 0.10rem 0.55rem 0.20rem 0.55rem !important;
@@ -168,7 +168,7 @@ h3{
   width: 100%;
   margin: 0.15rem 0 0.35rem 0;
 }
-@media (max-width: 600px){
+@media (max-width: 768px){
   .align-wrap{ max-width: 100% !important; width: 100% !important; }
 }
 
@@ -187,7 +187,7 @@ h3{
 }
 
 .align-wrap div[data-testid="stButton"] button{
-  width: 52px !important;
+  width: var(--align-btn, 52px) !important;
   height: 52px !important;
   padding: 0 !important;
   font-size: 28px !important; /* for full-width symbols */
@@ -195,8 +195,8 @@ h3{
   line-height: 1 !important;
   text-align: center !important;
 }
-@media (max-width: 600px){
-  .align-wrap div[data-testid="stButton"] button{ width: 46px !important; height: 46px !important; }
+@media (max-width: 768px){
+  .align-wrap div[data-testid="stButton"] button{ width: var(--align-btn, 46px) !important; height: 46px !important; }
 }
 
 /* Center the time input and keep it compact */
@@ -210,7 +210,7 @@ h3{
 /* ===== Mobile layout helpers ===== */
 
 /* Force the FIRST st.columns in Overlay tab to stay 50/50 on mobile */
-@media (max-width: 600px){
+@media (max-width: 768px){
   div[data-testid="stTabs"] div[role="tabpanel"]:first-of-type div[data-testid="stHorizontalBlock"]:first-of-type{
     flex-direction: row !important;
     flex-wrap: nowrap !important;
@@ -221,7 +221,7 @@ h3{
     min-width: 0 !important;
   }
 }
-@media (max-width: 600px){
+@media (max-width: 768px){
   .app-card{
     padding: 0.75rem 0.9rem 1.0rem 0.9rem;
     border-radius: 12px;
@@ -269,6 +269,22 @@ h3{
     }
 
 
+}
+
+
+/* ===== Mobile upload columns: keep 50%/50% ===== */
+@media (max-width: 600px){
+  .upload-cols div[data-testid="stHorizontalBlock"]{
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 0.8rem !important;
+  }
+  .upload-cols div[data-testid="stHorizontalBlock"] > div{
+    max-width: 50% !important;
+    width: 50% !important;
+    flex: 0 0 50% !important;
+    min-width: 0 !important;
+  }
 }
 
 </style>
