@@ -32,7 +32,7 @@ footer {visibility: hidden;}
 
 /* ===== Reserve space for fixed header + fixed tabs ===== */
 .block-container{
-  padding-top: 96px;   /* adjust if header/tabs overlap */
+  padding-top: 128px;   /* adjust if header/tabs overlap */
 }
 
 /* ===== Fixed top header (brand + language) ===== */
@@ -74,7 +74,7 @@ footer {visibility: hidden;}
 div[data-testid="stTabs"]{ border-bottom:none !important; box-shadow:none !important; background:transparent !important; }
 div[data-testid="stTabs"] div[role="tablist"]{
   position: fixed;
-  top: 46px;           /* just under header */
+  top: 78px;           /* just under header */
   left: 0; right: 0;
   z-index: 110;
   padding: 0.10rem 0.55rem 0.20rem 0.55rem !important;
@@ -200,6 +200,19 @@ h3{
 }
 
 /* ===== Mobile layout helpers ===== */
+
+/* Force the FIRST st.columns in Overlay tab to stay 50/50 on mobile */
+@media (max-width: 768px){
+  div[data-testid="stTabs"] div[role="tabpanel"]:first-of-type div[data-testid="stHorizontalBlock"]:first-of-type{
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+  }
+  div[data-testid="stTabs"] div[role="tabpanel"]:first-of-type div[data-testid="stHorizontalBlock"]:first-of-type > div{
+    flex: 0 0 50% !important;
+    max-width: 50% !important;
+    min-width: 0 !important;
+  }
+}
 @media (max-width: 768px){
   .app-card{
     padding: 0.75rem 0.9rem 1.0rem 0.9rem;
@@ -1255,10 +1268,13 @@ with st.container():
         )
 
         # ③ － / input / ＋（全形，避免「+」消失）
-        b1, mid, b2 = st.columns([1, 3, 1], vertical_alignment="center")
+        b1, sp1, mid, sp2, b2 = st.columns([1, 0.35, 2.3, 0.35, 1], vertical_alignment="center")
 
         with b1:
             st.button("－", key="overlay_align_minus", on_click=on_minus)
+
+        with sp1:
+            st.write("")
 
         with mid:
             video_time_str = st.text_input(
@@ -1273,6 +1289,9 @@ with st.container():
                 st.warning(tr("align_video_time_invalid"))
             else:
                 st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
+
+        with sp2:
+            st.write("")
 
         with b2:
             st.button("＋", key="overlay_align_plus", on_click=on_plus)
