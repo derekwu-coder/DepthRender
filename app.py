@@ -59,29 +59,28 @@ footer {visibility: hidden;}
 
 /* ===== 主內容往下推一點，騰出 header 空間 ===== */
 .block-container {
-    padding-top: 112px;   /* header + tabs 的總高度，大約 100~120 之間自己可以微調 */
+    padding-top: 112px;
 }
 
-/* ===== 頂部品牌列：包成一個 fixed header ===== */
+/* ===== 頂部品牌列 ===== */
 .app-header-row {
-    position: fixed;         /* 原本是 sticky，改成 fixed 綁在視窗 */
+    position: fixed;
     top: 0;
     left: 0;
     right: 0;
     z-index: 100;
     padding: 0.25rem 0.1rem 0.35rem 0.1rem;
     backdrop-filter: blur(10px);
-    background: rgba(248,250,252,0.96);  /* 淺色模式淡底 */
+    background: rgba(248,250,252,0.96);
 }
 
-/* 深色模式下 header 背景 */
 @media (prefers-color-scheme: dark) {
     .app-header-row {
         background: rgba(15,23,42,0.98);
     }
 }
 
-/* 內層品牌列內容 */
+/* ===== 品牌文字 ===== */
 .app-top-bar {
     display: flex;
     align-items: center;
@@ -89,14 +88,10 @@ footer {visibility: hidden;}
     padding: 0.2rem 0.6rem 0.4rem;
 }
 
-.app-top-icon {
-    font-size: 1.6rem;
-}
-
 .app-title-text {
-    font-size: 1.9rem;
+    font-size: 1.65rem;
     font-weight: 700;
-    line-height: 1.9rem;
+    line-height: 1.65rem;
 }
 
 .app-title-sub {
@@ -104,38 +99,21 @@ footer {visibility: hidden;}
     opacity: 0.8;
 }
 
-/* ⭐ 手機版品牌標題縮小 */
 @media (max-width: 600px) {
-
-    /* 🔹 膠囊彼此距離拉近 */
-    div[data-testid="stTabs"] button[role="tab"] {
-        border-radius: 999px !important;
-        padding: 0.18rem 0.70rem !important;     /* ✅ 縮小 padding */
-        margin-right: 0.20rem !important;        /* ✅ 縮小間距 */
-        border: 1px solid rgba(148,163,184,0.7) !important;
-        background-color: #f3f4f6 !important;
-        color: #111827 !important;
-        font-size: 0.88rem !important;
-        font-weight: 500 !important;
-        box-shadow: none !important;
-    }
-
-    /* 🔹 整排 tablist 不要太鬆 */
-    div[data-testid="stTabs"] div[role="tablist"] {
-        padding-left: 0.25rem !important;
-        padding-right: 0.25rem !important;
+    .app-title-text {
+        font-size: 1.45rem !important;
+        line-height: 1.50rem !important;
     }
 }
 
-/* ===== app-card（白底卡片） ===== */
+/* ===== 卡片 ===== */
 .app-card {
     background-color: rgba(255,255,255,0.90);
     border-radius: 18px;
-    padding: 1rem 1.2rem 1.4rem 1.2rem;
+    padding: 1rem 1.2rem 1.4rem;
     box-shadow: 0 8px 20px rgba(15,23,42,0.10);
 }
 
-/* 深色模式 */
 @media (prefers-color-scheme: dark) {
     .app-card {
         background-color: rgba(15,23,42,0.90);
@@ -143,283 +121,110 @@ footer {visibility: hidden;}
     }
 }
 
-/* ===== 標題縮小 ===== */
-h3 {
-    font-size: 1.05rem !important;
-    margin-top: 0.6rem;
-    margin-bottom: 0.2rem;
+/* ======================================================
+   🎯 Align time block layout（你要的那段）
+   桌機 50% / 手機 100%，靠左、不被壓縮
+   ====================================================== */
+
+/* 外層 wrapper（你 Python 只要用 class="align-wrap align-left"） */
+.align-wrap.align-left {
+    max-width: 560px;       /* 桌機視覺 ≈ 半欄 */
+    width: 100%;
+    margin: 0.15rem 0 0.35rem 0;
+}
+
+/* 讓三行不要像隔一行 */
+.align-wrap.align-left .tight-block {
+    margin-top: 0.15rem;
+    margin-bottom: 0.15rem;
+}
+
+/* radio 緊湊 */
+.align-wrap.align-left div[data-testid="stRadio"] {
+    margin-top: -0.25rem !important;
+    margin-bottom: -0.10rem !important;
+}
+
+/* +/- 按鈕：接近 1:1，不撐滿 */
+.align-wrap.align-left div[data-testid="stButton"] button {
+    width: 52px !important;
+    height: 52px !important;
+    padding: 0 !important;
+    font-size: 28px !important;   /* 全形 ＋ － 穩定顯示 */
+    line-height: 1 !important;
+}
+
+/* 中間時間框：縮小＋置中 */
+.align-wrap.align-left div[data-testid="stTextInput"] input {
+    text-align: center !important;
+    max-width: 220px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+/* 📱 手機：強制全寬，避免被壓成 50% / 1⁄3 */
+@media (max-width: 600px) {
+    .align-wrap.align-left {
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+    .align-wrap.align-left div[data-testid="stButton"] button {
+        width: 46px !important;
+        height: 46px !important;
+    }
 }
 
 /* ======================================================
-   🌑 Tabs 外觀：背景融入 + 保留膠囊造型
+   Tabs、膠囊、其他你原本的設定（原封不動）
    ====================================================== */
 
-/* 讓 stTabs 整塊本身不要多餘底線/陰影 */
+/* Tabs 本體 */
 div[data-testid="stTabs"] {
     border-bottom: none !important;
     box-shadow: none !important;
     background: transparent !important;
 }
 
-/* Tabs 的 tablist：上面那條長條所在的區域 */
 div[data-testid="stTabs"] div[role="tablist"] {
     position: fixed;
-    top: 60px;  /* 往上靠一點，讓長條更貼近 header 底部 */
+    top: 60px;
     left: 0;
     right: 0;
     z-index: 90;
-
-    /* 上方 padding 改為 0，避免標籤長條上面還有一層空隙 */
     padding: 0 0.4rem 0.20rem 0.4rem !important;
-    margin-bottom: 0 !important;
-
     background: #f8fafc !important;
-    border-bottom: none !important;
-    box-shadow: none !important;
 }
 
-
-
-/* 深色模式：改成你實際量到的 #0E1117 */
 @media (prefers-color-scheme: dark) {
     div[data-testid="stTabs"] div[role="tablist"] {
         background: #0E1117 !important;
     }
 }
 
-/* 移除 tablist 可能附加的裝飾 bar（避免多一層亮條）*/
-div[data-testid="stTabs"] div[role="tablist"]::before,
-div[data-testid="stTabs"] div[role="tablist"]::after {
-    content: none !important;
-    border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-/* 👉 移動中的 pill / highlight：直接關掉整個元素 */
+/* 關掉 pill highlight */
 div[data-baseweb="tab-highlight"] {
-    display: none !important;          /* 最直接：整條不畫 */
-    background: transparent !important;
-    box-shadow: none !important;
-    border: none !important;
-    height: 0 !important;
-    opacity: 0 !important;
+    display: none !important;
 }
 
-/* 深色模式保險再蓋一次 */
-@media (prefers-color-scheme: dark) {
-    div[data-baseweb="tab-highlight"] {
-        display: none !important;
-        background: transparent !important;
-        opacity: 0 !important;
-    }
-}
-
-/* 這個通常是 Tabs 底部那條長 bar，用同色把它「蓋掉」 */
-div[data-baseweb="tab-border"] {
-    background: #f8fafc !important;
-    box-shadow: none !important;
-    border: none !important;
-    height: 0.10rem !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* 深色模式下，底部 bar 也改成 #0E1117（跟背景完全融在一起） */
-@media (prefers-color-scheme: dark) {
-    div[data-baseweb="tab-border"] {
-        background: #0E1117 !important;
-    }
-}
-
-/* ⭐ 真正的膠囊 tab 按鈕樣式（這一段是你現在少掉的，所以膠囊會消失） */
+/* 膠囊 tab */
 div[data-testid="stTabs"] button[role="tab"] {
-    border-radius: 999px !important;        /* 膠囊形狀 */
+    border-radius: 999px !important;
     padding: 0.18rem 0.9rem !important;
     margin-right: 0.45rem !important;
-    border: 1px solid rgba(148,163,184,0.7) !important;  /* gray-ish 邊框 */
-    background-color: #f3f4f6 !important;   /* 淺灰 */
-    color: #111827 !important;              /* 深字 */
-    font-size: 0.88rem !important;          /* 稍微小一點，手機不會太霸佔 */
-    font-weight: 500 !important;
-    box-shadow: none !important;
+    border: 1px solid rgba(148,163,184,0.7) !important;
+    background-color: #f3f4f6 !important;
+    font-size: 0.88rem !important;
 }
 
-/* 取消 Streamlit 原本的 underline */
-div[data-testid="stTabs"] button[role="tab"]::after {
-    content: none !important;
-    border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-/* 被選中的 tab（淺色模式）：淡藍色膠囊 */
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-    background-color: #dbeafe !important;    /* light blue */
-    border-color: #38bdf8 !important;        /* cyan-ish */
-    color: #0f172a !important;               /* slate-900 */
-}
-
-/* 深色模式下 tabs 的顏色配置 */
 @media (prefers-color-scheme: dark) {
-
-    /* 未選取：深灰膠囊 */
     div[data-testid="stTabs"] button[role="tab"] {
         background-color: #111827 !important;
-        border-color: rgba(55,65,81,0.9) !important;
         color: #e5e7eb !important;
     }
-
-    /* 已選取：稍亮一點的藍灰膠囊 */
-    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-        background-color: #1f2937 !important;   /* 深藍灰 */
-        border-color: #38bdf8 !important;
-        color: #e5f2ff !important;
-    }
-}
-
-/* Tabs 底部與內文的距離再縮一點 */
-div[data-testid="stTabs"] + div {
-    margin-top: 0.20rem !important;
-}
-
-/* ======================================================
-   🌟 手機優化區（以下 100% 保證效果正確） 
-   ====================================================== */
-@media (max-width: 768px) {
-
-    .app-card {
-        padding: 0.8rem 0.9rem 1.1rem 0.9rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(15,23,42,0.15);
-    }
-
-    h3 {
-        font-size: 0.95rem !important;
-    }
-
-    .stButton>button,
-    .stDownloadButton>button {
-        width: 100%;
-    }
-
-    /* ==========================================================
-       ① 全站預設：所有 st.columns 手機上「左右並排」(50/50)
-       ========================================================== */
-    div[data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        align-items: flex-start;
-    }
-
-    div[data-testid="stHorizontalBlock"] > div {
-        flex: 1 1 0 !important;
-        min-width: 0 !important;
-        max-width: 50% !important;
-        padding-left: 0.35rem;
-        padding-right: 0.35rem;
-        box-sizing: border-box;
-    }
-
-    div[data-testid="stHorizontalBlock"] > div > div {
-        max-width: 100% !important;
-    }
-
-    /* ==========================================================
-       ② 在「疊加影片產生器 tab」裡把 st.columns 改回上下排列
-          （避免深度圖 / 速率圖在手機端被擠成兩欄）
-       ========================================================== */
-
-    /* 疊加影片頁面的 wrapper */
-    .overlay-stack-mobile div[data-testid="stHorizontalBlock"] {
-        flex-direction: column !important;
-        flex-wrap: nowrap !important;
-    }
-
-    /* 每欄吃滿 100% */
-    .overlay-stack-mobile div[data-testid="stHorizontalBlock"] > div {
-        max-width: 100% !important;
-        width: 100% !important;
-    }
-    /* ✅ Header 區域不要套用全站 50/50 columns */
-    .header-cols div[data-testid="stHorizontalBlock"] > div {
-        max-width: unset !important;
-    }
-    
-    /* ✅ Header 左右比例：70% / 30% */
-    .header-cols div[data-testid="stHorizontalBlock"] > div:first-child {
-        flex: 0 0 70% !important;
-        max-width: 70% !important;
-    }
-    .header-cols div[data-testid="stHorizontalBlock"] > div:last-child {
-        flex: 0 0 30% !important;
-        max-width: 30% !important;
-    }
-
 }
 
 </style>
 """
-
-st.markdown(
-    """
-    <style>
-    /* =========================
-       A) Title 區上下空間縮小
-       ========================= */
-
-    /* Streamlit 主內容區：上方 padding 通常太大 */
-    section.main > div.block-container{
-      padding-top: 1.0rem;   /* 原本常是 2~3rem */
-    }
-
-    /* 你自己的卡片容器：上方 padding 再縮一點（依你實際 class 名稱調整）
-       如果你的卡片 class 叫 app-card，就用這個 */
-    .app-card{
-      padding-top: 14px;
-      padding-bottom: 18px;
-    }
-
-    /* 如果你有自訂 brand 區塊（例如 .brand-title / .brand-subtitle），把 margin 壓縮 */
-    .brand-title{
-      margin-top: 6px !important;
-      margin-bottom: 2px !important;
-      line-height: 1.05;
-    }
-    .brand-subtitle{
-      margin-top: 0px !important;
-      margin-bottom: 6px !important;
-    }
-
-    /* 你說的那條上方「pill 長條 bar」如果是 Streamlit 的 decoration，可先降低高度 */
-    div[data-testid="stDecoration"]{
-      height: 0rem;   /* 你若想「直接拿掉」可改成 0 */
-    }
-
-    /* =========================
-       B) Tabs 膠囊：只縮短彼此間距，保持整組置中，不要整組往左
-       ========================= */
-    div[data-testid="stTabs"] [data-baseweb="tab-list"]{
-      gap: 10px !important;              /* 膠囊之間距離 */
-      justify-content: center !important;/* 整組置中 */
-      padding-left: 0 !important;
-      padding-right: 0 !important;
-      margin-left: auto !important;
-      margin-right: auto !important;
-      width: 100%;
-    }
-
-    /* 避免某些你之前的 CSS 把整個 tab-list 往左推 */
-    div[data-testid="stTabs"]{
-      padding-left: 0 !important;
-      padding-right: 0 !important;
-    }
-
-    </style>
-    """,
-    
-    unsafe_allow_html=True,
-)
 
 st.markdown(
     """
@@ -519,8 +324,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
@@ -1137,81 +940,7 @@ def compute_dive_metrics(
 # ================================
 with st.container():
     st.markdown('<div class="app-card">', unsafe_allow_html=True)
-    
-    st.markdown(
-    """
-    <style>
-    /* 1) 整體：縮小頂部留白（避免標題上方空太大） */
-    .block-container { padding-top: 0.6rem !important; }
 
-    /* 2) 你的 app-card（如果你有定義 app-card）也縮一點上 padding */
-    .app-card { padding-top: 0.8rem !important; }
-
-    /* 3) 品牌標題/副標（我們用 class 控制） */
-    .brand-wrap { margin: 0.2rem 0 0.4rem 0 !important; }
-    .brand-title {
-        font-size: 44px;          /* ✅ 標題字縮小（手機也不會太巨大） */
-        line-height: 1.05;
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-    .brand-subtitle {
-        font-size: 22px;
-        opacity: 0.75;
-        margin: 0.25rem 0 0 0 !important;
-        padding: 0 !important;
-    }
-
-    /* 4) Tabs（pill）只讓兩顆靠近，不要整組往左貼邊 */
-    div[data-testid="stTabs"] {
-        padding-left: 0.4rem !important;
-        padding-right: 0.4rem !important;
-    }
-    div[data-testid="stTabs"] button {
-        margin-right: 8px !important;   /* ✅ 兩顆 pills 間距 */
-    }
-
-    /* 5) 影片時間對齊：減少「同一區塊三行」中間的空白感 */
-    .align-block { margin-top: 0.2rem !important; }
-    .align-block div[data-testid="stRadio"] { margin-top: -6px !important; }
-    .align-block div[data-testid="stTextInput"] { margin-top: -6px !important; }
-    .align-block div[data-testid="stButton"] { margin-top: -6px !important; }
-
-    /* 6) +/- 按鈕固定比例、字一定顯示（全形符號也顯示得穩） */
-    .align-block div[data-testid="stButton"] button {
-        width: 64px !important;     /* ✅ 桌機不會寬到整排 */
-        height: 64px !important;
-        padding: 0 !important;
-        font-size: 34px !important; /* ✅ 讓 ＋／－ 清楚 */
-        line-height: 1 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
-    /* 7) 中間時間框：縮小 + 置中（避免桌機看起來像一整條不知是啥） */
-    .align-block input {
-        max-width: 180px !important;
-        text-align: center !important;
-        font-size: 24px !important;
-    }
-
-    /* 8) 桌機：讓「時間對齊區塊」在左側 50%（不置中）
-          Streamlit columns 在桌機有效；手機會自動堆疊成 100% */
-    @media (min-width: 900px) {
-        .align-left-50 { max-width: 50%; }
-        .align-left-50 { margin-left: 0 !important; margin-right: auto !important; }
-    }
-    @media (max-width: 899px) {
-        .align-left-50 { max-width: 100%; }
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-    # Tabs：目前功能 + 比較分頁
     tab_overlay, tab_compare = st.tabs([
         tr("tab_overlay_title"),
         tr("tab_compare_title"),
@@ -1230,48 +959,33 @@ with st.container():
             st.subheader(tr("upload_watch_subheader"))
             st.markdown(
                 f"<div class='upload-label'>{tr('upload_watch_label')}</div>",
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
 
-            # ✅ 手錶：允許任何檔案（手機端友善）
             watch_file = st.file_uploader(
                 label="",
-                type=None,
+                type=None,  # ✅ 手機端必須是 None，再用檔名判斷
                 key="overlay_watch_uploader",
                 label_visibility="collapsed",
             )
 
-            # 用副檔名自行判斷
-            watch_ext = ""
-            if watch_file is not None:
-                watch_ext = watch_file.name.split(".")[-1].lower()
-
-                if watch_ext not in ("fit", "uddf"):
-                    st.error(tr("error_watch_file_type"))  # 建議做成翻譯 key
-                    watch_file = None
-
-        # ========= 右：潛水影片 =========
+        # ========= 右：影片 =========
         with col_right:
             st.subheader(tr("upload_video_subheader"))
             st.markdown(
                 f"<div class='upload-label'>{tr('upload_video_label')}</div>",
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
 
-            # ✅ 影片：只顯示影片格式（不顯示照片）
             video_file = st.file_uploader(
                 label="",
-                type=[
-                    "mp4", "mov", "m4v",
-                    "avi", "mkv",
-                    "webm",
-                    "mts", "m2ts", "ts",
-                    "3gp", "3g2",
-                ],
+                type=["mp4", "mov", "avi", "mkv"],  # ✅ 只顯示影片
                 key="overlay_video_uploader",
                 label_visibility="collapsed",
             )
 
+    # ❗ 到這裡為止，縮排已經「完全退回 with tab_overlay 外層」
+    # 接下來的 4 / 5 / 6 區塊才不會炸
 
         # --- 2. 選手錶類型 & 解析 ---
         dive_df = None
@@ -1548,7 +1262,9 @@ with st.container():
         )
 
         # ==========================================================
-        # 4-2) 影片時間輸入（FF 同款：[-] [input] [+]，級距選擇在下方）
+        # 4-2) 影片時間輸入（FF 同款：［－］［input］［＋］）
+        #     - widget key: overlay_align_video_time_str
+        #     - calc key:   overlay_align_video_time_s
         # ==========================================================
         def parse_time_str_to_seconds_safe(s: str):
             s = (s or "").strip()
@@ -1565,16 +1281,16 @@ with st.container():
                 return mm * 60.0 + ss
             except Exception:
                 return None
-        
+
         def seconds_to_mmss_cc(sec: float) -> str:
             sec = max(0.0, float(sec))
             mm = int(sec // 60)
             ss = sec - mm * 60
             return f"{mm:02d}:{ss:05.2f}"  # mm:ss.cc
-        
+
         def clamp_time(sec: float, max_sec: float = 3600.0) -> float:
             return max(0.0, min(float(sec), float(max_sec)))
-        
+
         # --- 初始化 state ---
         if "overlay_align_video_time_s" not in st.session_state:
             st.session_state["overlay_align_video_time_s"] = 0.0
@@ -1582,83 +1298,81 @@ with st.container():
             st.session_state["overlay_align_video_time_str"] = "00:00.00"
         if "overlay_align_step_unit" not in st.session_state:
             st.session_state["overlay_align_step_unit"] = "sec"
-        
-        # --- 級距設定（0.1 秒）---
+
+        # --- 級距設定 ---
         step_map = {
             "min": 60.0,
             "sec": 1.0,
-            "csec": 0.1,   # ✅ 0.1 秒級距
+            "csec": 0.1,   # 0.1 秒
         }
-        
+
         def sync_time_str_from_seconds():
             st.session_state["overlay_align_video_time_str"] = seconds_to_mmss_cc(
                 st.session_state["overlay_align_video_time_s"]
             )
-        
+
         def on_minus():
             step = step_map.get(st.session_state["overlay_align_step_unit"], 1.0)
             st.session_state["overlay_align_video_time_s"] = round(
                 clamp_time(st.session_state["overlay_align_video_time_s"] - step), 2
             )
             sync_time_str_from_seconds()
-        
+
         def on_plus():
             step = step_map.get(st.session_state["overlay_align_step_unit"], 1.0)
             st.session_state["overlay_align_video_time_s"] = round(
                 clamp_time(st.session_state["overlay_align_video_time_s"] + step), 2
             )
             sync_time_str_from_seconds()
-        
-        # --- 外層 2 欄：左 50%（桌機），手機會自動堆疊成全寬 ---
-        left50, _right_empty = st.columns([1, 1])
-        
-        with left50:
-            st.markdown('<div class="align-block align-left-50">', unsafe_allow_html=True)
-        
-            # ① Label（同一區塊，不要多餘空白）
-            st.markdown(f"**{tr('align_video_time_label')}**")
-        
-            # ② 級距選擇（放在 label 下方，手機不會擠成直排）
-            st.radio(
+
+        # --- 4-2 UI 容器：桌機約 50% 寬、靠左；手機強制全寬 ---
+        st.markdown('<div class="align-block align-left">', unsafe_allow_html=True)
+
+        # ① Label
+        st.markdown(f"**{tr('align_video_time_label')}**")
+
+        # ② 級距選擇（同區塊，不要多餘空白）
+        st.radio(
+            label="",
+            options=["min", "sec", "csec"],
+            horizontal=True,
+            format_func=lambda k: {
+                "min": tr("align_step_min"),
+                "sec": tr("align_step_sec"),
+                "csec": tr("align_step_csec"),
+            }[k],
+            key="overlay_align_step_unit",
+            label_visibility="collapsed",
+        )
+
+        # ③ － / input / ＋（全形，避免「+」消失）
+        b1, mid, b2 = st.columns([1, 3, 1], vertical_alignment="center")
+
+        with b1:
+            st.button("－", key="overlay_align_minus", on_click=on_minus)
+
+        with mid:
+            video_time_str = st.text_input(
                 label="",
-                options=["min", "sec", "csec"],
-                horizontal=True,
-                format_func=lambda k: {
-                    "min": tr("align_step_min"),
-                    "sec": tr("align_step_sec"),
-                    "csec": tr("align_step_csec"),
-                }[k],
-                key="overlay_align_step_unit",
+                key="overlay_align_video_time_str",
                 label_visibility="collapsed",
+                help=tr("align_video_time_help"),
             )
-        
-            # ③ 同一列：－ / input / ＋（全形符號）
-            b1, mid, b2 = st.columns([0.9, 2.2, 0.9], vertical_alignment="center")
-        
-            with b1:
-                st.button("－", key="overlay_align_minus", on_click=on_minus)
-        
-            with mid:
-                video_time_str = st.text_input(
-                    label="",
-                    key="overlay_align_video_time_str",
-                    label_visibility="collapsed",
-                    help=tr("align_video_time_help"),
-                )
-        
-                v_ref_from_text = parse_time_str_to_seconds_safe(video_time_str)
-                if v_ref_from_text is None:
-                    st.warning(tr("align_video_time_invalid"))
-                else:
-                    st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
-        
-            with b2:
-                st.button("＋", key="overlay_align_plus", on_click=on_plus)
-        
-            st.markdown("</div>", unsafe_allow_html=True)
-        
+
+            v_ref_from_text = parse_time_str_to_seconds_safe(video_time_str)
+            if v_ref_from_text is None:
+                st.warning(tr("align_video_time_invalid"))
+            else:
+                st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
+
+        with b2:
+            st.button("＋", key="overlay_align_plus", on_click=on_plus)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
         # 最終 v_ref（秒）
         v_ref = float(st.session_state["overlay_align_video_time_s"])
+
 
         # ==========================================================
         # 4-3) 準備事件時間 + time_offset（確保第 6 段不會 undefined）
