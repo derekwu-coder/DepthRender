@@ -94,7 +94,7 @@ div[data-baseweb="tab-border"]{ background: transparent !important; border:none 
 /* Center pills + keep them closer (without shifting left) */
 div[data-baseweb="tab-list"]{
   justify-content: center !important;
-  gap: 10px !important;
+  gap: var(--tabs-gap, 10px) !important;
   margin: 0 auto !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
@@ -178,6 +178,14 @@ h3{
 .align-wrap div[data-testid="stTextInput"]{ margin-top: -0.10rem !important; margin-bottom: 0.10rem !important; }
 
 /* +/- buttons: near 1:1 and not full-row width */
+
+/* 讓三欄（－ / 時間框 / ＋）更對稱：中欄置中、兩側不撐滿 */
+.align-wrap div[data-testid="stHorizontalBlock"] > div{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
 .align-wrap div[data-testid="stButton"] button{
   width: 52px !important;
   height: 52px !important;
@@ -194,7 +202,7 @@ h3{
 /* Center the time input and keep it compact */
 .align-wrap div[data-testid="stTextInput"] input{
   text-align: center !important;
-  max-width: 220px !important;
+  max-width: var(--align-input, 220px) !important;
   margin: 0 auto !important;
   font-variant-numeric: tabular-nums;
 }
@@ -245,10 +253,59 @@ h3{
   .header-cols div[data-testid="stHorizontalBlock"] > div{ max-width: unset !important; }
   .header-cols div[data-testid="stHorizontalBlock"] > div:first-child{ flex: 0 0 70% !important; max-width: 70% !important; }
   .header-cols div[data-testid="stHorizontalBlock"] > div:last-child{ flex: 0 0 30% !important; max-width: 30% !important; }
+
+    /* ✅ Force upload section to stay 50/50 on mobile (override any stacking rules) */
+    .upload-cols div[data-testid="stHorizontalBlock"]{
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: stretch !important;
+        gap: 0.75rem !important;
+    }
+    .upload-cols div[data-testid="stHorizontalBlock"] > div{
+        flex: 0 0 50% !important;
+        max-width: 50% !important;
+        width: 50% !important;
+        min-width: 0 !important;
+    }
+
+
 }
 
 </style>
 """
+
+
+# ================================
+# UI tuning (manual parameters)
+# ================================
+with st.sidebar.expander("UI tuning (manual)", expanded=False):
+    tabs_top_px = st.number_input("Tabs top offset (px)", min_value=0, max_value=200, value=int(st.session_state.get("ui_tabs_top_px", 72)))
+    block_pad_px = st.number_input("Top padding (px)", min_value=0, max_value=240, value=int(st.session_state.get("ui_block_pad_px", 116)))
+    tabs_gap_px = st.number_input("Tabs gap (px)", min_value=0, max_value=40, value=int(st.session_state.get("ui_tabs_gap_px", 10)))
+    align_btn_px = st.number_input("Align +/- size (px)", min_value=32, max_value=90, value=int(st.session_state.get("ui_align_btn_px", 56)))
+    align_input_px = st.number_input("Align time box max width (px)", min_value=120, max_value=420, value=int(st.session_state.get("ui_align_input_px", 220)))
+
+    st.session_state["ui_tabs_top_px"] = int(tabs_top_px)
+    st.session_state["ui_block_pad_px"] = int(block_pad_px)
+    st.session_state["ui_tabs_gap_px"] = int(tabs_gap_px)
+    st.session_state["ui_align_btn_px"] = int(align_btn_px)
+    st.session_state["ui_align_input_px"] = int(align_input_px)
+
+# Inject CSS variables (used by APP_CSS)
+st.markdown(
+    f"""
+    <style>
+      :root {{
+        --tabs-top: {int(st.session_state["ui_tabs_top_px"])}px;
+        --block-pad: {int(st.session_state["ui_block_pad_px"])}px;
+        --tabs-gap: {int(st.session_state["ui_tabs_gap_px"])}px;
+        --align-btn: {int(st.session_state["ui_align_btn_px"])}px;
+        --align-input: {int(st.session_state["ui_align_input_px"])}px;
+      }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
@@ -1268,13 +1325,11 @@ with st.container():
         )
 
         # ③ － / input / ＋（全形，避免「+」消失）
-        b1, sp1, mid, sp2, b2 = st.columns([1, 0.35, 2.3, 0.35, 1], vertical_alignment="center")
+        b1, mid, b2 = st.columns([1, 3, 1], vertical_alignment="center")
 
         with b1:
-            st.button("－", key="overlay_align_minus", on_click=on_minus)
-
-        with sp1:
-            st.write("")
+            # 全形減號，避免在某些瀏覽器/字型下消失
+            st.button("－", key="overlay_align_minus", on_click=on_minus, use_container_width=False)
 
         with mid:
             video_time_str = st.text_input(
@@ -1290,15 +1345,13 @@ with st.container():
             else:
                 st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
 
-        with sp2:
-            st.write("")
-
         with b2:
-            st.button("＋", key="overlay_align_plus", on_click=on_plus)
+            # 全形加號，避免消失
+            st.button("＋", key="overlay_align_plus", on_click=on_plus, use_container_width=False)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # 最終 v_ref（秒）
+# 最終 v_ref（秒）
         v_ref = float(st.session_state["overlay_align_video_time_s"])
 
 
