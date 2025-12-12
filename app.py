@@ -485,6 +485,23 @@ TRANSLATIONS = {
         "render_estimate_pending": "剩餘時間預估中⋯⋯",
         "render_do_not_leave": "請勿離開此畫面或關閉螢幕",
         "render_estimate_eta": "預估剩餘時間：約 {eta}",
+        
+        "align_video_time_title": "影片時間",
+        "align_step_label": "調整級距",
+        "align_step_min": "分 (1 min)",
+        "align_step_sec": "秒 (1 s)",
+        "align_step_csec": "0.01 秒 (10 ms)",
+        "align_minus": "−",
+        "align_plus": "+",
+        "align_time_invalid": "影片時間格式不正確，請使用 mm:ss 或 mm:ss.ss，例如 00:03.18",
+        "align_step_label": "調整級距",
+        "align_step_min": "分 (1 min)",
+        "align_step_sec": "秒 (1 s)",
+        "align_step_csec": "0.1 秒 (100 ms)",
+        "align_video_time_seconds_label": "影片時間（秒）",
+        "align_video_time_seconds_help": "用右側 +/- 依級距微調；上方可切換分 / 秒 / 0.02s。",
+        "align_video_time_display": "顯示格式",
+    
     },
 
     "en": {
@@ -637,6 +654,23 @@ TRANSLATIONS = {
         "render_estimate_pending": "Estimating remaining time…",
         "render_do_not_leave": "Do not leave this page or turn off the screen",
         "render_estimate_eta": "Estimated remaining time: approx. {eta}",
+        
+        "align_video_time_title": "Video time",
+        "align_step_label": "Step size",
+        "align_step_min": "Minute (1 min)",
+        "align_step_sec": "Second (1 s)",
+        "align_step_csec": "0.01 s (10 ms)",
+        "align_minus": "−",
+        "align_plus": "+",
+        "align_time_invalid": "Invalid time format. Use mm:ss or mm:ss.ss, e.g. 00:03.18",
+        "align_step_label": "Step",
+        "align_step_min": "Min (1 min)",
+        "align_step_sec": "Sec (1 s)",
+        "align_step_csec": "0.1 s (100 ms)",
+        "align_video_time_seconds_label": "Video time (seconds)",
+        "align_video_time_seconds_help": "Use +/- to adjust by the selected step; switch step above (min / sec / 0.02s).",
+        "align_video_time_display": "Display",
+
     },
 }
 
@@ -1185,8 +1219,10 @@ with st.container():
 
         # --- 4. 設定時間偏移 & 版型選擇 ---
         st.subheader(tr("align_layout_subheader"))
-        
-        # 1) 先讓使用者選對齊模式
+
+        # ==========================================================
+        # 4-1) 對齊模式
+        # ==========================================================
         align_mode = st.radio(
             tr("align_mode_label"),
             options=["start", "bottom", "end"],
@@ -1198,50 +1234,121 @@ with st.container():
             horizontal=False,
             key="overlay_align_mode",
         )
-        
-        # 2) 手動輸入「影片時間」，格式 mm:ss 或 mm:ss.ss
-        video_time_str = st.text_input(
-            tr("align_video_time_label"),
-            value="00:00.00",
-            key="overlay_align_video_time",
-            help=tr("align_video_time_help"),
-        )
-        
+
+        # ==========================================================
+        # 4-2) 影片時間輸入（FF 同款：[-] [input] [+] + 級距選擇）
+        #     - widget key: overlay_align_video_time_str
+        #     - calc key:   overlay_align_video_time_s
+        # ==========================================================
         def parse_time_str_to_seconds_safe(s: str):
-            """
-            支援格式：
-              - mm:ss
-              - mm:ss.ss
-            若格式錯誤，回傳 None。
-            """
             s = (s or "").strip()
             if not s:
                 return 0.0
-        
             try:
                 parts = s.split(":")
                 if len(parts) != 2:
                     return None
-        
-                mm_str, ss_str = parts[0].strip(), parts[1].strip()
-                mm = int(mm_str)
-        
-                # 秒數（含小數）
-                ss = float(ss_str)
-        
+                mm = int(parts[0].strip())
+                ss = float(parts[1].strip())
                 if mm < 0 or ss < 0:
                     return None
-        
                 return mm * 60.0 + ss
             except Exception:
                 return None
-        
-        v_ref = parse_time_str_to_seconds_safe(video_time_str)
-        
-        if v_ref is None:
-            st.warning(tr("align_video_time_invalid"))
-        
-        # 3) 準備三種手錶事件時間（仍然用你前面算好的 dive_start_s / dive_end_s）
+
+        def seconds_to_mmss_cc(sec: float) -> str:
+            sec = max(0.0, float(sec))
+            mm = int(sec // 60)
+            ss = sec - mm * 60
+            return f"{mm:02d}:{ss:05.2f}"  # mm:ss.cc
+
+        def clamp_time(sec: float, max_sec: float = 3600.0) -> float:
+            return max(0.0, min(float(sec), float(max_sec)))
+
+        # --- 初始化 state ---
+        if "overlay_align_video_time_s" not in st.session_state:
+            st.session_state["overlay_align_video_time_s"] = 0.0
+        if "overlay_align_video_time_str" not in st.session_state:
+            st.session_state["overlay_align_video_time_str"] = "00:00.00"
+        if "overlay_align_step_unit" not in st.session_state:
+            st.session_state["overlay_align_step_unit"] = "sec"
+
+        # --- 級距設定（把 0.02 改成 0.1 秒）---
+        step_map = {
+            "min": 60.0,
+            "sec": 1.0,
+            "csec": 0.1,   # ✅ 0.1 秒級距
+        }
+
+        def sync_time_str_from_seconds():
+            st.session_state["overlay_align_video_time_str"] = seconds_to_mmss_cc(
+                st.session_state["overlay_align_video_time_s"]
+            )
+
+        def on_minus():
+            step = step_map.get(st.session_state["overlay_align_step_unit"], 1.0)
+            st.session_state["overlay_align_video_time_s"] = round(
+                clamp_time(st.session_state["overlay_align_video_time_s"] - step), 2
+            )
+            sync_time_str_from_seconds()
+
+        def on_plus():
+            step = step_map.get(st.session_state["overlay_align_step_unit"], 1.0)
+            st.session_state["overlay_align_video_time_s"] = round(
+                clamp_time(st.session_state["overlay_align_video_time_s"] + step), 2
+            )
+            sync_time_str_from_seconds()
+
+        # --- 顯示 label ---
+        st.markdown(f"**{tr('align_video_time_label')}**")
+
+        # --- FF 同款：同一列 - / input / + / step ---
+        tcol1, tcol2, tcol3, tcol4 = st.columns([1, 4, 1, 4])
+
+        with tcol1:
+            st.button("－", key="overlay_align_minus", on_click=on_minus)
+
+        with tcol2:
+            # 文字輸入：允許手動 key-in
+            video_time_str = st.text_input(
+                label="",
+                key="overlay_align_video_time_str",
+                label_visibility="collapsed",
+                help=tr("align_video_time_help"),
+            )
+
+            v_ref_from_text = parse_time_str_to_seconds_safe(video_time_str)
+            if v_ref_from_text is None:
+                st.warning(tr("align_video_time_invalid"))
+                # 不覆蓋秒數，沿用既有值
+            else:
+                st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
+
+        with tcol3:
+            st.button("＋", key="overlay_align_plus", on_click=on_plus)
+
+        with tcol4:
+            st.radio(
+                label="",
+                options=["min", "sec", "csec"],
+                horizontal=True,
+                format_func=lambda k: {
+                    "min": tr("align_step_min"),
+                    "sec": tr("align_step_sec"),
+                    "csec": tr("align_step_csec"),
+                }[k],
+                key="overlay_align_step_unit",
+                label_visibility="collapsed",
+            )
+
+        # 最終 v_ref（秒）：一律用秒數 state
+        v_ref = float(st.session_state["overlay_align_video_time_s"])
+
+
+
+        # ==========================================================
+        # 4-3) 準備三種手錶事件時間（用你前面算好的 dive_start_s / dive_end_s）
+        # ==========================================================
         t_ref_raw = None
         if df_rate is not None and dive_df is not None:
             if align_mode == "start":
@@ -1255,57 +1362,37 @@ with st.container():
                 if not within.empty:
                     idx_bottom = within["depth_m"].idxmax()
                     t_ref_raw = float(within.loc[idx_bottom, "time_s"])
-        
+
         # 🔧 只在「對齊邏輯」裡移除那 1 秒 offset，其它地方不動
         t_ref_for_align = None
         if t_ref_raw is not None:
             t_ref_for_align = t_ref_raw - 1.0   # ➜ 抵消你前面統一 +1.0 的影響
-        
-        # 4) 依照 v_ref / t_ref_for_align 去算 time_offset
-        if (v_ref is not None) and (t_ref_for_align is not None):
+
+        # ==========================================================
+        # 4-4) 依照 v_ref / t_ref_for_align 去算 time_offset（這版為正確方向）
+        #     time_offset：丟給 render_video 使用
+        # ==========================================================
+        if (t_ref_for_align is not None):
             time_offset = t_ref_for_align - v_ref
             st.caption(f"目前計算出的偏移：{time_offset:+.2f} 秒（會套用到渲染）")
         else:
             time_offset = 0.0
-            st.caption("時間格式不正確或尚未偵測到潛水事件，暫時使用 0 秒偏移。")
+            st.caption("尚未偵測到潛水事件，暫時使用 0 秒偏移。")
 
-        # ------------ 動態 Layout 設定區 ------------
+        # ==========================================================
+        # 4-5) 動態 Layout 設定區
+        # ==========================================================
         LAYOUTS_DIR = ASSETS_DIR / "layouts"
 
         layouts_config = [
-            {
-                "id": "A",
-                "label_key": "layout_a_label",
-                "filename": "layout_a.png",
-                "desc_key": "layout_a_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "B",
-                "label_key": "layout_b_label",
-                "filename": "layout_b.png",
-                "desc_key": "layout_b_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "C",
-                "label_key": "layout_c_label",
-                "filename": "layout_c.png",
-                "desc_key": "layout_c_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "D",
-                "label_key": "layout_d_label",
-                "filename": "layout_d.png",
-                "desc_key": "layout_d_desc",
-                "uses_diver_info": True,
-            },
+            {"id": "A", "label_key": "layout_a_label", "filename": "layout_a.png", "desc_key": "layout_a_desc", "uses_diver_info": False},
+            {"id": "B", "label_key": "layout_b_label", "filename": "layout_b.png", "desc_key": "layout_b_desc", "uses_diver_info": False},
+            {"id": "C", "label_key": "layout_c_label", "filename": "layout_c.png", "desc_key": "layout_c_desc", "uses_diver_info": False},
+            {"id": "D", "label_key": "layout_d_label", "filename": "layout_d.png", "desc_key": "layout_d_desc", "uses_diver_info": True},
         ]
 
         layout_ids = [cfg["id"] for cfg in layouts_config]
 
-        # 這裡不再用 col4，直接全寬顯示版型選擇
         selected_id = st.selectbox(
             tr("layout_select_label"),
             options=layout_ids,
@@ -1330,32 +1417,24 @@ with st.container():
             w, h = img.size
             pad = border_width // 2
             draw.rounded_rectangle(
-                [
-                    (-pad, -pad),
-                    (w + pad - 1, h + pad - 1),
-                ],
+                [(-pad, -pad), (w + pad - 1, h + pad - 1)],
                 radius=corner_radius,
                 outline=border_color,
                 width=border_width,
             )
 
-            img = Image.alpha_composite(img, overlay)
-            return img
+            return Image.alpha_composite(img, overlay)
 
         st.markdown("### " + tr("layout_preview_title"))
 
         cols = st.columns(len(layouts_config))
-
         for col, cfg in zip(cols, layouts_config):
             with col:
                 img = load_layout_image(cfg, cfg["id"] == selected_id)
-                st.image(
-                    img,
-                    caption=tr(cfg["label_key"]),
-                    use_container_width=True,
-                )
+                st.image(img, caption=tr(cfg["label_key"]), use_container_width=True)
                 if cfg.get("desc_key"):
                     st.caption(tr(cfg["desc_key"]))
+
 
         # --- 5. 輸入潛水員資訊---
         st.subheader(tr("diver_info_subheader"))
