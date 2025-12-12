@@ -26,292 +26,303 @@ APP_CSS = """
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* ===== 版面置中並限制最大寬度 ===== */
-.main > div {
+/* ===== Layout width ===== */
+.main > div {display:flex; justify-content:center;}
+.main > div > div {max-width: 1200px; width:100%;}
+
+/* ===== Reserve space for fixed header + fixed tabs ===== */
+.block-container{
+  padding-top: var(--block-pad, 128px);   /* adjust if header/tabs overlap */
+}
+
+/* ===== Fixed top header (brand + language) ===== */
+.app-header-row{
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 120;
+  padding: 0.10rem 0.10rem 0.15rem 0.10rem;  /* tighter */
+  backdrop-filter: blur(10px);
+  background: rgba(248,250,252,0.96);
+}
+@media (prefers-color-scheme: dark){
+  .app-header-row{ background: rgba(15,23,42,0.98); }
+}
+
+.app-top-bar{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.15rem 0.6rem 0.15rem;
+}
+
+.app-top-icon{ display:none; } /* remove wave icon */
+
+.app-title-text{
+  font-size: 1.50rem;
+  font-weight: 700;
+  line-height: 1.40rem;
+}
+@media (max-width: 600px){
+  .app-title-text{
+    font-size: 1.25rem !important;
+    line-height: 1.25rem !important;
+  }
+}
+
+/* ===== Tabs: fixed bar, full-width background (no notch) ===== */
+div[data-testid="stTabs"]{ border-bottom:none !important; box-shadow:none !important; background:transparent !important; }
+div[data-testid="stTabs"] div[role="tablist"]{
+  position: fixed;
+  top: var(--tabs-top, 78px);           /* just under header */
+  left: 0; right: 0;
+  z-index: 110;
+  padding: 0.10rem 0.55rem 0.20rem 0.55rem !important;
+  margin: 0 !important;
+  background: #f8fafc !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+@media (prefers-color-scheme: dark){
+  div[data-testid="stTabs"] div[role="tablist"]{ background: #0E1117 !important; }
+}
+
+/* Remove moving highlight / border bars */
+div[data-baseweb="tab-highlight"]{ display:none !important; height:0 !important; opacity:0 !important; }
+div[data-baseweb="tab-border"]{ background: transparent !important; border:none !important; height: 0 !important; }
+
+/* Center pills + keep them closer (without shifting left) */
+div[data-baseweb="tab-list"]{
+  justify-content: center !important;
+  gap: var(--tabs-gap, 10px) !important;
+  margin: 0 auto !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Pill button style (keeps selected color) */
+div[data-testid="stTabs"] button[role="tab"]{
+  border-radius: 999px !important;
+  padding: 0.18rem 0.90rem !important;
+  margin: 0 !important;
+  border: 1px solid rgba(148,163,184,0.7) !important;
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-size: 0.90rem !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
+  background-color: #dbeafe !important;
+  border-color: #38bdf8 !important;
+  color: #0f172a !important;
+}
+@media (prefers-color-scheme: dark){
+  div[data-testid="stTabs"] button[role="tab"]{
+    background-color: #111827 !important;
+    border-color: rgba(55,65,81,0.9) !important;
+    color: #e5e7eb !important;
+  }
+  div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
+    background-color: #1f2937 !important;
+    border-color: #38bdf8 !important;
+    color: #e5f2ff !important;
+  }
+}
+
+/* ===== Card ===== */
+.app-card{
+  background-color: rgba(255,255,255,0.90);
+  border-radius: 18px;
+  padding: 0.85rem 1.2rem 1.1rem 1.2rem;
+  box-shadow: 0 8px 20px rgba(15,23,42,0.10);
+}
+@media (prefers-color-scheme: dark){
+  .app-card{
+    background-color: rgba(15,23,42,0.90);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.60);
+  }
+}
+
+/* ===== Subheaders ===== */
+h3{
+  font-size: 1.05rem !important;
+  margin-top: 0.55rem !important;
+  margin-bottom: 0.20rem !important;
+}
+
+/* ===== Upload labels (keep same color as other labels) ===== */
+.upload-label{
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(17,24,39,0.92);
+  margin-bottom: 0.25rem;
+}
+@media (prefers-color-scheme: dark){
+  .upload-label{ color: rgba(229,231,235,0.92); }
+}
+
+/* ===== Align time block: desktop ~50%, mobile 100%, left aligned ===== */
+.align-wrap{
+  max-width: 560px;   /* approx half-column on desktop */
+  width: 100%;
+  margin: 0.15rem 0 0.35rem 0;
+}
+@media (max-width: 768px){
+  .align-wrap{ max-width: 100% !important; width: 100% !important; }
+}
+
+/* Tighten spacing inside align block */
+.align-wrap div[data-testid="stMarkdown"]{ margin-bottom: 0.20rem !important; }
+.align-wrap div[data-testid="stRadio"]{ margin-top: -0.20rem !important; margin-bottom: 0.05rem !important; }
+.align-wrap div[data-testid="stTextInput"]{ margin-top: -0.10rem !important; margin-bottom: 0.10rem !important; }
+
+/* +/- buttons: near 1:1 and not full-row width */
+
+/* 讓三欄（－ / 時間框 / ＋）更對稱：中欄置中、兩側不撐滿 */
+.align-wrap div[data-testid="stHorizontalBlock"] > div{
     display: flex;
     justify-content: center;
-}
-
-.main > div > div {
-    max-width: 1200px;
-}
-
-/* ===== 主內容往下推一點，騰出 header 空間 ===== */
-.block-container {
-    padding-top: 112px;   /* header + tabs 的總高度，大約 100~120 之間自己可以微調 */
-}
-
-/* ===== 頂部品牌列：包成一個 fixed header ===== */
-.app-header-row {
-    position: fixed;         /* 原本是 sticky，改成 fixed 綁在視窗 */
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    padding: 0.25rem 0.1rem 0.35rem 0.1rem;
-    backdrop-filter: blur(10px);
-    background: rgba(248,250,252,0.96);  /* 淺色模式淡底 */
-}
-
-/* 深色模式下 header 背景 */
-@media (prefers-color-scheme: dark) {
-    .app-header-row {
-        background: rgba(15,23,42,0.98);
-    }
-}
-
-/* 內層品牌列內容 */
-.app-top-bar {
-    display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.2rem 0.6rem 0.4rem;
 }
 
-.app-top-icon {
-    font-size: 1.6rem;
+.align-wrap div[data-testid="stButton"] button{
+  width: var(--align-btn-size, 52px) !important;
+  height: var(--align-btn-size, 52px) !important;
+  padding: 0 !important;
+  font-size: 28px !important; /* for full-width symbols */
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+}
+@media (max-width: 768px){
+  .align-wrap div[data-testid="stButton"] button{ width: var(--align-btn-size, 46px) !important; height: var(--align-btn-size, 46px) !important; }
 }
 
-.app-title-text {
-    font-size: 1.9rem;
-    font-weight: 700;
-    line-height: 1.9rem;
+/* Center the time input and keep it compact */
+.align-wrap div[data-testid="stTextInput"] input{
+  text-align: center !important;
+  max-width: var(--align-input-maxw, 220px) !important;
+  margin: 0 auto !important;
+  font-variant-numeric: tabular-nums;
 }
 
-.app-title-sub {
-    font-size: 1.0rem;
-    opacity: 0.8;
+/* ===== Mobile layout helpers ===== */
+
+/* Force the FIRST st.columns in Overlay tab to stay 50/50 on mobile */
+@media (max-width: 768px){
+  div[data-testid="stTabs"] div[role="tabpanel"]:first-of-type div[data-testid="stHorizontalBlock"]:first-of-type{
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+  }
+  div[data-testid="stTabs"] div[role="tabpanel"]:first-of-type div[data-testid="stHorizontalBlock"]:first-of-type > div{
+    flex: 0 0 50% !important;
+    max-width: 50% !important;
+    min-width: 0 !important;
+  }
 }
+@media (max-width: 768px){
+  .app-card{
+    padding: 0.75rem 0.9rem 1.0rem 0.9rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(15,23,42,0.15);
+  }
 
-/* ⭐ 手機版品牌標題縮小 */
-@media (max-width: 600px) {
-    .app-title-text {
-        font-size: 1.45rem !important;
-        line-height: 1.45rem !important;
-    }
-    .app-title-sub {
-        font-size: 0.9rem !important;
-    }
-}
+  /* Other two-column blocks can stack */
+  .overlay-stack-mobile div[data-testid="stHorizontalBlock"]{
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+  }
+  .overlay-stack-mobile div[data-testid="stHorizontalBlock"] > div{
+    max-width: 100% !important;
+    width: 100% !important;
+  }
 
-/* ===== app-card（白底卡片） ===== */
-.app-card {
-    background-color: rgba(255,255,255,0.90);
-    border-radius: 18px;
-    padding: 1rem 1.2rem 1.4rem 1.2rem;
-    box-shadow: 0 8px 20px rgba(15,23,42,0.10);
-}
+  /* Keep upload section in two columns (50/50) */
+  .upload-cols-marker + div[data-testid="stHorizontalBlock"]{
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+  }
+  .upload-cols-marker + div[data-testid="stHorizontalBlock"] > div{
+    max-width: 50% !important;
+    flex: 0 0 50% !important;
+    min-width: 0 !important;
+  }
 
-/* 深色模式 */
-@media (prefers-color-scheme: dark) {
-    .app-card {
-        background-color: rgba(15,23,42,0.90);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.60);
-    }
-}
+  /* Header columns should not be forced to 50/50 by generic rules */
+  .header-cols div[data-testid="stHorizontalBlock"] > div{ max-width: unset !important; }
+  .header-cols div[data-testid="stHorizontalBlock"] > div:first-child{ flex: 0 0 70% !important; max-width: 70% !important; }
+  .header-cols div[data-testid="stHorizontalBlock"] > div:last-child{ flex: 0 0 30% !important; max-width: 30% !important; }
 
-/* ===== 標題縮小 ===== */
-h3 {
-    font-size: 1.05rem !important;
-    margin-top: 0.6rem;
-    margin-bottom: 0.2rem;
-}
-
-/* ======================================================
-   🌑 Tabs 外觀：背景融入 + 保留膠囊造型
-   ====================================================== */
-
-/* 讓 stTabs 整塊本身不要多餘底線/陰影 */
-div[data-testid="stTabs"] {
-    border-bottom: none !important;
-    box-shadow: none !important;
-    background: transparent !important;
-}
-
-/* Tabs 的 tablist：上面那條長條所在的區域 */
-div[data-testid="stTabs"] div[role="tablist"] {
-    position: fixed;
-    top: 60px;  /* 往上靠一點，讓長條更貼近 header 底部 */
-    left: 0;
-    right: 0;
-    z-index: 90;
-
-    /* 上方 padding 改為 0，避免標籤長條上面還有一層空隙 */
-    padding: 0 0.4rem 0.20rem 0.4rem !important;
-    margin-bottom: 0 !important;
-
-    background: #f8fafc !important;
-    border-bottom: none !important;
-    box-shadow: none !important;
-}
-
-
-
-/* 深色模式：改成你實際量到的 #0E1117 */
-@media (prefers-color-scheme: dark) {
-    div[data-testid="stTabs"] div[role="tablist"] {
-        background: #0E1117 !important;
-    }
-}
-
-/* 移除 tablist 可能附加的裝飾 bar（避免多一層亮條）*/
-div[data-testid="stTabs"] div[role="tablist"]::before,
-div[data-testid="stTabs"] div[role="tablist"]::after {
-    content: none !important;
-    border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-/* 👉 移動中的 pill / highlight：直接關掉整個元素 */
-div[data-baseweb="tab-highlight"] {
-    display: none !important;          /* 最直接：整條不畫 */
-    background: transparent !important;
-    box-shadow: none !important;
-    border: none !important;
-    height: 0 !important;
-    opacity: 0 !important;
-}
-
-/* 深色模式保險再蓋一次 */
-@media (prefers-color-scheme: dark) {
-    div[data-baseweb="tab-highlight"] {
-        display: none !important;
-        background: transparent !important;
-        opacity: 0 !important;
-    }
-}
-
-/* 這個通常是 Tabs 底部那條長 bar，用同色把它「蓋掉」 */
-div[data-baseweb="tab-border"] {
-    background: #f8fafc !important;
-    box-shadow: none !important;
-    border: none !important;
-    height: 0.10rem !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* 深色模式下，底部 bar 也改成 #0E1117（跟背景完全融在一起） */
-@media (prefers-color-scheme: dark) {
-    div[data-baseweb="tab-border"] {
-        background: #0E1117 !important;
-    }
-}
-
-/* ⭐ 真正的膠囊 tab 按鈕樣式（這一段是你現在少掉的，所以膠囊會消失） */
-div[data-testid="stTabs"] button[role="tab"] {
-    border-radius: 999px !important;        /* 膠囊形狀 */
-    padding: 0.18rem 0.9rem !important;
-    margin-right: 0.45rem !important;
-    border: 1px solid rgba(148,163,184,0.7) !important;  /* gray-ish 邊框 */
-    background-color: #f3f4f6 !important;   /* 淺灰 */
-    color: #111827 !important;              /* 深字 */
-    font-size: 0.88rem !important;          /* 稍微小一點，手機不會太霸佔 */
-    font-weight: 500 !important;
-    box-shadow: none !important;
-}
-
-/* 取消 Streamlit 原本的 underline */
-div[data-testid="stTabs"] button[role="tab"]::after {
-    content: none !important;
-    border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-/* 被選中的 tab（淺色模式）：淡藍色膠囊 */
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-    background-color: #dbeafe !important;    /* light blue */
-    border-color: #38bdf8 !important;        /* cyan-ish */
-    color: #0f172a !important;               /* slate-900 */
-}
-
-/* 深色模式下 tabs 的顏色配置 */
-@media (prefers-color-scheme: dark) {
-
-    /* 未選取：深灰膠囊 */
-    div[data-testid="stTabs"] button[role="tab"] {
-        background-color: #111827 !important;
-        border-color: rgba(55,65,81,0.9) !important;
-        color: #e5e7eb !important;
-    }
-
-    /* 已選取：稍亮一點的藍灰膠囊 */
-    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-        background-color: #1f2937 !important;   /* 深藍灰 */
-        border-color: #38bdf8 !important;
-        color: #e5f2ff !important;
-    }
-}
-
-/* Tabs 底部與內文的距離再縮一點 */
-div[data-testid="stTabs"] + div {
-    margin-top: 0.20rem !important;
-}
-
-/* ======================================================
-   🌟 手機優化區（以下 100% 保證效果正確） 
-   ====================================================== */
-@media (max-width: 768px) {
-
-    .app-card {
-        padding: 0.8rem 0.9rem 1.1rem 0.9rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(15,23,42,0.15);
-    }
-
-    h3 {
-        font-size: 0.95rem !important;
-    }
-
-    .stButton>button,
-    .stDownloadButton>button {
-        width: 100%;
-    }
-
-    /* ==========================================================
-       ① 全站預設：所有 st.columns 手機上「左右並排」(50/50)
-       ========================================================== */
-    div[data-testid="stHorizontalBlock"] {
+    /* ✅ Force upload section to stay 50/50 on mobile (override any stacking rules) */
+    .upload-cols-marker + div[data-testid="stHorizontalBlock"]{
         flex-direction: row !important;
         flex-wrap: nowrap !important;
-        align-items: flex-start;
+        align-items: stretch !important;
+        gap: 0.75rem !important;
     }
-
-    div[data-testid="stHorizontalBlock"] > div {
-        flex: 1 1 0 !important;
-        min-width: 0 !important;
+    .upload-cols-marker + div[data-testid="stHorizontalBlock"] > div{
+        flex: 0 0 50% !important;
         max-width: 50% !important;
-        padding-left: 0.35rem;
-        padding-right: 0.35rem;
-        box-sizing: border-box;
+        width: 50% !important;
+        min-width: 0 !important;
     }
 
-    div[data-testid="stHorizontalBlock"] > div > div {
-        max-width: 100% !important;
-    }
 
-    /* ==========================================================
-       ② 在「疊加影片產生器 tab」裡把 st.columns 改回上下排列
-          （避免深度圖 / 速率圖在手機端被擠成兩欄）
-       ========================================================== */
+}
 
-    /* 疊加影片頁面的 wrapper */
-    .overlay-stack-mobile div[data-testid="stHorizontalBlock"] {
-        flex-direction: column !important;
-        flex-wrap: nowrap !important;
-    }
 
-    /* 每欄吃滿 100% */
-    .overlay-stack-mobile div[data-testid="stHorizontalBlock"] > div {
-        max-width: 100% !important;
-        width: 100% !important;
-    }
+/* ===== Mobile upload columns: keep 50%/50% ===== */
+@media (max-width: 600px){
+  .upload-cols-marker + div[data-testid="stHorizontalBlock"]{
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 0.8rem !important;
+  }
+  .upload-cols-marker + div[data-testid="stHorizontalBlock"] > div{
+    max-width: 50% !important;
+    width: 50% !important;
+    flex: 0 0 50% !important;
+    min-width: 0 !important;
+  }
 }
 
 </style>
 """
+
+
+# ================================
+# UI tuning (manual parameters)
+# ================================
+with st.sidebar.expander("UI tuning (manual)", expanded=False):
+    tabs_top_px = st.number_input("Tabs top offset (px)", min_value=0, max_value=200, value=int(st.session_state.get("ui_tabs_top_px", 72)))
+    block_pad_px = st.number_input("Top padding (px)", min_value=0, max_value=240, value=int(st.session_state.get("ui_block_pad_px", 116)))
+    tabs_gap_px = st.number_input("Tabs gap (px)", min_value=0, max_value=40, value=int(st.session_state.get("ui_tabs_gap_px", 10)))
+    align_btn_px = st.number_input("Align +/- size (px)", min_value=32, max_value=90, value=int(st.session_state.get("ui_align_btn_px", 56)))
+    align_input_px = st.number_input("Align time box max width (px)", min_value=120, max_value=420, value=int(st.session_state.get("ui_align_input_px", 220)))
+
+    st.session_state["ui_tabs_top_px"] = int(tabs_top_px)
+    st.session_state["ui_block_pad_px"] = int(block_pad_px)
+    st.session_state["ui_tabs_gap_px"] = int(tabs_gap_px)
+    st.session_state["ui_align_btn_px"] = int(align_btn_px)
+    st.session_state["ui_align_input_px"] = int(align_input_px)
+
+# Inject CSS variables (used by APP_CSS)
+st.markdown(
+    f"""
+    <style>
+      :root {{
+        --tabs-top: {int(st.session_state["ui_tabs_top_px"])}px;
+        --block-pad: {int(st.session_state["ui_block_pad_px"])}px;
+        --tabs-gap: {int(st.session_state["ui_tabs_gap_px"])}px;
+        --align-btn: {int(st.session_state["ui_align_btn_px"])}px;
+        --align-btn-size: {int(st.session_state["ui_align_btn_px"])}px;
+        --align-input-maxw: {int(st.session_state["ui_align_input_px"])}px;
+      }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
@@ -330,26 +341,42 @@ LANG_OPTIONS = {
 
 TRANSLATIONS = {
     "zh": {
+        # ======================
+        # App / 共用
+        # ======================
         "app_title": "Dive Overlay Generator",
         "top_brand": "DepthRender",
         "language_label": "🌐 語言",
 
+        # ======================
+        # Tabs 標題
+        # ======================
         "tab_overlay_title": "疊加影片產生器",
         "tab_compare_title": "潛水數據比較",
-        "compare_coming_soon": "這裡未來會加入不同潛水之間的曲線比較功能，例如：\n\n- 深度曲線對比\n- 速率 / FF 比例比較\n- 不同比賽 / 不同天的表現差異",
+        "compare_coming_soon": (
+            "這裡未來會加入不同潛水之間的曲線比較功能，例如：\n\n"
+            "- 深度曲線對比\n"
+            "- 速率 / FF 比例比較\n"
+            "- 不同比賽 / 不同天的表現差異"
+        ),
 
-        # Overlay tab
+        # ======================
+        # Overlay tab：上傳 / 預覽
+        # ======================
         "upload_watch_subheader": "1️⃣ 上傳手錶數據",
         "upload_watch_label": "手錶數據 (.fit/.uddf)",
         "upload_video_subheader": "2️⃣ 上傳潛水影片",
         "upload_video_label": "影片檔（任意解析度）",
+
         "fit_detected": "偵測到 Garmin .fit 檔，開始解析多潛資料...",
         "fit_no_dives": "這個 .fit 裡面沒有偵測到有效的潛水紀錄。",
         "select_dive_label": "選擇要使用的那一潛：",
         "uddf_detected": "偵測到 ATMOS UDDF 檔，開始解析單一潛水紀錄...",
         "no_depth_samples": "成功讀取手錶檔，但沒有找到任何深度樣本點。",
+
         "dive_time_detected": "偵測到的 Dive Time：約 {mm:02d}:{ss:02d} （從深度 ≥ 0.7 m 開始，到回到 0 m）",
         "preview_subheader": "3️⃣ 潛水曲線預覽（時間 vs 深度 / 速率）",
+
         "axis_time_seconds": "時間（秒）",
         "axis_depth_m": "深度（m）",
         "axis_rate_mps": "速率（m/s）",
@@ -358,8 +385,13 @@ TRANSLATIONS = {
         "tooltip_rate": "速率 (m/s)",
         "depth_chart_title": "深度 vs 時間",
         "rate_chart_title": "速率 vs 時間",
+
+        # 目前你雖然拿掉了 caption 的顯示，但保留 key 不影響使用
         "preview_caption": "原始資料點數：{n_points}，重採樣時間範圍：{t_min:.0f}～{t_max:.0f} 秒，最大深度：約 {max_depth:.1f} m",
 
+        # ======================
+        # Overlay tab：對齊與版型
+        # ======================
         "align_layout_subheader": "4️⃣ 影片對齊與版型",
         "time_offset_label": "潛水開始時間調整",
         "time_offset_help": "如果影片比實際下潛早開始，請用負值調整。",
@@ -375,12 +407,18 @@ TRANSLATIONS = {
         "layout_d_label": "D: 單純深度",
         "layout_d_desc": "Simple_B",
 
+        # ======================
+        # Overlay tab：潛水員資訊
+        # ======================
         "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給 Layout B 使用）",
         "diver_name_label": "潛水員姓名 / Nickname",
         "nationality_label": "國籍",
         "discipline_label": "潛水項目（Discipline）",
         "not_specified": "（不指定）",
 
+        # ======================
+        # Overlay tab：產生影片 + 錯誤訊息
+        # ======================
         "render_button": "🚀 產生疊加數據影片",
         "error_need_both_files": "請先上傳手錶數據與影片檔。",
         "progress_init": "初始化中...",
@@ -394,19 +432,24 @@ TRANSLATIONS = {
         "nationality_read_error": "讀取 Nationality.csv 時發生錯誤：{error}",
         "nationality_missing_columns": "Nationality.csv 缺少必要欄位：{missing}",
 
-        # Compare tab
+        # ======================
+        # Compare tab：標題 / 上傳
+        # ======================
         "compare_title": "📊 潛水數據比較",
         "compare_upload_a": "上傳數據 A（.fit / .uddf）",
         "compare_upload_b": "上傳數據 B（.fit / .uddf）",
         "compare_select_dive_a": "數據A 要比較的那一潛：",
         "compare_select_dive_b": "數據B 要比較的那一潛：",
+
         "compare_smooth_label": "速率平滑度",
         "compare_align_label": "調整數據 B 的時間偏移（秒，用來對齊兩組曲線）",
         "compare_no_data": "請先上傳並選擇兩組有效的潛水數據。",
+
         "compare_depth_chart_title": "深度 vs 時間",
         "compare_rate_chart_title": "速率 vs 時間",
         "compare_series_legend": "數據來源",
         "compare_align_current": "偏移：{offset:.1f} 秒",
+
         "compare_desc_rate_label": "下潛速率 (m/s)",
         "compare_asc_rate_label": "上升速率 (m/s)",
         "compare_ff_depth_label_a": "數據A：FF 開始深度 (m)",
@@ -414,48 +457,98 @@ TRANSLATIONS = {
         "compare_ff_rate_label": "Free Fall 速率 (m/s)",
         "compare_metric_unit_mps": "{value:.2f} m/s",
         "compare_metric_not_available": "—",
-        "compare_ff_rate_label": "Free Fall 速率 (m/s)",
-        "compare_metric_unit_mps": "{value:.2f} m/s",
-        "compare_metric_not_available": "—",
 
-        # Overlay 速率分析 + 潛水時間顯示
+        # ======================
+        # Overlay：速率分析 + 潛水時間顯示（單一潛水）
+        # ======================
         "overlay_speed_analysis_title": "潛水速率分析",
         "overlay_ff_depth_label": "FF 開始深度 (m)",
         "metric_dive_time_label": "潛水時間",
         "metric_dive_time_value": "{mm:02d}:{ss:02d}",
 
-        
-        # Overlay rate analysis (單一潛水速率分析)
         "overlay_rate_section_title": "潛水速率分析",
-        "overlay_ff_depth_label": "FF 開始深度 (m)",
         "overlay_desc_rate_label": "下潛速率 (m/s)",
         "overlay_asc_rate_label": "上升速率 (m/s)",
         "overlay_ff_rate_label": "Free Fall 速率 (m/s)",
         "overlay_metric_unit_mps": "{value:.2f} m/s",
         "overlay_metric_not_available": "—",
 
+        # ======================
+        # Overlay：影片對齊 UI
+        # ======================
+        "align_mode_label": "對齊方式",
+        "align_mode_start": "對齊下潛時間 (開始躬身)",
+        "align_mode_bottom": "對齊最深時間 (轉身/摘到 tag)",
+        "align_mode_end": "對齊出水時間 (手錶出水)",
+
+        "align_video_time_label": "影片時間（mm:ss.ss，例如 01:10.05）",
+        "align_video_time_help": "請輸入分鐘:秒.小數，秒與小數最多 2 位，例如 00:03.18",
+        "align_video_time_invalid": "影片時間格式不正確，請使用 mm:ss 或 mm:ss.ss，例如 00:03.18",
+
+        # ======================
+        # 渲染剩餘時間提示
+        # ======================
+        "render_estimate_pending": "剩餘時間預估中⋯⋯",
+        "render_do_not_leave": "請勿離開此畫面或關閉螢幕",
+        "render_estimate_eta": "預估剩餘時間：約 {eta}",
+        
+        "align_video_time_title": "影片時間",
+        "align_step_label": "調整級距",
+        "align_step_min": "分 (1 min)",
+        "align_step_sec": "秒 (1 s)",
+        "align_step_csec": "0.01 秒 (10 ms)",
+        "align_minus": "-",
+        "align_plus": "＋",
+        "align_time_invalid": "影片時間格式不正確，請使用 mm:ss 或 mm:ss.ss，例如 00:03.18",
+        "align_step_label": "調整級距",
+        "align_step_min": "分 (1 min)",
+        "align_step_sec": "秒 (1 s)",
+        "align_step_csec": "0.1 秒 (100 ms)",
+        "align_video_time_seconds_label": "影片時間（秒）",
+        "align_video_time_seconds_help": "用右側 +/- 依級距微調；上方可切換分 / 秒 / 0.02s。",
+        "align_video_time_display": "顯示格式",
+        "upload_file_short": "上傳檔案",
+
+    
     },
+
     "en": {
+        # ======================
+        # App / Common
+        # ======================
         "app_title": "Dive Overlay Generator",
         "top_brand": "DepthRender",
         "language_label": "🌐 Language",
 
+        # ======================
+        # Tabs titles
+        # ======================
         "tab_overlay_title": "Overlay Generator",
         "tab_compare_title": "Dive Comparison",
-        "compare_coming_soon": "This tab will later provide dive-to-dive comparison, such as:\n\n- Depth curve comparison\n- Speed / free-fall ratio\n- Performance across different sessions / competitions",
+        "compare_coming_soon": (
+            "This tab will later provide dive-to-dive comparison, such as:\n\n"
+            "- Depth curve comparison\n"
+            "- Speed / free-fall ratio\n"
+            "- Performance across different sessions / competitions"
+        ),
 
-        # Overlay tab
+        # ======================
+        # Overlay tab: upload / preview
+        # ======================
         "upload_watch_subheader": "1️⃣ Upload dive log",
         "upload_watch_label": "Dive log (.fit/.uddf)",
-        "upload_video_subheader": "2️⃣ Upload dive video",
-        "upload_video_label": "Video file (any resolution)",
+        "upload_video_subheader": "2️⃣ Upload video",
+        "upload_video_label": "Video file",
+
         "fit_detected": "Detected Garmin .fit file. Parsing multi-dive data...",
         "fit_no_dives": "No valid dives found in this .fit file.",
         "select_dive_label": "Select which dive to use:",
         "uddf_detected": "Detected ATMOS UDDF file. Parsing single dive...",
         "no_depth_samples": "Log file loaded, but no depth samples were found.",
+
         "dive_time_detected": "Detected dive time: approx {mm:02d}:{ss:02d} (from depth ≥ 0.7 m until back to 0 m)",
         "preview_subheader": "3️⃣ Dive curve preview (time vs depth / speed)",
+
         "axis_time_seconds": "Time (s)",
         "axis_depth_m": "Depth (m)",
         "axis_rate_mps": "Speed (m/s)",
@@ -464,8 +557,12 @@ TRANSLATIONS = {
         "tooltip_rate": "Speed (m/s)",
         "depth_chart_title": "Depth vs Time",
         "rate_chart_title": "Speed vs Time",
+
         "preview_caption": "Raw samples: {n_points}, resampled time range: {t_min:.0f}–{t_max:.0f} s, max depth: ~{max_depth:.1f} m",
 
+        # ======================
+        # Overlay tab: alignment & layout
+        # ======================
         "align_layout_subheader": "4️⃣ Video alignment & layout",
         "time_offset_label": "Align video start",
         "time_offset_help": "If the video starts before the actual dive, use a negative offset.",
@@ -481,12 +578,18 @@ TRANSLATIONS = {
         "layout_d_label": "D: Depth only",
         "layout_d_desc": "Simple_B",
 
+        # ======================
+        # Overlay tab: diver info
+        # ======================
         "diver_info_subheader": "5️⃣ Diver info (optional, mainly for Layout B)",
         "diver_name_label": "Diver name / Nickname",
         "nationality_label": "Nationality",
         "discipline_label": "Discipline",
         "not_specified": "(Not specified)",
 
+        # ======================
+        # Overlay tab: render + errors
+        # ======================
         "render_button": "🚀 Generate overlay video",
         "error_need_both_files": "Please upload both dive log and video file.",
         "progress_init": "Initializing...",
@@ -500,19 +603,24 @@ TRANSLATIONS = {
         "nationality_read_error": "Error reading Nationality.csv: {error}",
         "nationality_missing_columns": "Nationality.csv is missing required columns: {missing}",
 
+        # ======================
         # Compare tab
+        # ======================
         "compare_title": "📊 Dual-dive comparison",
         "compare_upload_a": "Upload log A (.fit / .uddf)",
         "compare_upload_b": "Upload log B (.fit / .uddf)",
         "compare_select_dive_a": "Dive A:",
         "compare_select_dive_b": "Dive B:",
+
         "compare_smooth_label": "Speed smoothing",
         "compare_align_label": "Time offset for log B (seconds, to align two curves)",
         "compare_no_data": "Please upload and select two valid dive logs first.",
+
         "compare_depth_chart_title": "Depth vs Time (comparison)",
         "compare_rate_chart_title": "Speed vs Time (comparison)",
         "compare_series_legend": "Series",
         "compare_align_current": "Offset: {offset:.1f}s",
+
         "compare_desc_rate_label": "Descent Rate (m/s)",
         "compare_asc_rate_label": "Ascent Rate (m/s)",
         "compare_ff_depth_label_a": "A: FF start depth (m)",
@@ -520,27 +628,61 @@ TRANSLATIONS = {
         "compare_ff_rate_label": "Free-fall Descent Rate (m/s)",
         "compare_metric_unit_mps": "{value:.2f} m/s",
         "compare_metric_not_available": "—",
-        "compare_ff_rate_label": "Free-fall Descent Rate (m/s)",
-        "compare_metric_unit_mps": "{value:.2f} m/s",
-        "compare_metric_not_available": "—",
-        
-        # Overlay speed analysis + dive time display
+
+        # ======================
+        # Overlay: single-dive metrics
+        # ======================
         "overlay_speed_analysis_title": "Dive speed analysis",
         "overlay_ff_depth_label": "FF start depth (m)",
         "metric_dive_time_label": "Dive time",
         "metric_dive_time_value": "{mm:02d}:{ss:02d}",
 
-        # Overlay rate analysis (single-dive metrics)
         "overlay_rate_section_title": "Dive speed metrics",
-        "overlay_ff_depth_label": "FF start depth (m)",
         "overlay_desc_rate_label": "Descent speed (m/s)",
         "overlay_asc_rate_label": "Ascent speed (m/s)",
         "overlay_ff_rate_label": "Free-fall speed (m/s)",
         "overlay_metric_unit_mps": "{value:.2f} m/s",
         "overlay_metric_not_available": "—",
 
+        # ======================
+        # Overlay: alignment UI
+        # ======================
+        "align_mode_label": "Alignment mode",
+        "align_mode_start": "Align descent time (start of duck dive)",
+        "align_mode_bottom": "Align bottom time (turn / tag grab)",
+        "align_mode_end": "Align surfacing time (watch exits water)",
+
+        "align_video_time_label": "Video time (mm:ss.ss, e.g. 01:10.05)",
+        "align_video_time_help": "Use mm:ss or mm:ss.ss, with up to 2 decimal places, e.g. 00:03.18",
+        "align_video_time_invalid": "Invalid video time format. Please use mm:ss or mm:ss.ss, e.g. 00:03.18",
+
+        # ======================
+        # Rendering ETA messages
+        # ======================
+        "render_estimate_pending": "Estimating remaining time…",
+        "render_do_not_leave": "Do not leave this page or turn off the screen",
+        "render_estimate_eta": "Estimated remaining time: approx. {eta}",
+        
+        "align_video_time_title": "Video time",
+        "align_step_label": "Step size",
+        "align_step_min": "Minute (1 min)",
+        "align_step_sec": "Second (1 s)",
+        "align_step_csec": "0.01 s (10 ms)",
+        "align_minus": "−",
+        "align_plus": "+",
+        "align_time_invalid": "Invalid time format. Use mm:ss or mm:ss.ss, e.g. 00:03.18",
+        "align_step_label": "Step",
+        "align_step_min": "Min (1 min)",
+        "align_step_sec": "Sec (1 s)",
+        "align_step_csec": "0.1 s (100 ms)",
+        "align_video_time_seconds_label": "Video time (seconds)",
+        "align_video_time_seconds_help": "Use +/- to adjust by the selected step; switch step above (min / sec / 0.02s).",
+        "align_video_time_display": "Display",
+        "upload_file_short": "Upload file",
+
     },
 }
+
 
 def tr(key: str, **kwargs) -> str:
     """依據目前語言取得對應字串，可帶入 format 參數。"""
@@ -565,13 +707,14 @@ def set_language():
 # -------------------------------
 st.markdown("<div class='app-header-row'>", unsafe_allow_html=True)
 
+st.markdown("<div class='header-cols'>", unsafe_allow_html=True)  # ✅ NEW
 top_left, top_right = st.columns([8, 1])
+st.markdown("</div>", unsafe_allow_html=True)                     # ✅ NEW
 
 with top_left:
     st.markdown(
         f"""
         <div class="app-top-bar">
-            <div class="app-top-icon">🌊</div>
             <div>
                 <div class="app-title-text">{tr('top_brand')}</div>
                 <div class="app-title-sub">Dive Overlay Generator</div>
@@ -591,7 +734,7 @@ with top_right:
         on_change=set_language,
     )
 
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)  # >🌊<
 
 # 讀取國籍 / 國碼清單
 @st.cache_data
@@ -791,13 +934,12 @@ def compute_dive_metrics(
 
     return result
 
-
 # ================================
 # 主畫面內容開始（卡片 + Tabs）
 # ================================
 with st.container():
     st.markdown('<div class="app-card">', unsafe_allow_html=True)
-
+    
     # Tabs：目前功能 + 比較分頁
     tab_overlay, tab_compare = st.tabs([
         tr("tab_overlay_title"),
@@ -810,23 +952,33 @@ with st.container():
     with tab_overlay:
 
         # --- 1. 上傳區 ---
-        col1, col2 = st.columns(2)
+        st.markdown("<div class='upload-cols-marker'></div>", unsafe_allow_html=True)
+        col_left, col_right = st.columns(2)
 
-        with col1:
+        with col_left:
             st.subheader(tr("upload_watch_subheader"))
+            st.markdown(f"<div class='upload-label'>{tr('upload_watch_label')}</div>", unsafe_allow_html=True)
+
+            # ✅ 手錶：type=None（手機端允許任何檔案選），再用檔名判斷 .fit/.uddf
             watch_file = st.file_uploader(
-                tr("upload_watch_label"),
+                label="",
                 type=None,
-                key="overlay_watch_file",
+                key="overlay_watch_uploader",
+                label_visibility="collapsed",
             )
 
-        with col2:
+        with col_right:
             st.subheader(tr("upload_video_subheader"))
+            st.markdown(f"<div class='upload-label'>{tr('upload_video_label')}</div>", unsafe_allow_html=True)
+
+            # ✅ 影片：限制只顯示影片類型（避免照片也出現）
             video_file = st.file_uploader(
-                tr("upload_video_label"),
-                type=["mp4", "mov", "m4v"],
-                key="overlay_video_file",
+                label="",
+                type=["mp4", "mov", "m4v", "avi", "mkv", "webm"],
+                key="overlay_video_uploader",
+                label_visibility="collapsed",
             )
+
 
         # --- 2. 選手錶類型 & 解析 ---
         dive_df = None
@@ -892,8 +1044,16 @@ with st.container():
                     )
                     dive_df = dive_df.sort_values("time_s").reset_index(drop=True)
 
-                # 重採樣 + 速率（固定用 2 秒平滑）
-                df_rate = prepare_dive_curve(dive_df, smooth_window=2)
+                # 重採樣 + 速率（讓使用者選擇平滑度 1 / 2 / 3 秒）
+                if "overlay_smooth_level" not in st.session_state:
+                    st.session_state["overlay_smooth_level"] = 1  # 預設 1 秒
+
+                smooth_level_overlay = int(st.session_state["overlay_smooth_level"])
+
+                df_rate = prepare_dive_curve(
+                    dive_df,
+                    smooth_window=smooth_level_overlay,
+                )
 
                 # ====== 偵測 Dive Time（不再用 st.info 顯示，而是放到數據區） ======
                 dive_time_s = None
@@ -953,6 +1113,10 @@ with st.container():
                     st.altair_chart(depth_chart, use_container_width=True)
 
                     # 速率 vs 時間（平滑線）
+                    # 給速率圖用的動態 Y 軸上限（最小 0.5，每 0.5 一級）
+                    max_rate_plot = float(df_rate["rate_abs_mps_smooth"].max())
+                    max_rate_domain = max(0.5, np.ceil(max_rate_plot * 2.0) / 2.0)
+
                     rate_chart = (
                         alt.Chart(df_rate)
                         .mark_line(interpolate="basis")
@@ -965,7 +1129,7 @@ with st.container():
                             y=alt.Y(
                                 "rate_abs_mps_smooth:Q",
                                 title=tr("axis_rate_mps"),
-                                scale=alt.Scale(domain=[0, 3]),
+                                scale=alt.Scale(domain=[0, max_rate_domain]),
                             ),
                             tooltip=[
                                 alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
@@ -977,18 +1141,35 @@ with st.container():
                             height=300,
                         )
                     )
+
                     st.altair_chart(rate_chart, use_container_width=True)
 
-                    # 原始資料說明
-                    st.caption(
-                        tr(
-                            "preview_caption",
-                            n_points=len(dive_df),
-                            t_min=df_rate["time_s"].min(),
-                            t_max=df_rate["time_s"].max(),
-                            max_depth=df_rate["depth_m"].max(),
+                    # 在速率圖下方放「速率平滑度」選單（靠右，小一點）
+                    spacer_l, spacer_mid, smooth_col_overlay = st.columns([10, 1, 1])
+                    with smooth_col_overlay:
+                        st.markdown(
+                            f"<div style='text-align:right; font-size:0.85rem; margin-bottom:2px;'>"
+                            f"{tr('compare_smooth_label')}"
+                            f"</div>",
+                            unsafe_allow_html=True,
                         )
-                    )
+                        st.selectbox(
+                            "",
+                            options=[1, 2, 3],
+                            key="overlay_smooth_level",   # 用一樣的 key，控制 df_rate 平滑度
+                            label_visibility="collapsed",
+                        )
+
+                    # 原始資料說明
+                    #st.caption(
+                    #    tr(
+                    #        "preview_caption",
+                    #        n_points=len(dive_df),
+                    #        t_min=df_rate["time_s"].min(),
+                    #        t_max=df_rate["time_s"].max(),
+                    #        max_depth=df_rate["depth_m"].max(),
+                    #    )
+                    #)
 
                     # ====== 3-2. 潛水速率分析（含 Dive Time） ======
                     st.markdown(f"### {tr('overlay_speed_analysis_title')}")
@@ -1055,233 +1236,292 @@ with st.container():
                         fmt_mps_local(metrics_overlay["ff_avg"]),
                     )
 
-
-                    # ==========================
-                    # 🌊 新增：潛水速率分析區塊
-                    # ==========================
-                    st.subheader(tr("overlay_rate_section_title"))
-
-                    # 取得本潛水最大深度，設定 FF 起始深度輸入
-                    max_depth_overlay = float(df_rate["depth_m"].max())
-                    ff_start_overlay = st.number_input(
-                        tr("overlay_ff_depth_label"),
-                        min_value=0.0,
-                        max_value=max_depth_overlay,
-                        step=1.0,
-                        value=min(15.0, max_depth_overlay),
-                        key="overlay_ff_depth",
-                    )
-
-                    # 使用與比較頁面相同的計算公式
-                    metrics_overlay = compute_dive_metrics(
-                        df_rate=df_rate,
-                        dive_df_raw=dive_df,
-                        ff_start_depth_m=ff_start_overlay,
-                    )
-
-                    def fmt_mps_overlay(value: Optional[float]) -> str:
-                        if value is None or np.isnan(value):
-                            return tr("overlay_metric_not_available")
-                        return tr("overlay_metric_unit_mps", value=round(value, 2))
-
-                    def render_metric_block_overlay(title: str, value: Optional[float]):
-                        value_str = fmt_mps_overlay(value)
-                        st.markdown(
-                            f"""
-                            <div style="margin-bottom:6px;">
-                                <div style="font-weight:700; font-size:1.05rem; margin-top:0; margin-bottom:0;">
-                                    {title}
-                                </div>
-                                <div style="font-size:0.95rem; margin-top:0; margin-bottom:0.1rem;">
-                                    {value_str}
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-
-                    # 單欄佔滿手機寬度顯示三個指標
-                    render_metric_block_overlay(
-                        tr("overlay_desc_rate_label"),
-                        metrics_overlay["descent_avg"],
-                    )
-                    render_metric_block_overlay(
-                        tr("overlay_asc_rate_label"),
-                        metrics_overlay["ascent_avg"],
-                    )
-                    render_metric_block_overlay(
-                        tr("overlay_ff_rate_label"),
-                        metrics_overlay["ff_avg"],
-                    )
-
         # --- 4. 設定時間偏移 & 版型選擇 ---
         st.subheader(tr("align_layout_subheader"))
+        
+        # ==========================================================
+        # 4-1) 對齊模式
+        # ==========================================================
+        align_mode = st.radio(
+            tr("align_mode_label"),
+            options=["start", "bottom", "end"],
+            format_func=lambda m: {
+                "start": tr("align_mode_start"),
+                "bottom": tr("align_mode_bottom"),
+                "end": tr("align_mode_end"),
+            }[m],
+            horizontal=False,
+            key="overlay_align_mode",
+        )
 
-        col3, col4 = st.columns(2)
+        # ==========================================================
+        # 4-2) 影片時間輸入（FF 同款：［－］［input］［＋］）
+        #     - widget key: overlay_align_video_time_str
+        #     - calc key:   overlay_align_video_time_s
+        # ==========================================================
+        def parse_time_str_to_seconds_safe(s: str):
+            s = (s or "").strip()
+            if not s:
+                return 0.0
+            try:
+                parts = s.split(":")
+                if len(parts) != 2:
+                    return None
+                mm = int(parts[0].strip())
+                ss = float(parts[1].strip())
+                if mm < 0 or ss < 0:
+                    return None
+                return mm * 60.0 + ss
+            except Exception:
+                return None
 
-        with col3:
-            time_offset = st.slider(
-                tr("time_offset_label"),
-                min_value=-20.0,
-                max_value=20.0,
-                value=0.0,
-                step=0.1,
-                help=tr("time_offset_help"),
-                key="overlay_time_offset",
+        def seconds_to_mmss_cc(sec: float) -> str:
+            sec = max(0.0, float(sec))
+            mm = int(sec // 60)
+            ss = sec - mm * 60
+            return f"{mm:02d}:{ss:05.2f}"  # mm:ss.cc
+
+        def clamp_time(sec: float, max_sec: float = 3600.0) -> float:
+            return max(0.0, min(float(sec), float(max_sec)))
+
+        # --- 初始化 state ---
+        if "overlay_align_video_time_s" not in st.session_state:
+            st.session_state["overlay_align_video_time_s"] = 0.0
+        if "overlay_align_video_time_str" not in st.session_state:
+            st.session_state["overlay_align_video_time_str"] = "00:00.00"
+        if "overlay_align_step_unit" not in st.session_state:
+            st.session_state["overlay_align_step_unit"] = "sec"
+
+        # --- 級距設定 ---
+        step_map = {
+            "min": 60.0,
+            "sec": 1.0,
+            "csec": 0.1,   # 0.1 秒
+        }
+
+        def sync_time_str_from_seconds():
+            st.session_state["overlay_align_video_time_str"] = seconds_to_mmss_cc(
+                st.session_state["overlay_align_video_time_s"]
             )
 
-        # ------------ 動態 Layout 設定區 ------------
+        def on_minus():
+            step = step_map.get(st.session_state["overlay_align_step_unit"], 1.0)
+            st.session_state["overlay_align_video_time_s"] = round(
+                clamp_time(st.session_state["overlay_align_video_time_s"] - step), 2
+            )
+            sync_time_str_from_seconds()
+
+        def on_plus():
+            step = step_map.get(st.session_state["overlay_align_step_unit"], 1.0)
+            st.session_state["overlay_align_video_time_s"] = round(
+                clamp_time(st.session_state["overlay_align_video_time_s"] + step), 2
+            )
+            sync_time_str_from_seconds()
+
+        # --- 4-2 UI 容器：桌機約 50% 寬、靠左；手機強制全寬 ---
+        st.markdown('<div class="align-block align-left">', unsafe_allow_html=True)
+
+        # ① Label
+        st.markdown(f"**{tr('align_video_time_label')}**")
+
+        # ② 級距選擇（同區塊，不要多餘空白）
+        st.radio(
+            label="",
+            options=["min", "sec", "csec"],
+            horizontal=True,
+            format_func=lambda k: {
+                "min": tr("align_step_min"),
+                "sec": tr("align_step_sec"),
+                "csec": tr("align_step_csec"),
+            }[k],
+            key="overlay_align_step_unit",
+            label_visibility="collapsed",
+        )
+
+        # ③ － / input / ＋（全形，避免「+」消失）
+        b1, mid, b2 = st.columns([1, 3, 1], vertical_alignment="center")
+
+        with b1:
+            # 全形減號，避免在某些瀏覽器/字型下消失
+            st.button("－", key="overlay_align_minus", on_click=on_minus, use_container_width=False)
+
+        with mid:
+            video_time_str = st.text_input(
+                label="",
+                key="overlay_align_video_time_str",
+                label_visibility="collapsed",
+                help=tr("align_video_time_help"),
+            )
+
+            v_ref_from_text = parse_time_str_to_seconds_safe(video_time_str)
+            if v_ref_from_text is None:
+                st.warning(tr("align_video_time_invalid"))
+            else:
+                st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
+
+        with b2:
+            # 全形加號，避免消失
+            st.button("＋", key="overlay_align_plus", on_click=on_plus, use_container_width=False)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# 最終 v_ref（秒）
+        v_ref = float(st.session_state["overlay_align_video_time_s"])
+
+
+        # ==========================================================
+        # 4-3) 準備事件時間 + time_offset（確保第 6 段不會 undefined）
+        # ==========================================================
+        t_ref_raw = None
+        if df_rate is not None and dive_df is not None:
+            if align_mode == "start":
+                t_ref_raw = dive_start_s
+            elif align_mode == "end":
+                t_ref_raw = dive_end_s
+            elif align_mode == "bottom":
+                raw = dive_df.sort_values("time_s").reset_index(drop=True)
+                after = raw[raw["time_s"] >= dive_start_s]
+                within = after[after["time_s"] <= dive_end_s]
+                if not within.empty:
+                    idx_bottom = within["depth_m"].idxmax()
+                    t_ref_raw = float(within.loc[idx_bottom, "time_s"])
+        
+        # 🔧 只在「對齊」移除那 1 秒 offset（其他邏輯不動）
+        t_ref_for_align = (t_ref_raw - 1.0) if (t_ref_raw is not None) else None
+        
+        if t_ref_for_align is not None:
+            time_offset = t_ref_for_align - v_ref
+            st.caption(f"目前計算出的偏移：{time_offset:+.2f} 秒（會套用到渲染）")
+        else:
+            time_offset = 0.0
+            st.caption("尚未偵測到潛水事件，暫時使用 0 秒偏移。")
+        
+        # ==========================================================
+        # 4-4) Layout 選擇（確保 selected_id 一定存在）
+        # ==========================================================
         LAYOUTS_DIR = ASSETS_DIR / "layouts"
-
         layouts_config = [
-            {
-                "id": "A",
-                "label_key": "layout_a_label",
-                "filename": "layout_a.png",
-                "desc_key": "layout_a_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "B",
-                "label_key": "layout_b_label",
-                "filename": "layout_b.png",
-                "desc_key": "layout_b_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "C",
-                "label_key": "layout_c_label",
-                "filename": "layout_c.png",
-                "desc_key": "layout_c_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "D",
-                "label_key": "layout_d_label",
-                "filename": "layout_d.png",
-                "desc_key": "layout_d_desc",
-                "uses_diver_info": True,
-            },
+            {"id": "A", "label_key": "layout_a_label", "filename": "layout_a.png", "desc_key": "layout_a_desc", "uses_diver_info": False},
+            {"id": "B", "label_key": "layout_b_label", "filename": "layout_b.png", "desc_key": "layout_b_desc", "uses_diver_info": False},
+            {"id": "C", "label_key": "layout_c_label", "filename": "layout_c.png", "desc_key": "layout_c_desc", "uses_diver_info": False},
+            {"id": "D", "label_key": "layout_d_label", "filename": "layout_d.png", "desc_key": "layout_d_desc", "uses_diver_info": True},
         ]
-
         layout_ids = [cfg["id"] for cfg in layouts_config]
-
-        with col4:
-            selected_id = st.selectbox(
-                tr("layout_select_label"),
-                options=layout_ids,
-                format_func=lambda i: tr(f"layout_{i.lower()}_label"),
-                key="overlay_layout_id",
-            )
-
+        
+        selected_id = st.selectbox(
+            tr("layout_select_label"),
+            options=layout_ids,
+            format_func=lambda i: tr(f"layout_{i.lower()}_label"),
+            key="overlay_layout_id",
+        )
+        
         def load_layout_image(cfg, is_selected: bool):
             img_path = LAYOUTS_DIR / cfg["filename"]
             img = Image.open(img_path).convert("RGBA")
-
             if not is_selected:
                 return img
-
+        
             border_color = "#FFD700"
             border_width = 12
             corner_radius = 15
-
             overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
             draw = ImageDraw.Draw(overlay)
-
             w, h = img.size
             pad = border_width // 2
             draw.rounded_rectangle(
-                [
-                    (-pad, -pad),
-                    (w + pad - 1, h + pad - 1),
-                ],
+                [(-pad, -pad), (w + pad - 1, h + pad - 1)],
                 radius=corner_radius,
                 outline=border_color,
                 width=border_width,
             )
-
-            img = Image.alpha_composite(img, overlay)
-            return img
-
+            return Image.alpha_composite(img, overlay)
+        
         st.markdown("### " + tr("layout_preview_title"))
-
         cols = st.columns(len(layouts_config))
-
         for col, cfg in zip(cols, layouts_config):
             with col:
                 img = load_layout_image(cfg, cfg["id"] == selected_id)
-                st.image(
-                    img,
-                    caption=tr(cfg["label_key"]),
-                    use_container_width=True,
-                )
+                st.image(img, caption=tr(cfg["label_key"]), use_container_width=True)
                 if cfg.get("desc_key"):
                     st.caption(tr(cfg["desc_key"]))
-
+        
         # --- 5. 輸入潛水員資訊---
         st.subheader(tr("diver_info_subheader"))
-
         nationality_file = ASSETS_DIR / "Nationality.csv"
         nat_df = load_nationality_options(nationality_file)
-
+        
         not_spec_label = tr("not_specified")
-
         if nat_df.empty:
             nationality_options = [not_spec_label]
         else:
             nationality_labels = nat_df["label"].tolist()
             nationality_options = [not_spec_label] + nationality_labels
-
+        
         default_label = "Taiwan (TWN)"
-        if default_label in nationality_options:
-            default_index = nationality_options.index(default_label)
-        else:
-            default_index = 0
-
+        default_index = nationality_options.index(default_label) if default_label in nationality_options else 0
+        
         col_info_1, col_info_2 = st.columns(2)
-
         with col_info_1:
             diver_name = st.text_input(tr("diver_name_label"), value="", key="overlay_diver_name")
-
             nationality_label = st.selectbox(
                 tr("nationality_label"),
                 options=nationality_options,
                 index=default_index,
                 key="overlay_nationality",
             )
-
-            if nationality_label == not_spec_label:
-                nationality = ""
-            else:
-                nationality = nationality_label
-
+            nationality = "" if nationality_label == not_spec_label else nationality_label
+        
         with col_info_2:
             discipline = st.selectbox(
                 tr("discipline_label"),
                 options=[not_spec_label, "CWT", "CWTB", "CNF", "FIM"],
                 key="overlay_discipline",
             )
-
+        
         # --- 6. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
             if (dive_df is None) or (video_file is None):
                 st.error(tr("error_need_both_files"))
             else:
                 progress_bar = st.progress(0, text=tr("progress_init"))
-
+                status_placeholder = st.empty()
+                start_time = time.time()
+        
+                def format_seconds(sec: float) -> str:
+                    sec = max(0, int(round(sec)))
+                    mm = sec // 60
+                    ss = sec % 60
+                    return f"{mm:02d}:{ss:02d}"
+        
                 def progress_callback(p: float, message: str = ""):
                     p = max(0.0, min(1.0, float(p)))
-                    percent = int(p * 100)
-                    if message:
-                        text = f"{message} {percent}%"
+                    percent = int(round(p * 100))
+        
+                    bar_text = f"{message} {percent}%" if message else f"{tr('progress_rendering')} {percent}%"
+        
+                    if p >= 1.0:
+                        progress_bar.progress(100, text=tr("progress_done"))
+                        status_placeholder.empty()
+                        return
+        
+                    progress_bar.progress(percent, text=bar_text)
+        
+                    elapsed = time.time() - start_time
+                    eta_seconds = None
+                    if p >= 0.40 and p > 0:
+                        total_est = elapsed / p
+                        eta_seconds = max(0.0, total_est - elapsed)
+        
+                    if eta_seconds is None:
+                        status_placeholder.info(f"{tr('render_estimate_pending')}\n{tr('render_do_not_leave')}")
                     else:
-                        text = f"{tr('progress_rendering')} {percent}%"
-                    progress_bar.progress(percent, text=text)
-
+                        eta_str = format_seconds(eta_seconds)
+                        status_placeholder.info(f"{tr('render_estimate_eta', eta=eta_str)}\n{tr('render_do_not_leave')}")
+        
                 tmp_video_path = Path("/tmp") / video_file.name
                 with open(tmp_video_path, "wb") as f:
                     f.write(video_file.read())
-
+        
                 try:
                     output_path = render_video(
                         video_path=tmp_video_path,
@@ -1290,7 +1530,7 @@ with st.container():
                         time_offset=time_offset,
                         layout=selected_id,
                         assets_dir=ASSETS_DIR,
-                        output_resolution=(1080, 1920),  # 直式 9:16
+                        output_resolution=(1080, 1920),
                         diver_name=diver_name,
                         nationality=nationality,
                         discipline=discipline if discipline != not_spec_label else "",
@@ -1299,10 +1539,10 @@ with st.container():
                         dive_end_s=dive_end_s,
                         progress_callback=progress_callback,
                     )
-
+        
                     progress_callback(1.0, tr("progress_done"))
                     st.success(tr("render_success"))
-
+        
                     with open(output_path, "rb") as f:
                         st.download_button(
                             tr("download_button"),
@@ -1310,14 +1550,16 @@ with st.container():
                             file_name="dive_overlay_1080p.mp4",
                             mime="video/mp4",
                         )
-
+        
                     col_preview, col_empty = st.columns([1, 1])
                     with col_preview:
                         st.video(str(output_path))
-
+        
                 except Exception as e:
+                    status_placeholder.empty()
                     st.error(tr("render_error", error=e))
-                    
+
+
     # ============================
     # Tab 2：潛水數據比較功能
     # ============================
@@ -1333,7 +1575,7 @@ with st.container():
             with cmp_col1:
                 cmp_file_a = st.file_uploader(
                     tr("compare_upload_a"),
-                    type=None,
+                    type=["mp4","mov","m4v","avi","mkv","webm"],
                     key="cmp_file_a",
                 )
     
