@@ -513,8 +513,8 @@ TRANSLATIONS = {
         "align_step_min": "分 (1 min)",
         "align_step_sec": "秒 (1 s)",
         "align_step_csec": "0.01 秒 (10 ms)",
-        "align_minus": "−",
-        "align_plus": "+",
+        "align_minus": "-",
+        "align_plus": "＋",
         "align_time_invalid": "影片時間格式不正確，請使用 mm:ss 或 mm:ss.ss，例如 00:03.18",
         "align_step_label": "調整級距",
         "align_step_min": "分 (1 min)",
@@ -523,6 +523,8 @@ TRANSLATIONS = {
         "align_video_time_seconds_label": "影片時間（秒）",
         "align_video_time_seconds_help": "用右側 +/- 依級距微調；上方可切換分 / 秒 / 0.02s。",
         "align_video_time_display": "顯示格式",
+        "upload_file_short": "上傳檔案",
+
     
     },
 
@@ -551,8 +553,8 @@ TRANSLATIONS = {
         # ======================
         "upload_watch_subheader": "1️⃣ Upload dive log",
         "upload_watch_label": "Dive log (.fit/.uddf)",
-        "upload_video_subheader": "2️⃣ Upload dive video",
-        "upload_video_label": "Video file (any resolution)",
+        "upload_video_subheader": "2️⃣ Upload video",
+        "upload_video_label": "Video file",
 
         "fit_detected": "Detected Garmin .fit file. Parsing multi-dive data...",
         "fit_no_dives": "No valid dives found in this .fit file.",
@@ -692,6 +694,7 @@ TRANSLATIONS = {
         "align_video_time_seconds_label": "Video time (seconds)",
         "align_video_time_seconds_help": "Use +/- to adjust by the selected step; switch step above (min / sec / 0.02s).",
         "align_video_time_display": "Display",
+        "upload_file_short": "Upload file",
 
     },
 }
@@ -978,10 +981,14 @@ with st.container():
 
         with col2:
             st.subheader(tr("upload_video_subheader"))
+            # 短提示文字（取代冗長的 Drag & Drop 敘述）
+            st.caption(tr("upload_file_short"))
+            
             video_file = st.file_uploader(
-                tr("upload_video_label"),
-                type=["mp4", "mov", "m4v"],
-                key="overlay_video_file",
+                label="",
+                type=["mp4", "mov", "mkv"],
+                key="overlay_video_uploader",
+                label_visibility="collapsed",
             )
 
         # --- 2. 選手錶類型 & 解析 ---
@@ -1242,7 +1249,7 @@ with st.container():
 
         # --- 4. 設定時間偏移 & 版型選擇 ---
         st.subheader(tr("align_layout_subheader"))
-
+        
         # ==========================================================
         # 4-1) 對齊模式
         # ==========================================================
@@ -1257,7 +1264,7 @@ with st.container():
             horizontal=False,
             key="overlay_align_mode",
         )
-
+        
         # ==========================================================
         # 4-2) 影片時間輸入（FF 同款：[-] [input] [+]，級距選擇在下方）
         #     - widget key: overlay_align_video_time_str
@@ -1322,7 +1329,7 @@ with st.container():
             )
             sync_time_str_from_seconds()
         
-        # --- 顯示 label（你原本的做法保留）---
+        # --- 顯示 label ---
         st.markdown(f"**{tr('align_video_time_label')}**")
         
         # ✅ 先放級距選擇：放在提示文字下方（避免手機被擠到最右邊直排）
@@ -1339,14 +1346,34 @@ with st.container():
             label_visibility="collapsed",
         )
         
-        # --- FF 同款：同一列 - / input / +（不再把級距放同列）---
-        tcol1, tcol2, tcol3 = st.columns([1, 4, 1])
+        # --- FF 同款：同一列 - / input / +（置中 + 保證 + 顯示）---
+        tcol1, tcol2, tcol3 = st.columns([1.2, 3.6, 1.2], vertical_alignment="center")
+        
+        st.markdown(
+            """
+            <style>
+              div[data-testid="stTextInput"] > div {
+                display: flex;
+                justify-content: center;
+              }
+              div[data-testid="stTextInput"] input {
+                text-align: center;
+                max-width: 180px;   /* 你可以調：150~220 */
+              }
+              div[data-testid="stButton"] button {
+                width: 100%;
+                min-height: 44px;   /* 手機好按 */
+                font-size: 20px;
+              }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         
         with tcol1:
-            st.button("－", key="overlay_align_minus", on_click=on_minus)
+            st.button("−", key="overlay_align_minus", on_click=on_minus, use_container_width=True)
         
         with tcol2:
-            # 文字輸入：允許手動 key-in
             video_time_str = st.text_input(
                 label="",
                 key="overlay_align_video_time_str",
@@ -1362,132 +1389,176 @@ with st.container():
                 st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
         
         with tcol3:
-            # ✅ 用半形 "+"，避免某些字型/樣式下顯示異常
-            st.button("+", key="overlay_align_plus", on_click=on_plus)
+            st.button("+", key="overlay_align_plus", on_click=on_plus, use_container_width=True)
         
         # 最終 v_ref（秒）：一律用秒數 state
         v_ref = float(st.session_state["overlay_align_video_time_s"])
-
-
+        
+        
+        # ==========================================================
+        # 4-3) 取得手錶事件時間 t_ref_raw（用你前面算好的 dive_start_s / dive_end_s）
+        # ==========================================================
+        t_ref_raw = None
+        if df_rate is not None and dive_df is not None:
+            if align_mode == "start":
+                t_ref_raw = dive_start_s
+            elif align_mode == "end":
+                t_ref_raw = dive_end_s
+            elif align_mode == "bottom":
+                raw = dive_df.sort_values("time_s").reset_index(drop=True)
+                after = raw[raw["time_s"] >= dive_start_s]
+                within = after[after["time_s"] <= dive_end_s]
+                if not within.empty:
+                    idx_bottom = within["depth_m"].idxmax()
+                    t_ref_raw = float(within.loc[idx_bottom, "time_s"])
+        
+        # 🔧 只在「對齊邏輯」裡移除那 1 秒 offset，其它地方不動
+        t_ref_for_align = None
+        if t_ref_raw is not None:
+            t_ref_for_align = t_ref_raw - 1.0  # ➜ 抵消你前面統一 +1.0 的影響（只影響對齊）
+        
+        
+        # ==========================================================
+        # 4-4) 算 time_offset（丟給 render_video 使用）
+        # ==========================================================
+        if t_ref_for_align is not None:
+            time_offset = float(t_ref_for_align - v_ref)   # ✅ 這版方向是你驗證正確的
+            st.caption(f"目前計算出的偏移：{time_offset:+.2f} 秒（會套用到渲染）")
+        else:
+            time_offset = 0.0
+            st.caption("尚未偵測到潛水事件，暫時使用 0 秒偏移。")
+        
+        # ✅ 永遠寫入 session_state（避免按下 render 後 undefined）
+        st.session_state["overlay_time_offset"] = float(time_offset)
+        
+        
+        # ==========================================================
+        # 4-5) Layout 選擇（如果你前面已有 selected_id，也可用 session_state 保底）
+        # ==========================================================
+        # 若你在更下面有完整 layouts_config + 圖片預覽區，也不衝突；
+        # 這裡的重點是：selected_id 一定要存在，render 時才能讀到。
+        if "overlay_layout_id" not in st.session_state:
+            st.session_state["overlay_layout_id"] = "A"
+        
+        selected_id = st.selectbox(
+            tr("layout_select_label"),
+            options=["A", "B", "C", "D"],
+            index=["A", "B", "C", "D"].index(st.session_state["overlay_layout_id"])
+            if st.session_state["overlay_layout_id"] in ["A", "B", "C", "D"] else 0,
+            key="overlay_layout_id",
+        )
+        
+        st.session_state["overlay_layout_selected_id"] = str(selected_id)
+        
+        
         # --- 5. 輸入潛水員資訊---
         st.subheader(tr("diver_info_subheader"))
-
+        
         nationality_file = ASSETS_DIR / "Nationality.csv"
         nat_df = load_nationality_options(nationality_file)
-
+        
         not_spec_label = tr("not_specified")
-
+        
         if nat_df.empty:
             nationality_options = [not_spec_label]
         else:
             nationality_labels = nat_df["label"].tolist()
             nationality_options = [not_spec_label] + nationality_labels
-
+        
         default_label = "Taiwan (TWN)"
-        if default_label in nationality_options:
-            default_index = nationality_options.index(default_label)
-        else:
-            default_index = 0
-
+        default_index = nationality_options.index(default_label) if default_label in nationality_options else 0
+        
         col_info_1, col_info_2 = st.columns(2)
-
+        
         with col_info_1:
             diver_name = st.text_input(tr("diver_name_label"), value="", key="overlay_diver_name")
-
+        
             nationality_label = st.selectbox(
                 tr("nationality_label"),
                 options=nationality_options,
                 index=default_index,
                 key="overlay_nationality",
             )
-
-            if nationality_label == not_spec_label:
-                nationality = ""
-            else:
-                nationality = nationality_label
-
+        
+            nationality = "" if nationality_label == not_spec_label else nationality_label
+        
         with col_info_2:
             discipline = st.selectbox(
                 tr("discipline_label"),
                 options=[not_spec_label, "CWT", "CWTB", "CNF", "FIM"],
                 key="overlay_discipline",
             )
-
+        
         # --- 6. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
             if (dive_df is None) or (video_file is None):
                 st.error(tr("error_need_both_files"))
             else:
                 progress_bar = st.progress(0, text=tr("progress_init"))
-
-                # ✅ 只建立一次 placeholder（不要放進 progress_callback）
                 status_placeholder = st.empty()
-
-                # 記錄開始時間
                 start_time = time.time()
-
+        
                 def format_seconds(sec: float) -> str:
                     sec = max(0, int(round(sec)))
                     mm = sec // 60
                     ss = sec % 60
                     return f"{mm:02d}:{ss:02d}"
-
+        
                 def progress_callback(p: float, message: str = ""):
-                    """
-                    p: 0.0 ~ 1.0
-                    """
                     p = max(0.0, min(1.0, float(p)))
                     percent = int(round(p * 100))
-                
-                    # === 進度條本身：只顯示百分比 ===
+        
+                    # 進度條：只顯示百分比
                     if message:
                         bar_text = f"{message} {percent}%"
                     else:
                         bar_text = f"{tr('progress_rendering')} {percent}%"
-                
-                    # 完成狀態
+        
+                    # 完成：清空 ETA/警告
                     if p >= 1.0:
                         progress_bar.progress(100, text=tr("progress_done"))
                         status_placeholder.empty()
                         return
-                
+        
                     progress_bar.progress(percent, text=bar_text)
-                
-                    # === ETA / 提示只顯示在下方資訊框 ===
+        
+                    # 下方資訊框：ETA / 警告
                     elapsed = time.time() - start_time
                     eta_seconds = None
-                
+        
                     if p >= 0.40 and p > 0:
                         total_est = elapsed / p
                         eta_seconds = max(0.0, total_est - elapsed)
-                
-                    txt_pending = tr("render_estimate_pending")
-                    txt_warning = tr("render_do_not_leave")
-                
+        
                     if eta_seconds is None:
-                        # 40% 前
                         status_placeholder.info(
                             f"{tr('render_estimate_pending')}\n{tr('render_do_not_leave')}"
                         )
-
                     else:
                         eta_str = format_seconds(eta_seconds)
                         status_placeholder.info(
                             f"{tr('render_estimate_eta', eta=eta_str)}\n{tr('render_do_not_leave')}"
                         )
-
+        
                 # 寫入暫存影片檔
                 tmp_video_path = Path("/tmp") / video_file.name
                 with open(tmp_video_path, "wb") as f:
                     f.write(video_file.read())
-
+        
+                # ✅ Render 時永遠從 session_state 取值（避免 undefined / rerun）
+                time_offset_to_render = float(st.session_state.get("overlay_time_offset", 0.0))
+                selected_id_to_render = str(
+                    st.session_state.get("overlay_layout_selected_id",
+                        st.session_state.get("overlay_layout_id", "A"))
+                )
+        
                 try:
                     output_path = render_video(
                         video_path=tmp_video_path,
                         dive_df=dive_df,
                         df_rate=df_rate,
-                        time_offset=time_offset,
-                        layout=selected_id,
+                        time_offset=time_offset_to_render,
+                        layout=selected_id_to_render,
                         assets_dir=ASSETS_DIR,
                         output_resolution=(1080, 1920),
                         diver_name=diver_name,
@@ -1498,12 +1569,10 @@ with st.container():
                         dive_end_s=dive_end_s,
                         progress_callback=progress_callback,
                     )
-
-                    # ✅ render_video 結束後，保險把 UI 設為完成狀態
+        
                     progress_callback(1.0, tr("progress_done"))
-
                     st.success(tr("render_success"))
-
+        
                     with open(output_path, "rb") as f:
                         st.download_button(
                             tr("download_button"),
@@ -1511,11 +1580,11 @@ with st.container():
                             file_name="dive_overlay_1080p.mp4",
                             mime="video/mp4",
                         )
-
+        
                     col_preview, col_empty = st.columns([1, 1])
                     with col_preview:
                         st.video(str(output_path))
-
+        
                 except Exception as e:
                     status_placeholder.empty()
                     st.error(tr("render_error", error=e))
