@@ -393,7 +393,7 @@ st.markdown(
 
     /* 你說的那條上方「pill 長條 bar」如果是 Streamlit 的 decoration，可先降低高度 */
     div[data-testid="stDecoration"]{
-      height: 0.35rem;   /* 你若想「直接拿掉」可改成 0 */
+      height: 0rem;   /* 你若想「直接拿掉」可改成 0 */
     }
 
     /* =========================
