@@ -520,6 +520,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
+
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
 # ==================================
@@ -1135,6 +1137,79 @@ def compute_dive_metrics(
 # ================================
 with st.container():
     st.markdown('<div class="app-card">', unsafe_allow_html=True)
+    
+    st.markdown(
+    """
+    <style>
+    /* 1) 整體：縮小頂部留白（避免標題上方空太大） */
+    .block-container { padding-top: 0.6rem !important; }
+
+    /* 2) 你的 app-card（如果你有定義 app-card）也縮一點上 padding */
+    .app-card { padding-top: 0.8rem !important; }
+
+    /* 3) 品牌標題/副標（我們用 class 控制） */
+    .brand-wrap { margin: 0.2rem 0 0.4rem 0 !important; }
+    .brand-title {
+        font-size: 44px;          /* ✅ 標題字縮小（手機也不會太巨大） */
+        line-height: 1.05;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    .brand-subtitle {
+        font-size: 22px;
+        opacity: 0.75;
+        margin: 0.25rem 0 0 0 !important;
+        padding: 0 !important;
+    }
+
+    /* 4) Tabs（pill）只讓兩顆靠近，不要整組往左貼邊 */
+    div[data-testid="stTabs"] {
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
+    }
+    div[data-testid="stTabs"] button {
+        margin-right: 8px !important;   /* ✅ 兩顆 pills 間距 */
+    }
+
+    /* 5) 影片時間對齊：減少「同一區塊三行」中間的空白感 */
+    .align-block { margin-top: 0.2rem !important; }
+    .align-block div[data-testid="stRadio"] { margin-top: -6px !important; }
+    .align-block div[data-testid="stTextInput"] { margin-top: -6px !important; }
+    .align-block div[data-testid="stButton"] { margin-top: -6px !important; }
+
+    /* 6) +/- 按鈕固定比例、字一定顯示（全形符號也顯示得穩） */
+    .align-block div[data-testid="stButton"] button {
+        width: 64px !important;     /* ✅ 桌機不會寬到整排 */
+        height: 64px !important;
+        padding: 0 !important;
+        font-size: 34px !important; /* ✅ 讓 ＋／－ 清楚 */
+        line-height: 1 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* 7) 中間時間框：縮小 + 置中（避免桌機看起來像一整條不知是啥） */
+    .align-block input {
+        max-width: 180px !important;
+        text-align: center !important;
+        font-size: 24px !important;
+    }
+
+    /* 8) 桌機：讓「時間對齊區塊」在左側 50%（不置中）
+          Streamlit columns 在桌機有效；手機會自動堆疊成 100% */
+    @media (min-width: 900px) {
+        .align-left-50 { max-width: 50%; }
+        .align-left-50 { margin-left: 0 !important; margin-right: auto !important; }
+    }
+    @media (max-width: 899px) {
+        .align-left-50 { max-width: 100%; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
     # Tabs：目前功能 + 比較分頁
     tab_overlay, tab_compare = st.tabs([
@@ -1471,9 +1546,9 @@ with st.container():
             horizontal=False,
             key="overlay_align_mode",
         )
-        
+
         # ==========================================================
-        # 4-2) 影片時間輸入（桌機 50% 置中 / 手機全寬）
+        # 4-2) 影片時間輸入（FF 同款：[-] [input] [+]，級距選擇在下方）
         # ==========================================================
         def parse_time_str_to_seconds_safe(s: str):
             s = (s or "").strip()
@@ -1495,7 +1570,7 @@ with st.container():
             sec = max(0.0, float(sec))
             mm = int(sec // 60)
             ss = sec - mm * 60
-            return f"{mm:02d}:{ss:05.2f}"
+            return f"{mm:02d}:{ss:05.2f}"  # mm:ss.cc
         
         def clamp_time(sec: float, max_sec: float = 3600.0) -> float:
             return max(0.0, min(float(sec), float(max_sec)))
@@ -1508,7 +1583,12 @@ with st.container():
         if "overlay_align_step_unit" not in st.session_state:
             st.session_state["overlay_align_step_unit"] = "sec"
         
-        step_map = {"min": 60.0, "sec": 1.0, "csec": 0.1}  # ✅ 0.1 秒
+        # --- 級距設定（0.1 秒）---
+        step_map = {
+            "min": 60.0,
+            "sec": 1.0,
+            "csec": 0.1,   # ✅ 0.1 秒級距
+        }
         
         def sync_time_str_from_seconds():
             st.session_state["overlay_align_video_time_str"] = seconds_to_mmss_cc(
@@ -1529,39 +1609,16 @@ with st.container():
             )
             sync_time_str_from_seconds()
         
-        # ✅ 按鈕形狀（桌機別太寬、接近 1:1~1:1.5），同時修正「+ 常消失」：用半形 "+" 最穩
-        st.markdown(
-            """
-            <style>
-              div[data-testid="stButton"] button{
-                width: 64px !important;     /* 桌機不會整個拉滿 */
-                height: 56px !important;    /* 1:1.14 */
-                padding: 0 !important;
-                font-size: 22px !important;
-                line-height: 1 !important;
-              }
-              @media (max-width: 768px){
-                div[data-testid="stButton"] button{
-                  width: 100% !important;   /* 手機維持好按 */
-                  height: 52px !important;
-                }
-              }
-              div[data-testid="stTextInput"] input{
-                text-align: center !important;
-                max-width: 220px !important;  /* 桌機讓它看起來像“數字框”而不是一長條 */
-                margin: 0 auto !important;
-              }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        # --- 外層 2 欄：左 50%（桌機），手機會自動堆疊成全寬 ---
+        left50, _right_empty = st.columns([1, 1])
         
-        # ✅ 用 3 欄置中：桌機只佔 50%，手機會自動堆疊成全寬
-        _sp_l, _mid, _sp_r = st.columns([1, 2, 1], vertical_alignment="center")
-        with _mid:
-            # 這三行縮緊：label / step / +/- input
+        with left50:
+            st.markdown('<div class="align-block align-left-50">', unsafe_allow_html=True)
+        
+            # ① Label（同一區塊，不要多餘空白）
             st.markdown(f"**{tr('align_video_time_label')}**")
         
+            # ② 級距選擇（放在 label 下方，手機不會擠成直排）
             st.radio(
                 label="",
                 options=["min", "sec", "csec"],
@@ -1575,30 +1632,34 @@ with st.container():
                 label_visibility="collapsed",
             )
         
-            tcol1, tcol2, tcol3 = st.columns([1.0, 2.2, 1.0], vertical_alignment="center")
+            # ③ 同一列：－ / input / ＋（全形符號）
+            b1, mid, b2 = st.columns([0.9, 2.2, 0.9], vertical_alignment="center")
         
-            with tcol1:
-                st.button("-", key="overlay_align_minus", on_click=on_minus)
+            with b1:
+                st.button("－", key="overlay_align_minus", on_click=on_minus)
         
-            with tcol2:
+            with mid:
                 video_time_str = st.text_input(
                     label="",
                     key="overlay_align_video_time_str",
                     label_visibility="collapsed",
                     help=tr("align_video_time_help"),
                 )
+        
                 v_ref_from_text = parse_time_str_to_seconds_safe(video_time_str)
                 if v_ref_from_text is None:
                     st.warning(tr("align_video_time_invalid"))
                 else:
                     st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
         
-            with tcol3:
-                st.button("+", key="overlay_align_plus", on_click=on_plus)
+            with b2:
+                st.button("＋", key="overlay_align_plus", on_click=on_plus)
+        
+            st.markdown("</div>", unsafe_allow_html=True)
         
         # 最終 v_ref（秒）
         v_ref = float(st.session_state["overlay_align_video_time_s"])
-        
+
         # ==========================================================
         # 4-3) 準備事件時間 + time_offset（確保第 6 段不會 undefined）
         # ==========================================================
