@@ -1524,7 +1524,7 @@ with st.container():
         )
         
         with tcol1:
-            st.button("－/-", key="overlay_align_minus", on_click=on_minus, use_container_width=False)
+            st.button("－", key="overlay_align_minus", on_click=on_minus, use_container_width=False)
         
         with tcol2:
             video_time_str = st.text_input(
@@ -1542,7 +1542,7 @@ with st.container():
                 st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
         
         with tcol3:
-            st.button("＋/+", key="overlay_align_plus", on_click=on_plus, use_container_width=False)
+            st.button("＋", key="overlay_align_plus", on_click=on_plus, use_container_width=False)
 
         
         # 最終 v_ref（秒）：一律用秒數 state
