@@ -18,6 +18,26 @@ ASSETS_DIR = BASE_DIR / "assets"
 
 st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
 
+st.markdown(
+    """
+    <style>
+      /* 統一 uploader 上方的 label 外觀（不要用 st.caption） */
+      .upload-label {
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.80);
+        margin: 0.25rem 0 0.35rem 0;
+      }
+
+      /* 把 file_uploader 自帶的上方空隙稍微收斂，兩欄更容易齊 */
+      div[data-testid="stFileUploader"] {
+        margin-top: 0rem;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ==================================
 # 全局 CSS：讓畫面更像 App
 # ==================================
@@ -969,24 +989,27 @@ with st.container():
     with tab_overlay:
 
         # --- 1. 上傳區 ---
-        col1, col2 = st.columns(2)
-
-        with col1:
+        col_left, col_right = st.columns(2)
+        
+        with col_left:
             st.subheader(tr("upload_watch_subheader"))
+            st.markdown(f"<div class='upload-label'>{tr('upload_watch_label')}</div>", unsafe_allow_html=True)
+        
             watch_file = st.file_uploader(
-                tr("upload_watch_label"),
-                type=None,
-                key="overlay_watch_file",
+                label="",
+                type=["fit", "uddf"],
+                key="overlay_watch_uploader",
+                label_visibility="collapsed",
             )
-
-        with col2:
+        
+        with col_right:
             st.subheader(tr("upload_video_subheader"))
-            # 短提示文字（取代冗長的 Drag & Drop 敘述）
-            st.caption(tr("upload_file_short"))
-            
+            # 這行就是你說的「上傳檔案 / Upload file」：用 upload-label，不要用 caption
+            st.markdown(f"<div class='upload-label'>{tr('upload_video_label')}</div>", unsafe_allow_html=True)
+        
             video_file = st.file_uploader(
                 label="",
-                type=["mp4", "mov", "mkv"],
+                type=None,
                 key="overlay_video_uploader",
                 label_visibility="collapsed",
             )
