@@ -168,7 +168,7 @@ h3{
   width: 100%;
   margin: 0.15rem 0 0.35rem 0;
 }
-@media (max-width: 768px){
+@media (max-width: 600px){
   .align-wrap{ max-width: 100% !important; width: 100% !important; }
 }
 
@@ -195,7 +195,7 @@ h3{
   line-height: 1 !important;
   text-align: center !important;
 }
-@media (max-width: 768px){
+@media (max-width: 600px){
   .align-wrap div[data-testid="stButton"] button{ width: 46px !important; height: 46px !important; }
 }
 
@@ -210,7 +210,7 @@ h3{
 /* ===== Mobile layout helpers ===== */
 
 /* Force the FIRST st.columns in Overlay tab to stay 50/50 on mobile */
-@media (max-width: 768px){
+@media (max-width: 600px){
   div[data-testid="stTabs"] div[role="tabpanel"]:first-of-type div[data-testid="stHorizontalBlock"]:first-of-type{
     flex-direction: row !important;
     flex-wrap: nowrap !important;
@@ -221,7 +221,7 @@ h3{
     min-width: 0 !important;
   }
 }
-@media (max-width: 768px){
+@media (max-width: 600px){
   .app-card{
     padding: 0.75rem 0.9rem 1.0rem 0.9rem;
     border-radius: 12px;
