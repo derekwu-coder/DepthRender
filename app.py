@@ -43,6 +43,7 @@ st.markdown(
 # ==================================
 APP_CSS = """
 <style>
+
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
@@ -359,6 +360,109 @@ div[data-testid="stTabs"] + div {
 
 </style>
 """
+
+st.markdown(
+    """
+    <style>
+    /* =========================
+       A) Title 區上下空間縮小
+       ========================= */
+
+    /* Streamlit 主內容區：上方 padding 通常太大 */
+    section.main > div.block-container{
+      padding-top: 1.0rem;   /* 原本常是 2~3rem */
+    }
+
+    /* 你自己的卡片容器：上方 padding 再縮一點（依你實際 class 名稱調整）
+       如果你的卡片 class 叫 app-card，就用這個 */
+    .app-card{
+      padding-top: 14px;
+      padding-bottom: 18px;
+    }
+
+    /* 如果你有自訂 brand 區塊（例如 .brand-title / .brand-subtitle），把 margin 壓縮 */
+    .brand-title{
+      margin-top: 6px !important;
+      margin-bottom: 2px !important;
+      line-height: 1.05;
+    }
+    .brand-subtitle{
+      margin-top: 0px !important;
+      margin-bottom: 6px !important;
+    }
+
+    /* 你說的那條上方「pill 長條 bar」如果是 Streamlit 的 decoration，可先降低高度 */
+    div[data-testid="stDecoration"]{
+      height: 0.35rem;   /* 你若想「直接拿掉」可改成 0 */
+    }
+
+    /* =========================
+       B) Tabs 膠囊：只縮短彼此間距，保持整組置中，不要整組往左
+       ========================= */
+    div[data-testid="stTabs"] [data-baseweb="tab-list"]{
+      gap: 10px !important;              /* 膠囊之間距離 */
+      justify-content: center !important;/* 整組置中 */
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+      width: 100%;
+    }
+
+    /* 避免某些你之前的 CSS 把整個 tab-list 往左推 */
+    div[data-testid="stTabs"]{
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+
+    </style>
+    """,
+    
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <style>
+    /* =========================
+       C) 影片對齊區：按鈕與輸入框外觀
+       ========================= */
+    .align-time div[data-testid="stButton"]{
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* +/- 按鈕：控制為近方形（1:1 ~ 1:1.5） */
+    .align-time div[data-testid="stButton"] button{
+      width: 56px !important;       /* 你可以調 48~64 */
+      height: 56px !important;      /* 跟 width 一樣＝1:1 */
+      padding: 0 !important;
+      font-size: 28px !important;
+      font-weight: 800 !important;
+      line-height: 1 !important;
+      text-align: center !important;
+    }
+
+    /* 避免桌機時按鈕被撐成整欄寬 */
+    .align-time div[data-testid="stButton"] button[kind]{
+      max-width: 72px !important;
+    }
+
+    /* 中間時間輸入：縮小 + 置中 + 文字置中 */
+    .align-time div[data-testid="stTextInput"]{
+      display: flex;
+      justify-content: center;
+    }
+    .align-time div[data-testid="stTextInput"] input{
+      width: 160px !important;      /* 桌機不要太長，建議 140~180 */
+      text-align: center !important;
+      font-variant-numeric: tabular-nums;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
@@ -1378,6 +1482,8 @@ with st.container():
         
         # --- 顯示 label ---
         st.markdown(f"**{tr('align_video_time_label')}**")
+        st.markdown("<div class='align-time'>", unsafe_allow_html=True)
+
         
         # ✅ 先放級距選擇：放在提示文字下方（避免手機被擠到最右邊直排）
         st.radio(
@@ -1418,7 +1524,7 @@ with st.container():
         )
         
         with tcol1:
-            st.button("−", key="overlay_align_minus", on_click=on_minus, use_container_width=True)
+            st.button("－/-", key="overlay_align_minus", on_click=on_minus, use_container_width=False)
         
         with tcol2:
             video_time_str = st.text_input(
@@ -1436,12 +1542,13 @@ with st.container():
                 st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
         
         with tcol3:
-            st.button("+", key="overlay_align_plus", on_click=on_plus, use_container_width=True)
+            st.button("＋/+", key="overlay_align_plus", on_click=on_plus, use_container_width=False)
+
         
         # 最終 v_ref（秒）：一律用秒數 state
         v_ref = float(st.session_state["overlay_align_video_time_s"])
-        
-        
+        st.markdown("</div>", unsafe_allow_html=True)
+
         # ==========================================================
         # 4-3) 取得手錶事件時間 t_ref_raw（用你前面算好的 dive_start_s / dive_end_s）
         # ==========================================================
