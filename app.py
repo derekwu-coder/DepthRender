@@ -18,312 +18,224 @@ ASSETS_DIR = BASE_DIR / "assets"
 
 st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
 
-st.markdown(
-    """
-    <style>
-      /* 統一 uploader 上方的 label 外觀（不要用 st.caption） */
-      .upload-label {
-        font-size: 0.95rem;
-        font-weight: 500;
-        color: rgba(255, 255, 255, 0.80);
-        margin: 0.25rem 0 0.35rem 0;
-      }
-
-      /* 把 file_uploader 自帶的上方空隙稍微收斂，兩欄更容易齊 */
-      div[data-testid="stFileUploader"] {
-        margin-top: 0rem;
-      }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 # ==================================
 # 全局 CSS：讓畫面更像 App
 # ==================================
 APP_CSS = """
 <style>
-
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* ===== 版面置中並限制最大寬度 ===== */
-.main > div {
-    display: flex;
-    justify-content: center;
+/* ===== Layout width ===== */
+.main > div {display:flex; justify-content:center;}
+.main > div > div {max-width: 1200px; width:100%;}
+
+/* ===== Reserve space for fixed header + fixed tabs ===== */
+.block-container{
+  padding-top: 96px;   /* adjust if header/tabs overlap */
 }
 
-.main > div > div {
-    max-width: 1200px;
+/* ===== Fixed top header (brand + language) ===== */
+.app-header-row{
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 120;
+  padding: 0.10rem 0.10rem 0.15rem 0.10rem;  /* tighter */
+  backdrop-filter: blur(10px);
+  background: rgba(248,250,252,0.96);
+}
+@media (prefers-color-scheme: dark){
+  .app-header-row{ background: rgba(15,23,42,0.98); }
 }
 
-/* ===== 主內容往下推一點，騰出 header 空間 ===== */
-.block-container {
-    padding-top: 112px;
+.app-top-bar{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.15rem 0.6rem 0.15rem;
 }
 
-/* ===== 頂部品牌列 ===== */
-.app-header-row {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    padding: 0.25rem 0.1rem 0.35rem 0.1rem;
-    backdrop-filter: blur(10px);
-    background: rgba(248,250,252,0.96);
+.app-top-icon{ display:none; } /* remove wave icon */
+
+.app-title-text{
+  font-size: 1.50rem;
+  font-weight: 700;
+  line-height: 1.40rem;
+}
+@media (max-width: 600px){
+  .app-title-text{
+    font-size: 1.25rem !important;
+    line-height: 1.25rem !important;
+  }
 }
 
-@media (prefers-color-scheme: dark) {
-    .app-header-row {
-        background: rgba(15,23,42,0.98);
-    }
+/* ===== Tabs: fixed bar, full-width background (no notch) ===== */
+div[data-testid="stTabs"]{ border-bottom:none !important; box-shadow:none !important; background:transparent !important; }
+div[data-testid="stTabs"] div[role="tablist"]{
+  position: fixed;
+  top: 46px;           /* just under header */
+  left: 0; right: 0;
+  z-index: 110;
+  padding: 0.10rem 0.55rem 0.20rem 0.55rem !important;
+  margin: 0 !important;
+  background: #f8fafc !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+@media (prefers-color-scheme: dark){
+  div[data-testid="stTabs"] div[role="tablist"]{ background: #0E1117 !important; }
 }
 
-/* ===== 品牌文字 ===== */
-.app-top-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.2rem 0.6rem 0.4rem;
+/* Remove moving highlight / border bars */
+div[data-baseweb="tab-highlight"]{ display:none !important; height:0 !important; opacity:0 !important; }
+div[data-baseweb="tab-border"]{ background: transparent !important; border:none !important; height: 0 !important; }
+
+/* Center pills + keep them closer (without shifting left) */
+div[data-baseweb="tab-list"]{
+  justify-content: center !important;
+  gap: 10px !important;
+  margin: 0 auto !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
 
-.app-title-text {
-    font-size: 1.65rem;
-    font-weight: 700;
-    line-height: 1.65rem;
+/* Pill button style (keeps selected color) */
+div[data-testid="stTabs"] button[role="tab"]{
+  border-radius: 999px !important;
+  padding: 0.18rem 0.90rem !important;
+  margin: 0 !important;
+  border: 1px solid rgba(148,163,184,0.7) !important;
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  font-size: 0.90rem !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
+  background-color: #dbeafe !important;
+  border-color: #38bdf8 !important;
+  color: #0f172a !important;
+}
+@media (prefers-color-scheme: dark){
+  div[data-testid="stTabs"] button[role="tab"]{
+    background-color: #111827 !important;
+    border-color: rgba(55,65,81,0.9) !important;
+    color: #e5e7eb !important;
+  }
+  div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]{
+    background-color: #1f2937 !important;
+    border-color: #38bdf8 !important;
+    color: #e5f2ff !important;
+  }
 }
 
-.app-title-sub {
-    font-size: 1.0rem;
-    opacity: 0.8;
+/* ===== Card ===== */
+.app-card{
+  background-color: rgba(255,255,255,0.90);
+  border-radius: 18px;
+  padding: 0.85rem 1.2rem 1.1rem 1.2rem;
+  box-shadow: 0 8px 20px rgba(15,23,42,0.10);
+}
+@media (prefers-color-scheme: dark){
+  .app-card{
+    background-color: rgba(15,23,42,0.90);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.60);
+  }
 }
 
-@media (max-width: 600px) {
-    .app-title-text {
-        font-size: 1.45rem !important;
-        line-height: 1.50rem !important;
-    }
+/* ===== Subheaders ===== */
+h3{
+  font-size: 1.05rem !important;
+  margin-top: 0.55rem !important;
+  margin-bottom: 0.20rem !important;
 }
 
-/* ===== 卡片 ===== */
-.app-card {
-    background-color: rgba(255,255,255,0.90);
-    border-radius: 18px;
-    padding: 1rem 1.2rem 1.4rem;
-    box-shadow: 0 8px 20px rgba(15,23,42,0.10);
+/* ===== Upload labels (keep same color as other labels) ===== */
+.upload-label{
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(17,24,39,0.92);
+  margin-bottom: 0.25rem;
+}
+@media (prefers-color-scheme: dark){
+  .upload-label{ color: rgba(229,231,235,0.92); }
 }
 
-@media (prefers-color-scheme: dark) {
-    .app-card {
-        background-color: rgba(15,23,42,0.90);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.60);
-    }
+/* ===== Align time block: desktop ~50%, mobile 100%, left aligned ===== */
+.align-wrap{
+  max-width: 560px;   /* approx half-column on desktop */
+  width: 100%;
+  margin: 0.15rem 0 0.35rem 0;
+}
+@media (max-width: 768px){
+  .align-wrap{ max-width: 100% !important; width: 100% !important; }
 }
 
-/* ======================================================
-   🎯 Align time block layout（你要的那段）
-   桌機 50% / 手機 100%，靠左、不被壓縮
-   ====================================================== */
+/* Tighten spacing inside align block */
+.align-wrap div[data-testid="stMarkdown"]{ margin-bottom: 0.20rem !important; }
+.align-wrap div[data-testid="stRadio"]{ margin-top: -0.20rem !important; margin-bottom: 0.05rem !important; }
+.align-wrap div[data-testid="stTextInput"]{ margin-top: -0.10rem !important; margin-bottom: 0.10rem !important; }
 
-/* 外層 wrapper（你 Python 只要用 class="align-wrap align-left"） */
-.align-wrap.align-left {
-    max-width: 560px;       /* 桌機視覺 ≈ 半欄 */
-    width: 100%;
-    margin: 0.15rem 0 0.35rem 0;
+/* +/- buttons: near 1:1 and not full-row width */
+.align-wrap div[data-testid="stButton"] button{
+  width: 52px !important;
+  height: 52px !important;
+  padding: 0 !important;
+  font-size: 28px !important; /* for full-width symbols */
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+}
+@media (max-width: 768px){
+  .align-wrap div[data-testid="stButton"] button{ width: 46px !important; height: 46px !important; }
 }
 
-/* 讓三行不要像隔一行 */
-.align-wrap.align-left .tight-block {
-    margin-top: 0.15rem;
-    margin-bottom: 0.15rem;
+/* Center the time input and keep it compact */
+.align-wrap div[data-testid="stTextInput"] input{
+  text-align: center !important;
+  max-width: 220px !important;
+  margin: 0 auto !important;
+  font-variant-numeric: tabular-nums;
 }
 
-/* radio 緊湊 */
-.align-wrap.align-left div[data-testid="stRadio"] {
-    margin-top: -0.25rem !important;
-    margin-bottom: -0.10rem !important;
-}
+/* ===== Mobile layout helpers ===== */
+@media (max-width: 768px){
+  .app-card{
+    padding: 0.75rem 0.9rem 1.0rem 0.9rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(15,23,42,0.15);
+  }
 
-/* +/- 按鈕：接近 1:1，不撐滿 */
-.align-wrap.align-left div[data-testid="stButton"] button {
-    width: 52px !important;
-    height: 52px !important;
-    padding: 0 !important;
-    font-size: 28px !important;   /* 全形 ＋ － 穩定顯示 */
-    line-height: 1 !important;
-}
+  /* Other two-column blocks can stack */
+  .overlay-stack-mobile div[data-testid="stHorizontalBlock"]{
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+  }
+  .overlay-stack-mobile div[data-testid="stHorizontalBlock"] > div{
+    max-width: 100% !important;
+    width: 100% !important;
+  }
 
-/* 中間時間框：縮小＋置中 */
-.align-wrap.align-left div[data-testid="stTextInput"] input {
-    text-align: center !important;
-    max-width: 220px !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-}
+  /* Keep upload section in two columns (50/50) */
+  .upload-cols div[data-testid="stHorizontalBlock"]{
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+  }
+  .upload-cols div[data-testid="stHorizontalBlock"] > div{
+    max-width: 50% !important;
+    flex: 0 0 50% !important;
+    min-width: 0 !important;
+  }
 
-/* 📱 手機：強制全寬，避免被壓成 50% / 1⁄3 */
-@media (max-width: 600px) {
-    .align-wrap.align-left {
-        max-width: 100% !important;
-        width: 100% !important;
-    }
-    .align-wrap.align-left div[data-testid="stButton"] button {
-        width: 46px !important;
-        height: 46px !important;
-    }
-}
-
-/* ======================================================
-   Tabs、膠囊、其他你原本的設定（原封不動）
-   ====================================================== */
-
-/* Tabs 本體 */
-div[data-testid="stTabs"] {
-    border-bottom: none !important;
-    box-shadow: none !important;
-    background: transparent !important;
-}
-
-div[data-testid="stTabs"] div[role="tablist"] {
-    position: fixed;
-    top: 60px;
-    left: 0;
-    right: 0;
-    z-index: 90;
-    padding: 0 0.4rem 0.20rem 0.4rem !important;
-    background: #f8fafc !important;
-}
-
-@media (prefers-color-scheme: dark) {
-    div[data-testid="stTabs"] div[role="tablist"] {
-        background: #0E1117 !important;
-    }
-}
-
-/* 關掉 pill highlight */
-div[data-baseweb="tab-highlight"] {
-    display: none !important;
-}
-
-/* 膠囊 tab */
-div[data-testid="stTabs"] button[role="tab"] {
-    border-radius: 999px !important;
-    padding: 0.18rem 0.9rem !important;
-    margin-right: 0.45rem !important;
-    border: 1px solid rgba(148,163,184,0.7) !important;
-    background-color: #f3f4f6 !important;
-    font-size: 0.88rem !important;
-}
-
-@media (prefers-color-scheme: dark) {
-    div[data-testid="stTabs"] button[role="tab"] {
-        background-color: #111827 !important;
-        color: #e5e7eb !important;
-    }
+  /* Header columns should not be forced to 50/50 by generic rules */
+  .header-cols div[data-testid="stHorizontalBlock"] > div{ max-width: unset !important; }
+  .header-cols div[data-testid="stHorizontalBlock"] > div:first-child{ flex: 0 0 70% !important; max-width: 70% !important; }
+  .header-cols div[data-testid="stHorizontalBlock"] > div:last-child{ flex: 0 0 30% !important; max-width: 30% !important; }
 }
 
 </style>
 """
-
-st.markdown(
-    """
-    <style>
-    /* =========================
-       C) 影片對齊區：按鈕與輸入框外觀
-       ========================= */
-    .align-time div[data-testid="stButton"]{
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    /* +/- 按鈕：控制為近方形（1:1 ~ 1:1.5） */
-    .align-time div[data-testid="stButton"] button{
-      width: 56px !important;       /* 你可以調 48~64 */
-      height: 56px !important;      /* 跟 width 一樣＝1:1 */
-      padding: 0 !important;
-      font-size: 28px !important;
-      font-weight: 800 !important;
-      line-height: 1 !important;
-      text-align: center !important;
-    }
-
-    /* 避免桌機時按鈕被撐成整欄寬 */
-    .align-time div[data-testid="stButton"] button[kind]{
-      max-width: 72px !important;
-    }
-
-    /* 中間時間輸入：縮小 + 置中 + 文字置中 */
-    .align-time div[data-testid="stTextInput"]{
-      display: flex;
-      justify-content: center;
-    }
-    .align-time div[data-testid="stTextInput"] input{
-      width: 160px !important;      /* 桌機不要太長，建議 140~180 */
-      text-align: center !important;
-      font-variant-numeric: tabular-nums;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-st.markdown(
-    """
-    <style>
-    /* =========================
-       A) Tabs 膠囊：彼此靠近，但整體置中、不往左貼
-       ========================= */
-    div[data-baseweb="tab-list"]{
-        justify-content: center !important;
-        gap: 10px !important;              /* 想更近：8px；想更開：12~16px */
-        padding-left: 0 !important;
-        padding-right: 0 !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        max-width: 980px;                  /* 避免整條太寬導致看起來分散 */
-    }
-
-    /* =========================
-       B) 產品標題區：縮小上下空白
-       你如果 title 是用 st.markdown/h1/h2，這會有效
-       ========================= */
-    h1, h2, h3 {
-        margin-top: 0.25rem !important;
-        margin-bottom: 0.25rem !important;
-        line-height: 1.15 !important;
-    }
-
-    /* 你的 app-card 若有 padding 太大，這裡一起收斂 */
-    .app-card{
-        padding-top: 18px !important;      /* 想更緊：12~16 */
-        padding-bottom: 18px !important;
-    }
-
-    /* =========================
-       C) 你說那條「很想拿掉的 pill 長條 bar」
-       如果它其實是某個 divider / hr / 裝飾條，
-       這裡給你一個“常見”收斂方式：把分隔線高度與外距變小
-       （若你知道它的 class/id，我可以再幫你精準只打那一條）
-       ========================= */
-    hr {
-        margin: 0.35rem 0 !important;
-        opacity: 0.35 !important;
-    }
-
-    /* =========================
-       D) Streamlit widget 預設垂直間距偏大 → 對齊區塊要緊湊
-       這會讓整體更不「隔一行空白」的感覺（影響不會太激烈）
-       ========================= */
-    div[data-testid="stMarkdown"]{ margin-bottom: 0.25rem !important; }
-    div[data-testid="stRadio"]{ margin-top: -0.25rem !important; margin-bottom: 0.15rem !important; }
-    div[data-testid="stTextInput"]{ margin-top: -0.15rem !important; margin-bottom: 0.15rem !important; }
-
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
@@ -940,7 +852,8 @@ def compute_dive_metrics(
 # ================================
 with st.container():
     st.markdown('<div class="app-card">', unsafe_allow_html=True)
-
+    
+    # Tabs：目前功能 + 比較分頁
     tab_overlay, tab_compare = st.tabs([
         tr("tab_overlay_title"),
         tr("tab_compare_title"),
@@ -952,40 +865,36 @@ with st.container():
     with tab_overlay:
 
         # --- 1. 上傳區 ---
+        st.markdown("<div class='upload-cols'>", unsafe_allow_html=True)
+
         col_left, col_right = st.columns(2)
 
-        # ========= 左：手錶資料 =========
         with col_left:
             st.subheader(tr("upload_watch_subheader"))
-            st.markdown(
-                f"<div class='upload-label'>{tr('upload_watch_label')}</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"<div class='upload-label'>{tr('upload_watch_label')}</div>", unsafe_allow_html=True)
 
+            # ✅ 手錶：type=None（手機端允許任何檔案選），再用檔名判斷 .fit/.uddf
             watch_file = st.file_uploader(
                 label="",
-                type=None,  # ✅ 手機端必須是 None，再用檔名判斷
+                type=None,
                 key="overlay_watch_uploader",
                 label_visibility="collapsed",
             )
 
-        # ========= 右：影片 =========
         with col_right:
             st.subheader(tr("upload_video_subheader"))
-            st.markdown(
-                f"<div class='upload-label'>{tr('upload_video_label')}</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"<div class='upload-label'>{tr('upload_video_label')}</div>", unsafe_allow_html=True)
 
+            # ✅ 影片：限制只顯示影片類型（避免照片也出現）
             video_file = st.file_uploader(
                 label="",
-                type=["mp4", "mov", "avi", "mkv"],  # ✅ 只顯示影片
+                type=["mp4", "mov", "m4v", "avi", "mkv", "webm"],
                 key="overlay_video_uploader",
                 label_visibility="collapsed",
             )
 
-    # ❗ 到這裡為止，縮排已經「完全退回 with tab_overlay 外層」
-    # 接下來的 4 / 5 / 6 區塊才不會炸
+        st.markdown("</div>", unsafe_allow_html=True)
+
 
         # --- 2. 選手錶類型 & 解析 ---
         dive_df = None
@@ -1580,7 +1489,7 @@ with st.container():
             with cmp_col1:
                 cmp_file_a = st.file_uploader(
                     tr("compare_upload_a"),
-                    type=None,
+                    type=["mp4","mov","m4v","avi","mkv","webm"],
                     key="cmp_file_a",
                 )
     
