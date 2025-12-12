@@ -970,7 +970,6 @@ def compute_dive_metrics(
 
     return result
 
-
 # ================================
 # 主畫面內容開始（卡片 + Tabs）
 # ================================
@@ -990,29 +989,54 @@ with st.container():
 
         # --- 1. 上傳區 ---
         col_left, col_right = st.columns(2)
-        
+
+        # ========= 左：手錶資料 =========
         with col_left:
             st.subheader(tr("upload_watch_subheader"))
-            st.markdown(f"<div class='upload-label'>{tr('upload_watch_label')}</div>", unsafe_allow_html=True)
-        
+            st.markdown(
+                f"<div class='upload-label'>{tr('upload_watch_label')}</div>",
+                unsafe_allow_html=True
+            )
+
+            # ✅ 手錶：允許任何檔案（手機端友善）
             watch_file = st.file_uploader(
                 label="",
-                type=["fit", "uddf"],
+                type=None,
                 key="overlay_watch_uploader",
                 label_visibility="collapsed",
             )
-        
+
+            # 用副檔名自行判斷
+            watch_ext = ""
+            if watch_file is not None:
+                watch_ext = watch_file.name.split(".")[-1].lower()
+
+                if watch_ext not in ("fit", "uddf"):
+                    st.error(tr("error_watch_file_type"))  # 建議做成翻譯 key
+                    watch_file = None
+
+        # ========= 右：潛水影片 =========
         with col_right:
             st.subheader(tr("upload_video_subheader"))
-            # 這行就是你說的「上傳檔案 / Upload file」：用 upload-label，不要用 caption
-            st.markdown(f"<div class='upload-label'>{tr('upload_video_label')}</div>", unsafe_allow_html=True)
-        
+            st.markdown(
+                f"<div class='upload-label'>{tr('upload_video_label')}</div>",
+                unsafe_allow_html=True
+            )
+
+            # ✅ 影片：只顯示影片格式（不顯示照片）
             video_file = st.file_uploader(
                 label="",
-                type=None,
+                type=[
+                    "mp4", "mov", "m4v",
+                    "avi", "mkv",
+                    "webm",
+                    "mts", "m2ts", "ts",
+                    "3gp", "3g2",
+                ],
                 key="overlay_video_uploader",
                 label_visibility="collapsed",
             )
+
 
         # --- 2. 選手錶類型 & 解析 ---
         dive_df = None
