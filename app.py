@@ -85,12 +85,17 @@ footer {visibility: hidden;}
 
 /* ⭐ 手機版品牌標題縮小 */
 @media (max-width: 600px) {
-    .app-title-text {
-        font-size: 1.45rem !important;
-        line-height: 1.45rem !important;
+
+    /* 🔹 膠囊彼此距離拉近 */
+    div[data-testid="stTabs"] button[role="tab"] {
+        margin-right: 0.20rem !important;
+        padding: 0.16rem 0.75rem !important;
     }
-    .app-title-sub {
-        font-size: 0.9rem !important;
+
+    /* 🔹 整排 tablist 不要太鬆 */
+    div[data-testid="stTabs"] div[role="tablist"] {
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
     }
 }
 
@@ -330,26 +335,42 @@ LANG_OPTIONS = {
 
 TRANSLATIONS = {
     "zh": {
+        # ======================
+        # App / 共用
+        # ======================
         "app_title": "Dive Overlay Generator",
         "top_brand": "DepthRender",
         "language_label": "🌐 語言",
 
+        # ======================
+        # Tabs 標題
+        # ======================
         "tab_overlay_title": "疊加影片產生器",
         "tab_compare_title": "潛水數據比較",
-        "compare_coming_soon": "這裡未來會加入不同潛水之間的曲線比較功能，例如：\n\n- 深度曲線對比\n- 速率 / FF 比例比較\n- 不同比賽 / 不同天的表現差異",
+        "compare_coming_soon": (
+            "這裡未來會加入不同潛水之間的曲線比較功能，例如：\n\n"
+            "- 深度曲線對比\n"
+            "- 速率 / FF 比例比較\n"
+            "- 不同比賽 / 不同天的表現差異"
+        ),
 
-        # Overlay tab
+        # ======================
+        # Overlay tab：上傳 / 預覽
+        # ======================
         "upload_watch_subheader": "1️⃣ 上傳手錶數據",
         "upload_watch_label": "手錶數據 (.fit/.uddf)",
         "upload_video_subheader": "2️⃣ 上傳潛水影片",
         "upload_video_label": "影片檔（任意解析度）",
+
         "fit_detected": "偵測到 Garmin .fit 檔，開始解析多潛資料...",
         "fit_no_dives": "這個 .fit 裡面沒有偵測到有效的潛水紀錄。",
         "select_dive_label": "選擇要使用的那一潛：",
         "uddf_detected": "偵測到 ATMOS UDDF 檔，開始解析單一潛水紀錄...",
         "no_depth_samples": "成功讀取手錶檔，但沒有找到任何深度樣本點。",
+
         "dive_time_detected": "偵測到的 Dive Time：約 {mm:02d}:{ss:02d} （從深度 ≥ 0.7 m 開始，到回到 0 m）",
         "preview_subheader": "3️⃣ 潛水曲線預覽（時間 vs 深度 / 速率）",
+
         "axis_time_seconds": "時間（秒）",
         "axis_depth_m": "深度（m）",
         "axis_rate_mps": "速率（m/s）",
@@ -358,8 +379,13 @@ TRANSLATIONS = {
         "tooltip_rate": "速率 (m/s)",
         "depth_chart_title": "深度 vs 時間",
         "rate_chart_title": "速率 vs 時間",
+
+        # 目前你雖然拿掉了 caption 的顯示，但保留 key 不影響使用
         "preview_caption": "原始資料點數：{n_points}，重採樣時間範圍：{t_min:.0f}～{t_max:.0f} 秒，最大深度：約 {max_depth:.1f} m",
 
+        # ======================
+        # Overlay tab：對齊與版型
+        # ======================
         "align_layout_subheader": "4️⃣ 影片對齊與版型",
         "time_offset_label": "潛水開始時間調整",
         "time_offset_help": "如果影片比實際下潛早開始，請用負值調整。",
@@ -375,12 +401,18 @@ TRANSLATIONS = {
         "layout_d_label": "D: 單純深度",
         "layout_d_desc": "Simple_B",
 
+        # ======================
+        # Overlay tab：潛水員資訊
+        # ======================
         "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給 Layout B 使用）",
         "diver_name_label": "潛水員姓名 / Nickname",
         "nationality_label": "國籍",
         "discipline_label": "潛水項目（Discipline）",
         "not_specified": "（不指定）",
 
+        # ======================
+        # Overlay tab：產生影片 + 錯誤訊息
+        # ======================
         "render_button": "🚀 產生疊加數據影片",
         "error_need_both_files": "請先上傳手錶數據與影片檔。",
         "progress_init": "初始化中...",
@@ -394,19 +426,24 @@ TRANSLATIONS = {
         "nationality_read_error": "讀取 Nationality.csv 時發生錯誤：{error}",
         "nationality_missing_columns": "Nationality.csv 缺少必要欄位：{missing}",
 
-        # Compare tab
+        # ======================
+        # Compare tab：標題 / 上傳
+        # ======================
         "compare_title": "📊 潛水數據比較",
         "compare_upload_a": "上傳數據 A（.fit / .uddf）",
         "compare_upload_b": "上傳數據 B（.fit / .uddf）",
         "compare_select_dive_a": "數據A 要比較的那一潛：",
         "compare_select_dive_b": "數據B 要比較的那一潛：",
+
         "compare_smooth_label": "速率平滑度",
         "compare_align_label": "調整數據 B 的時間偏移（秒，用來對齊兩組曲線）",
         "compare_no_data": "請先上傳並選擇兩組有效的潛水數據。",
+
         "compare_depth_chart_title": "深度 vs 時間",
         "compare_rate_chart_title": "速率 vs 時間",
         "compare_series_legend": "數據來源",
         "compare_align_current": "偏移：{offset:.1f} 秒",
+
         "compare_desc_rate_label": "下潛速率 (m/s)",
         "compare_asc_rate_label": "上升速率 (m/s)",
         "compare_ff_depth_label_a": "數據A：FF 開始深度 (m)",
@@ -414,66 +451,79 @@ TRANSLATIONS = {
         "compare_ff_rate_label": "Free Fall 速率 (m/s)",
         "compare_metric_unit_mps": "{value:.2f} m/s",
         "compare_metric_not_available": "—",
-        "compare_ff_rate_label": "Free Fall 速率 (m/s)",
-        "compare_metric_unit_mps": "{value:.2f} m/s",
-        "compare_metric_not_available": "—",
 
-        # Overlay 速率分析 + 潛水時間顯示
+        # ======================
+        # Overlay：速率分析 + 潛水時間顯示（單一潛水）
+        # ======================
         "overlay_speed_analysis_title": "潛水速率分析",
         "overlay_ff_depth_label": "FF 開始深度 (m)",
         "metric_dive_time_label": "潛水時間",
         "metric_dive_time_value": "{mm:02d}:{ss:02d}",
 
-        
-        # Overlay rate analysis (單一潛水速率分析)
         "overlay_rate_section_title": "潛水速率分析",
-        "overlay_ff_depth_label": "FF 開始深度 (m)",
         "overlay_desc_rate_label": "下潛速率 (m/s)",
         "overlay_asc_rate_label": "上升速率 (m/s)",
         "overlay_ff_rate_label": "Free Fall 速率 (m/s)",
         "overlay_metric_unit_mps": "{value:.2f} m/s",
         "overlay_metric_not_available": "—",
-        
+
+        # ======================
+        # Overlay：影片對齊 UI
+        # ======================
         "align_mode_label": "對齊方式",
         "align_mode_start": "對齊下潛時間 (開始躬身)",
         "align_mode_bottom": "對齊最深時間 (轉身/摘到 tag)",
         "align_mode_end": "對齊出水時間 (手錶出水)",
-        
-        "align_mode_label": "對齊方式",
-        "align_mode_start": "對齊下潛時間 (開始躬身)",
-        "align_mode_bottom": "對齊最深時間 (轉身/摘到 tag)",
-        "align_mode_end": "對齊出水時間 (手錶出水)",
-        
-        "align_mode_label": "對齊方式",
-        "align_mode_start": "對齊下潛時間 (開始躬身)",
-        "align_mode_bottom": "對齊最深時間 (轉身/摘到tag)",
-        "align_mode_end": "對齊出水時間 (手錶出水)",
+
         "align_video_time_label": "影片時間（mm:ss.ss，例如 01:10.05）",
         "align_video_time_help": "請輸入分鐘:秒.小數，秒與小數最多 2 位，例如 00:03.18",
         "align_video_time_invalid": "影片時間格式不正確，請使用 mm:ss 或 mm:ss.ss，例如 00:03.18",
 
+        # ======================
+        # 渲染剩餘時間提示
+        # ======================
+        "render_estimate_pending": "剩餘時間預估中⋯⋯",
+        "render_do_not_leave": "請勿離開此畫面或關閉螢幕",
+        "render_estimate_eta": "預估剩餘時間：約 {eta}",
     },
+
     "en": {
+        # ======================
+        # App / Common
+        # ======================
         "app_title": "Dive Overlay Generator",
         "top_brand": "DepthRender",
         "language_label": "🌐 Language",
 
+        # ======================
+        # Tabs titles
+        # ======================
         "tab_overlay_title": "Overlay Generator",
         "tab_compare_title": "Dive Comparison",
-        "compare_coming_soon": "This tab will later provide dive-to-dive comparison, such as:\n\n- Depth curve comparison\n- Speed / free-fall ratio\n- Performance across different sessions / competitions",
+        "compare_coming_soon": (
+            "This tab will later provide dive-to-dive comparison, such as:\n\n"
+            "- Depth curve comparison\n"
+            "- Speed / free-fall ratio\n"
+            "- Performance across different sessions / competitions"
+        ),
 
-        # Overlay tab
+        # ======================
+        # Overlay tab: upload / preview
+        # ======================
         "upload_watch_subheader": "1️⃣ Upload dive log",
         "upload_watch_label": "Dive log (.fit/.uddf)",
         "upload_video_subheader": "2️⃣ Upload dive video",
         "upload_video_label": "Video file (any resolution)",
+
         "fit_detected": "Detected Garmin .fit file. Parsing multi-dive data...",
         "fit_no_dives": "No valid dives found in this .fit file.",
         "select_dive_label": "Select which dive to use:",
         "uddf_detected": "Detected ATMOS UDDF file. Parsing single dive...",
         "no_depth_samples": "Log file loaded, but no depth samples were found.",
+
         "dive_time_detected": "Detected dive time: approx {mm:02d}:{ss:02d} (from depth ≥ 0.7 m until back to 0 m)",
         "preview_subheader": "3️⃣ Dive curve preview (time vs depth / speed)",
+
         "axis_time_seconds": "Time (s)",
         "axis_depth_m": "Depth (m)",
         "axis_rate_mps": "Speed (m/s)",
@@ -482,8 +532,12 @@ TRANSLATIONS = {
         "tooltip_rate": "Speed (m/s)",
         "depth_chart_title": "Depth vs Time",
         "rate_chart_title": "Speed vs Time",
+
         "preview_caption": "Raw samples: {n_points}, resampled time range: {t_min:.0f}–{t_max:.0f} s, max depth: ~{max_depth:.1f} m",
 
+        # ======================
+        # Overlay tab: alignment & layout
+        # ======================
         "align_layout_subheader": "4️⃣ Video alignment & layout",
         "time_offset_label": "Align video start",
         "time_offset_help": "If the video starts before the actual dive, use a negative offset.",
@@ -499,12 +553,18 @@ TRANSLATIONS = {
         "layout_d_label": "D: Depth only",
         "layout_d_desc": "Simple_B",
 
+        # ======================
+        # Overlay tab: diver info
+        # ======================
         "diver_info_subheader": "5️⃣ Diver info (optional, mainly for Layout B)",
         "diver_name_label": "Diver name / Nickname",
         "nationality_label": "Nationality",
         "discipline_label": "Discipline",
         "not_specified": "(Not specified)",
 
+        # ======================
+        # Overlay tab: render + errors
+        # ======================
         "render_button": "🚀 Generate overlay video",
         "error_need_both_files": "Please upload both dive log and video file.",
         "progress_init": "Initializing...",
@@ -518,19 +578,24 @@ TRANSLATIONS = {
         "nationality_read_error": "Error reading Nationality.csv: {error}",
         "nationality_missing_columns": "Nationality.csv is missing required columns: {missing}",
 
+        # ======================
         # Compare tab
+        # ======================
         "compare_title": "📊 Dual-dive comparison",
         "compare_upload_a": "Upload log A (.fit / .uddf)",
         "compare_upload_b": "Upload log B (.fit / .uddf)",
         "compare_select_dive_a": "Dive A:",
         "compare_select_dive_b": "Dive B:",
+
         "compare_smooth_label": "Speed smoothing",
         "compare_align_label": "Time offset for log B (seconds, to align two curves)",
         "compare_no_data": "Please upload and select two valid dive logs first.",
+
         "compare_depth_chart_title": "Depth vs Time (comparison)",
         "compare_rate_chart_title": "Speed vs Time (comparison)",
         "compare_series_legend": "Series",
         "compare_align_current": "Offset: {offset:.1f}s",
+
         "compare_desc_rate_label": "Descent Rate (m/s)",
         "compare_asc_rate_label": "Ascent Rate (m/s)",
         "compare_ff_depth_label_a": "A: FF start depth (m)",
@@ -538,45 +603,43 @@ TRANSLATIONS = {
         "compare_ff_rate_label": "Free-fall Descent Rate (m/s)",
         "compare_metric_unit_mps": "{value:.2f} m/s",
         "compare_metric_not_available": "—",
-        "compare_ff_rate_label": "Free-fall Descent Rate (m/s)",
-        "compare_metric_unit_mps": "{value:.2f} m/s",
-        "compare_metric_not_available": "—",
-        
-        # Overlay speed analysis + dive time display
+
+        # ======================
+        # Overlay: single-dive metrics
+        # ======================
         "overlay_speed_analysis_title": "Dive speed analysis",
         "overlay_ff_depth_label": "FF start depth (m)",
         "metric_dive_time_label": "Dive time",
         "metric_dive_time_value": "{mm:02d}:{ss:02d}",
 
-        # Overlay rate analysis (single-dive metrics)
         "overlay_rate_section_title": "Dive speed metrics",
-        "overlay_ff_depth_label": "FF start depth (m)",
         "overlay_desc_rate_label": "Descent speed (m/s)",
         "overlay_asc_rate_label": "Ascent speed (m/s)",
         "overlay_ff_rate_label": "Free-fall speed (m/s)",
         "overlay_metric_unit_mps": "{value:.2f} m/s",
         "overlay_metric_not_available": "—",
-        
+
+        # ======================
+        # Overlay: alignment UI
+        # ======================
         "align_mode_label": "Alignment mode",
         "align_mode_start": "Align descent time (start of duck dive)",
         "align_mode_bottom": "Align bottom time (turn / tag grab)",
         "align_mode_end": "Align surfacing time (watch exits water)",
-        
-        "align_mode_label": "Alignment mode",
-        "align_mode_start": "Align descent time (start of duck dive)",
-        "align_mode_bottom": "Align bottom time (turn / tag grab)",
-        "align_mode_end": "Align surfacing time (watch exits water)",
-        
-        "align_mode_label": "Alignment mode",
-        "align_mode_start": "Align descent time (start of duck dive)",
-        "align_mode_bottom": "Align bottom time (turn / tag grab)",
-        "align_mode_end": "Align surfacing time (watch exits water)",
+
         "align_video_time_label": "Video time (mm:ss.ss, e.g. 01:10.05)",
         "align_video_time_help": "Use mm:ss or mm:ss.ss, with up to 2 decimal places, e.g. 00:03.18",
         "align_video_time_invalid": "Invalid video time format. Please use mm:ss or mm:ss.ss, e.g. 00:03.18",
 
+        # ======================
+        # Rendering ETA messages
+        # ======================
+        "render_estimate_pending": "Estimating remaining time…",
+        "render_do_not_leave": "Do not leave this page or turn off the screen",
+        "render_estimate_eta": "Estimated remaining time: approx. {eta}",
     },
 }
+
 
 def tr(key: str, **kwargs) -> str:
     """依據目前語言取得對應字串，可帶入 format 參數。"""
@@ -1345,15 +1408,63 @@ with st.container():
             else:
                 progress_bar = st.progress(0, text=tr("progress_init"))
 
-                def progress_callback(p: float, message: str = ""):
-                    p = max(0.0, min(1.0, float(p)))
-                    percent = int(p * 100)
-                    if message:
-                        text = f"{message} {percent}%"
-                    else:
-                        text = f"{tr('progress_rendering')} {percent}%"
-                    progress_bar.progress(percent, text=text)
+                # ✅ 只建立一次 placeholder（不要放進 progress_callback）
+                status_placeholder = st.empty()
 
+                # 記錄開始時間
+                start_time = time.time()
+
+                def format_seconds(sec: float) -> str:
+                    sec = max(0, int(round(sec)))
+                    mm = sec // 60
+                    ss = sec % 60
+                    return f"{mm:02d}:{ss:02d}"
+
+                def progress_callback(p: float, message: str = ""):
+                    """
+                    p: 0.0 ~ 1.0
+                    """
+                    p = max(0.0, min(1.0, float(p)))
+                    percent = int(round(p * 100))
+                
+                    # === 進度條本身：只顯示百分比 ===
+                    if message:
+                        bar_text = f"{message} {percent}%"
+                    else:
+                        bar_text = f"{tr('progress_rendering')} {percent}%"
+                
+                    # 完成狀態
+                    if p >= 1.0:
+                        progress_bar.progress(100, text=tr("progress_done"))
+                        status_placeholder.empty()
+                        return
+                
+                    progress_bar.progress(percent, text=bar_text)
+                
+                    # === ETA / 提示只顯示在下方資訊框 ===
+                    elapsed = time.time() - start_time
+                    eta_seconds = None
+                
+                    if p >= 0.40 and p > 0:
+                        total_est = elapsed / p
+                        eta_seconds = max(0.0, total_est - elapsed)
+                
+                    txt_pending = tr("render_estimate_pending")
+                    txt_warning = tr("render_do_not_leave")
+                
+                    if eta_seconds is None:
+                        # 40% 前
+                        status_placeholder.info(
+                            f"{tr('render_estimate_pending')}\n{tr('render_do_not_leave')}"
+                        )
+
+                    else:
+                        eta_str = format_seconds(eta_seconds)
+                        status_placeholder.info(
+                            f"{tr('render_estimate_eta', eta=eta_str)}\n{tr('render_do_not_leave')}"
+                        )
+
+                # 寫入暫存影片檔
                 tmp_video_path = Path("/tmp") / video_file.name
                 with open(tmp_video_path, "wb") as f:
                     f.write(video_file.read())
@@ -1366,7 +1477,7 @@ with st.container():
                         time_offset=time_offset,
                         layout=selected_id,
                         assets_dir=ASSETS_DIR,
-                        output_resolution=(1080, 1920),  # 直式 9:16
+                        output_resolution=(1080, 1920),
                         diver_name=diver_name,
                         nationality=nationality,
                         discipline=discipline if discipline != not_spec_label else "",
@@ -1376,7 +1487,9 @@ with st.container():
                         progress_callback=progress_callback,
                     )
 
+                    # ✅ render_video 結束後，保險把 UI 設為完成狀態
                     progress_callback(1.0, tr("progress_done"))
+
                     st.success(tr("render_success"))
 
                     with open(output_path, "rb") as f:
@@ -1392,9 +1505,9 @@ with st.container():
                         st.video(str(output_path))
 
                 except Exception as e:
+                    status_placeholder.empty()
                     st.error(tr("render_error", error=e))
 
-                    
     # ============================
     # Tab 2：潛水數據比較功能
     # ============================
