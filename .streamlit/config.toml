@@ -1,2 +1,5 @@
 [server]
 maxUploadSize = 400
+maxMessageSize = 512
+disconnectedSessionTTL = 600
+websocketPingInterval = 30
