@@ -407,7 +407,7 @@ TRANSLATIONS = {
         "align_step_sec": "秒 (1 s)",
         "align_step_csec": "0.1 秒 (100 ms)",
         "layout_select_label": "選擇影片版型",
-        "layout_preview_title": "版型示意圖（目前選擇會加黃色外框）",
+        "layout_preview_title": "版型示意圖",
 
         "layout_a_label": "A: 深度＋心率＋速率",
         "layout_a_desc": "",
@@ -419,7 +419,7 @@ TRANSLATIONS = {
         "layout_d_desc": "Simple_B",
 
         "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給 Layout B 使用）",
-        "diver_name_label": "潛水員姓名（暫不支援中文輸入法）",
+        "diver_name_label": "姓名（暫不支援中文輸入）",
         "nationality_label": "國籍",
         "discipline_label": "潛水項目（Discipline）",
         "not_specified": "（不指定）",
@@ -527,7 +527,7 @@ TRANSLATIONS = {
         "align_step_sec": "Sec (1 s)",
         "align_step_csec": "0.1 s (100 ms)",
         "layout_select_label": "Choose overlay layout",
-        "layout_preview_title": "Layout preview (selected layout highlighted in yellow)",
+        "layout_preview_title": "Layout preview",
 
         "layout_a_label": "A: Depth + HR + Speed",
         "layout_a_desc": "",
@@ -631,7 +631,7 @@ with top_left:
     st.markdown(
         f"""
         <div class="app-top-bar">
-            <div class="app-top-icon">🌊</div>
+            <div class="app-top-icon"></div>
             <div>
                 <div class="app-title-text">{tr('top_brand')}</div>
                 <div class="app-title-sub">Dive Overlay Generator</div>
@@ -952,8 +952,11 @@ with st.container():
                     )
                     dive_df = dive_df.sort_values("time_s").reset_index(drop=True)
 
-                # 重採樣 + 速率（固定用 2 秒平滑）
-                df_rate = prepare_dive_curve(dive_df, smooth_window=2)
+                # 重採樣 + 速率（可調平滑度；預設 2 秒）
+                if "ov_smooth_level" not in st.session_state:
+                    st.session_state["ov_smooth_level"] = 1
+                smooth_level = int(st.session_state["ov_smooth_level"])
+                df_rate = prepare_dive_curve(dive_df, smooth_window=smooth_level)
 
                 # ====== 偵測 Dive Time（不再用 st.info 顯示，而是放到數據區） ======
                 dive_time_s = None
@@ -1013,6 +1016,11 @@ with st.container():
                     st.altair_chart(depth_chart, use_container_width=True)
 
                     # 速率 vs 時間（平滑線）
+                    # 速率座標軸上限（自動浮動，0.5 m/s 間距進位）
+                    max_rate_plot = float(df_rate["rate_abs_mps_smooth"].max())
+                    max_rate_domain = max(0.5, np.ceil(max_rate_plot * 2.0) / 2.0)
+
+
                     rate_chart = (
                         alt.Chart(df_rate)
                         .mark_line(interpolate="basis")
@@ -1025,7 +1033,7 @@ with st.container():
                             y=alt.Y(
                                 "rate_abs_mps_smooth:Q",
                                 title=tr("axis_rate_mps"),
-                                scale=alt.Scale(domain=[0, 3]),
+                                scale=alt.Scale(domain=[0, max_rate_domain], nice=False),
                             ),
                             tooltip=[
                                 alt.Tooltip("time_s:Q", title=tr("tooltip_time"), format=".1f"),
@@ -1038,6 +1046,22 @@ with st.container():
                         )
                     )
                     st.altair_chart(rate_chart, use_container_width=True)
+
+                    # 速率平滑度（放在速率圖下方，可選 1~3 秒）
+                    spacer_l, spacer_mid, smooth_col = st.columns([10, 1, 1])
+                    with smooth_col:
+                        st.markdown(
+                            f"<div style='text-align:right; font-size:0.85rem; margin-bottom:2px;'>"
+                            f"{tr('compare_smooth_label')}"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                        st.selectbox(
+                            "",
+                            options=[1, 2, 3],
+                            key="ov_smooth_level",
+                            label_visibility="collapsed",
+                        )
 
                     # 原始資料說明
                     st.caption(
@@ -1592,7 +1616,7 @@ with st.container():
         # 5. 初始化平滑視窗 / 時間偏移狀態
         # -------------------------
         if "cmp_smooth_level" not in st.session_state:
-            st.session_state["cmp_smooth_level"] = 2  # 預設 2 秒
+            st.session_state["cmp_smooth_level"] = 1  # 預設 2 秒
     
         smooth_level = int(st.session_state["cmp_smooth_level"])
     
@@ -1901,7 +1925,7 @@ with st.container():
                 st.selectbox(
                     "",
                     options=[1, 2, 3],
-                    key="cmp_smooth_level",  # 保持同一個 key，改變會觸發重新計算
+                    key="cmp_smooth_level",
                     label_visibility="collapsed",
                 )
 
