@@ -419,7 +419,7 @@ TRANSLATIONS = {
         "layout_d_desc": "Simple_B",
 
         "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給 Layout B 使用）",
-        "diver_name_label": "潛水員姓名 / Nickname",
+        "diver_name_label": "潛水員姓名（暫不支援中文輸入法）",
         "nationality_label": "國籍",
         "discipline_label": "潛水項目（Discipline）",
         "not_specified": "（不指定）",
@@ -429,6 +429,8 @@ TRANSLATIONS = {
         "progress_init": "初始化中...",
         "progress_rendering": "產生影片中...",
         "progress_done": "影片產生完成！",
+        "progress_eta_estimating": "剩餘時間預估中⋯⋯請勿離開此畫面或關閉螢幕",
+        "progress_eta": "預估剩餘時間：約 {mm:02d}:{ss:02d} ⋯⋯請勿離開此畫面或關閉螢幕",
         "render_success": "影片產生完成！",
         "download_button": "下載 1080p 影片",
         "render_error": "產生影片時發生錯誤：{error}",
@@ -547,6 +549,9 @@ TRANSLATIONS = {
         "progress_init": "Initializing...",
         "progress_rendering": "Rendering video...",
         "progress_done": "Rendering finished!",
+        "progress_eta_estimating": "Estimating remaining time... Please stay on this page and keep the screen on.",
+        "progress_eta": "Estimated remaining time: ~{mm:02d}:{ss:02d} ... Please stay on this page and keep the screen on.",
+
         "render_success": "Video rendered successfully!",
         "download_button": "Download 1080p video",
         "render_error": "Error while rendering video: {error}",
@@ -877,23 +882,11 @@ with st.container():
 
         with col2:
             st.subheader(tr("upload_video_subheader"))
-
-            _video_upload = st.file_uploader(
+            video_file = st.file_uploader(
                 tr("upload_video_label"),
                 type=["mp4", "mov", "m4v"],
                 key="overlay_video_file",
             )
-
-            # 若本次有新上傳：立刻串流落盤，避免 .read() 把 300–400MB 吃進 RAM
-            if _video_upload is not None:
-                meta = persist_upload_to_tmp(_video_upload)
-                st.session_state["overlay_video_meta"] = meta
-                st.success(
-                    f"Uploaded: {meta['name']} ({meta['size'] / 1024 / 1024:.1f} MB)"
-                )
-
-        # 讓後續流程不依賴 file_uploader 物件（因為 rerun 後它可能變 None）
-        video_meta = st.session_state.get("overlay_video_meta")
 
         # --- 2. 選手錶類型 & 解析 ---
         dive_df = None
@@ -1404,74 +1397,94 @@ with st.container():
                 key="overlay_discipline",
             )
 
-                # --- 6. 產生影片 ---
+        # --- 6. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
-            video_meta = st.session_state.get("overlay_video_meta")
-
-            if (dive_df is None) or (video_meta is None):
+            if (dive_df is None) or (video_file is None):
                 st.error(tr("error_need_both_files"))
-                st.stop()
+            else:
+                progress_bar = st.progress(0, text=tr("progress_init"))
+                eta_box = st.empty()
 
-            progress_bar = st.progress(0, text=tr("progress_init"))
+                render_t0 = time.time()
 
-            def progress_callback(p: float, message: str = ""):
-                p = max(0.0, min(1.0, float(p)))
-                percent = int(p * 100)
-                if message:
-                    text = f"{message} {percent}%"
-                else:
-                    text = f"{tr('progress_rendering')} {percent}%"
-                progress_bar.progress(percent, text=text)
+                def progress_callback(p: float, message: str = ""):
+                    p = max(0.0, min(1.0, float(p)))
+                    percent = int(p * 100)
 
-            tmp_video_path = Path(video_meta["path"])
+                    # Progress bar text (keep existing behavior)
+                    if message:
+                        text = f"{message} {percent}%"
+                    else:
+                        text = f"{tr('progress_rendering')} {percent}%"
+                    progress_bar.progress(percent, text=text)
 
-            try:
-                output_path = render_video(
-                    video_path=tmp_video_path,
-                    dive_df=dive_df,
-                    df_rate=df_rate,
-                    time_offset=time_offset,
-                    layout=selected_id,
-                    assets_dir=ASSETS_DIR,
-                    output_resolution=(1080, 1920),  # 直式 9:16
-                    diver_name=diver_name,
-                    nationality=nationality,
-                    discipline=discipline if discipline != not_spec_label else "",
-                    dive_time_s=dive_time_s,
-                    dive_start_s=dive_start_s,
-                    dive_end_s=dive_end_s,
-                    progress_callback=progress_callback,
-                )
+                    # ETA info box under the progress bar
+                    if percent <= 40:
+                        eta_box.info(tr("progress_eta_estimating"))
+                        return
 
-                progress_callback(1.0, tr("progress_done"))
-                st.success(tr("render_success"))
+                    if 41 <= percent <= 99:
+                        elapsed = max(0.1, time.time() - render_t0)
+                        if p > 0.0001:
+                            total_est = elapsed / p
+                            remaining = max(0.0, total_est - elapsed)
+                        else:
+                            remaining = 0.0
 
-                with open(output_path, "rb") as f:
-                    st.download_button(
-                        tr("download_button"),
-                        data=f,
-                        file_name="dive_overlay_1080p.mp4",
-                        mime="video/mp4",
+                        mm = int(remaining // 60)
+                        ss = int(remaining % 60)
+                        eta_box.info(tr("progress_eta", mm=mm, ss=ss))
+                        return
+
+                    # 100%: close the info box
+                    if percent >= 100:
+                        eta_box.empty()
+
+
+                tmp_video_path = Path("/tmp") / video_file.name
+                with open(tmp_video_path, "wb") as f:
+                    f.write(video_file.read())
+
+                try:
+                    output_path = render_video(
+                        video_path=tmp_video_path,
+                        dive_df=dive_df,
+                        df_rate=df_rate,
+                        time_offset=time_offset,
+                        layout=selected_id,
+                        assets_dir=ASSETS_DIR,
+                        output_resolution=(1080, 1920),  # 直式 9:16
+                        diver_name=diver_name,
+                        nationality=nationality,
+                        discipline=discipline if discipline != not_spec_label else "",
+                        dive_time_s=dive_time_s,
+                        dive_start_s=dive_start_s,
+                        dive_end_s=dive_end_s,
+                        progress_callback=progress_callback,
                     )
 
-                col_preview, col_empty = st.columns([1, 1])
-                with col_preview:
-                    st.video(str(output_path))
+                    progress_callback(1.0, tr("progress_done"))
+                    st.success(tr("render_success"))
 
-            except Exception as e:
-                st.error(tr("render_error", error=e))
+                    with open(output_path, "rb") as f:
+                        st.download_button(
+                            tr("download_button"),
+                            data=f,
+                            file_name="dive_overlay_1080p.mp4",
+                            mime="video/mp4",
+                        )
 
-            finally:
-                # 清掉上傳影片暫存檔（避免 /tmp 累積造成下一次更容易爆）
-                try:
-                    tmp_video_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
+                    col_preview, col_empty = st.columns([1, 1])
+                    with col_preview:
+                        st.video(str(output_path))
 
-                # 清掉 session 記錄，避免 rerun 後誤用舊路徑
-                st.session_state.pop("overlay_video_meta", None)
-
-with tab_compare:
+                except Exception as e:
+                    st.error(tr("render_error", error=e))
+                    
+    # ============================
+    # Tab 2：潛水數據比較功能
+    # ============================
+    with tab_compare:
     
         # -------------------------
         # 1. 上傳 A / B（手機上並排）
@@ -1892,4 +1905,4 @@ with tab_compare:
                     label_visibility="collapsed",
                 )
 
-            st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
