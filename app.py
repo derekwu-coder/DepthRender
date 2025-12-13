@@ -117,6 +117,14 @@ h3 {
     margin-bottom: 0.2rem;
 }
 
+
+/* ===== Align time block: force 100% width on mobile ===== */
+.align-time-block { width: 100%; }
+@media (max-width: 600px){
+  .align-time-block { width: 100% !important; max-width: 100% !important; }
+  .align-time-block div[data-testid="stHorizontalBlock"]{ width: 100% !important; }
+}
+
 /* ======================================================
    🌑 Tabs 外觀：背景融入 + 保留膠囊造型
    ====================================================== */
@@ -363,9 +371,18 @@ TRANSLATIONS = {
         "align_layout_subheader": "4️⃣ 影片對齊與版型",
         "time_offset_label": "潛水開始時間調整",
         "time_offset_help": "如果影片比實際下潛早開始，請用負值調整。",
-        "time_step_min": "分 (1 min)",
-        "time_step_sec": "秒 (1 s)",
-        "time_step_csec": "0.1 秒 (100 ms)",
+        "align_mode_label": "對齊方式",
+        "align_mode_start": "對齊下潛時間 (開始躬身)",
+        "align_mode_bottom": "對齊最深時間 (轉身/摘到tag)",
+        "align_mode_end": "對齊出水時間 (手錶出水)",
+
+        "align_video_time_label": "影片時間（mm:ss.ss，例如 01:10.05）",
+        "align_video_time_help": "請輸入分鐘:秒.小數，秒與小數最多 2 位，例如 00:03.18",
+        "align_video_time_invalid": "影片時間格式不正確，請使用 mm:ss 或 mm:ss.ss，例如 00:03.18",
+
+        "align_step_min": "分 (1 min)",
+        "align_step_sec": "秒 (1 s)",
+        "align_step_csec": "0.1 秒 (100 ms)",
         "layout_select_label": "選擇影片版型",
         "layout_preview_title": "版型示意圖（目前選擇會加黃色外框）",
 
@@ -472,9 +489,18 @@ TRANSLATIONS = {
         "align_layout_subheader": "4️⃣ Video alignment & layout",
         "time_offset_label": "Align video start",
         "time_offset_help": "If the video starts before the actual dive, use a negative offset.",
-        "time_step_min": "Min (1 min)",
-        "time_step_sec": "Sec (1 s)",
-        "time_step_csec": "0.1 s (100 ms)",
+        "align_mode_label": "Alignment mode",
+        "align_mode_start": "Align descent time (start of duck dive)",
+        "align_mode_bottom": "Align bottom time (turn / tag grab)",
+        "align_mode_end": "Align surfacing time (watch exits water)",
+
+        "align_video_time_label": "Video time (mm:ss.ss, e.g. 01:10.05)",
+        "align_video_time_help": "Use mm:ss or mm:ss.ss, up to 2 decimals (e.g. 00:03.18)",
+        "align_video_time_invalid": "Invalid video time format. Use mm:ss or mm:ss.ss (e.g. 00:03.18)",
+
+        "align_step_min": "Min (1 min)",
+        "align_step_sec": "Sec (1 s)",
+        "align_step_csec": "0.1 s (100 ms)",
         "layout_select_label": "Choose overlay layout",
         "layout_preview_title": "Layout preview (selected layout highlighted in yellow)",
 
@@ -1062,598 +1088,244 @@ with st.container():
                     )
 
 
-                    # ==========================
-                    # 🌊 新增：潛水速率分析區塊
-                    # ==========================
-                    st.subheader(tr("overlay_rate_section_title"))
-
-                    # 取得本潛水最大深度，設定 FF 起始深度輸入
-                    max_depth_overlay = float(df_rate["depth_m"].max())
-                    ff_start_overlay = st.number_input(
-                        tr("overlay_ff_depth_label"),
-                        min_value=0.0,
-                        max_value=max_depth_overlay,
-                        step=1.0,
-                        value=min(15.0, max_depth_overlay),
-                        key="overlay_ff_depth",
-                    )
-
-                    # 使用與比較頁面相同的計算公式
-                    metrics_overlay = compute_dive_metrics(
-                        df_rate=df_rate,
-                        dive_df_raw=dive_df,
-                        ff_start_depth_m=ff_start_overlay,
-                    )
-
-                    def fmt_mps_overlay(value: Optional[float]) -> str:
-                        if value is None or np.isnan(value):
-                            return tr("overlay_metric_not_available")
-                        return tr("overlay_metric_unit_mps", value=round(value, 2))
-
-                    def render_metric_block_overlay(title: str, value: Optional[float]):
-                        value_str = fmt_mps_overlay(value)
-                        st.markdown(
-                            f"""
-                            <div style="margin-bottom:6px;">
-                                <div style="font-weight:700; font-size:1.05rem; margin-top:0; margin-bottom:0;">
-                                    {title}
-                                </div>
-                                <div style="font-size:0.95rem; margin-top:0; margin-bottom:0.1rem;">
-                                    {value_str}
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-
-                    # 單欄佔滿手機寬度顯示三個指標
-                    render_metric_block_overlay(
-                        tr("overlay_desc_rate_label"),
-                        metrics_overlay["descent_avg"],
-                    )
-                    render_metric_block_overlay(
-                        tr("overlay_asc_rate_label"),
-                        metrics_overlay["ascent_avg"],
-                    )
-                    render_metric_block_overlay(
-                        tr("overlay_ff_rate_label"),
-                        metrics_overlay["ff_avg"],
-                    )
-
-        # --- 4. 設定時間偏移 & 版型選擇 ---
-        st.subheader(tr("align_layout_subheader"))
-
-        col3, col4 = st.columns(2)
-
-        with col3:
-            # Time offset control: step selector + [-] [value] [+]
-
-            if "overlay_time_offset" not in st.session_state:
-
-                st.session_state["overlay_time_offset"] = 0.0
-
-            if "overlay_time_offset_step" not in st.session_state:
-
-                st.session_state["overlay_time_offset_step"] = "sec"
-
-            if "overlay_time_offset_str" not in st.session_state:
-
-                st.session_state["overlay_time_offset_str"] = f"{st.session_state['overlay_time_offset']:+.2f}"
-
-
-            step_map = {"min": 60.0, "sec": 1.0, "csec": 0.1}  # 0.1 s = 100 ms
-
-
-            def _sync_offset_str_from_value():
-
-                st.session_state["overlay_time_offset_str"] = f"{float(st.session_state['overlay_time_offset']):+.2f}"
-
-
-            def _parse_offset_str(s: str):
-
-                try:
-
-                    return float((s or "").strip())
-
-                except Exception:
-
-                    return None
-
-
-            def _on_offset_minus():
-
-                step = step_map.get(st.session_state.get("overlay_time_offset_step", "sec"), 1.0)
-
-                st.session_state["overlay_time_offset"] = round(float(st.session_state["overlay_time_offset"]) - step, 2)
-
-                _sync_offset_str_from_value()
-
-
-            def _on_offset_plus():
-
-                step = step_map.get(st.session_state.get("overlay_time_offset_step", "sec"), 1.0)
-
-                st.session_state["overlay_time_offset"] = round(float(st.session_state["overlay_time_offset"]) + step, 2)
-
-                _sync_offset_str_from_value()
-
-
-            st.markdown(f"**{tr('time_offset_label')}**")
-
-
-            st.caption(tr("time_offset_help"))
-
-
-
-            # --- init state ---
-
-
-            if "overlay_time_offset" not in st.session_state:
-
-
-                st.session_state["overlay_time_offset"] = 0.0
-
-
-            if "overlay_time_offset_str" not in st.session_state:
-
-
-                st.session_state["overlay_time_offset_str"] = f"{float(st.session_state['overlay_time_offset']):+.2f}"
-
-
-            if "overlay_time_offset_step_unit" not in st.session_state:
-
-
-                st.session_state["overlay_time_offset_step_unit"] = "csec"
-
-
-            if "overlay_time_offset_force_sync" not in st.session_state:
-
-
-                st.session_state["overlay_time_offset_force_sync"] = False
-
-
-
-            # IMPORTANT: Only write to overlay_time_offset_str BEFORE the text_input widget is created.
-
-
-            if st.session_state.get("overlay_time_offset_force_sync", False):
-
-
-                st.session_state["overlay_time_offset_str"] = f"{float(st.session_state['overlay_time_offset']):+.2f}"
-
-
-                st.session_state["overlay_time_offset_force_sync"] = False
-
-
-
-            def _t(zh_text: str, en_text: str) -> str:
-
-
-                lang = st.session_state.get("lang", "zh")
-
-
-                return zh_text if str(lang).lower().startswith("zh") else en_text
-
-
-
-            # --- (A) Alignment mode (optional): compute a recommended offset and let user apply it ---
-
-
-            align_mode = st.radio(
-
-
-                _t("對齊方式", "Alignment mode"),
-
-
-                options=["start", "bottom", "end"],
-
-
-                format_func=lambda m: {
-
-
-                    "start": _t("對齊下潛時間 (開始躬身)", "Align descent time (duck dive)"),
-
-
-                    "bottom": _t("對齊最深時間 (轉身/摘到tag)", "Align bottom time (turn / tag)"),
-
-
-                    "end": _t("對齊出水時間 (手錶出水)", "Align surfacing time (watch exits water)"),
-
-
-                }[m],
-
-
-                key="overlay_align_mode",
-
-
-            )
-
-
-
-            video_time_str = st.text_input(
-
-
-                _t("影片時間（mm:ss.ss，例如 01:10.05）", "Video time (mm:ss.ss, e.g. 01:10.05)"),
-
-
-                value=st.session_state.get("overlay_align_video_time_str", "00:00.00"),
-
-
-                key="overlay_align_video_time_str",
-
-
-                help=_t("用 mm:ss 或 mm:ss.ss（最多 2 位小數）", "Use mm:ss or mm:ss.ss (up to 2 decimals)"),
-
-
-            )
-
-
-
-            def _parse_mmss_to_seconds(s: str):
-
-
-                s = (s or "").strip()
-
-
-                if not s:
-
-
-                    return 0.0
-
-
-                try:
-
-
-                    mm_ss = s.split(":")
-
-
-                    if len(mm_ss) != 2:
-
-
+                # --- 4. 影片對齊與版型 ---
+                st.subheader(tr("align_layout_subheader"))
+
+                # ==========================================================
+                # 4-1) 對齊方式（下潛 / 最深 / 出水）
+                # ==========================================================
+                align_mode = st.radio(
+                    tr("align_mode_label"),
+                    options=["start", "bottom", "end"],
+                    format_func=lambda m: {
+                        "start": tr("align_mode_start"),
+                        "bottom": tr("align_mode_bottom"),
+                        "end": tr("align_mode_end"),
+                    }[m],
+                    horizontal=False,
+                    key="overlay_align_mode",
+                )
+
+                # ==========================================================
+                # 4-2) 影片時間輸入（[-] [time] [+] + 級距選擇）
+                #     - 注意：避免直接修改 text_input 的 session_state key
+                # ==========================================================
+                def _parse_time_str_to_seconds_safe(s: str):
+                    s = (s or "").strip()
+                    if not s:
+                        return 0.0
+                    try:
+                        parts = s.split(":")
+                        if len(parts) != 2:
+                            return None
+                        mm = int(parts[0].strip())
+                        ss = float(parts[1].strip())
+                        if mm < 0 or ss < 0:
+                            return None
+                        return mm * 60.0 + ss
+                    except Exception:
                         return None
 
+                def _seconds_to_mmss_cc(sec: float) -> str:
+                    sec = max(0.0, float(sec))
+                    mm = int(sec // 60)
+                    ss = sec - mm * 60
+                    return f"{mm:02d}:{ss:05.2f}"  # => 00:00.00
 
-                    mm = int(mm_ss[0].strip())
+                def _clamp_time(sec: float, max_sec: float = 3600.0) -> float:
+                    return max(0.0, min(float(sec), float(max_sec)))
 
+                # --- 初始化 state（只寫入「非 widget key」或在 widget 建立前寫入）---
+                if "overlay_align_video_time_s" not in st.session_state:
+                    st.session_state["overlay_align_video_time_s"] = 0.0
+                if "overlay_align_step_unit" not in st.session_state:
+                    st.session_state["overlay_align_step_unit"] = "sec"
+                if "overlay_align_video_time_str" not in st.session_state:
+                    st.session_state["overlay_align_video_time_str"] = "00:00.00"
 
-                    ss = float(mm_ss[1].strip())
+                step_map = {"min": 60.0, "sec": 1.0, "csec": 0.1}
 
+                def _sync_str_from_seconds():
+                    # 這個函式會被按鈕 callback 呼叫；按鈕在 text_input 之前建立，避免 StreamlitAPIException
+                    st.session_state["overlay_align_video_time_str"] = _seconds_to_mmss_cc(
+                        st.session_state["overlay_align_video_time_s"]
+                    )
 
-                    if mm < 0 or ss < 0:
+                def _on_minus():
+                    step = step_map.get(st.session_state.get("overlay_align_step_unit", "sec"), 1.0)
+                    st.session_state["overlay_align_video_time_s"] = round(
+                        _clamp_time(st.session_state["overlay_align_video_time_s"] - step), 2
+                    )
+                    _sync_str_from_seconds()
 
+                def _on_plus():
+                    step = step_map.get(st.session_state.get("overlay_align_step_unit", "sec"), 1.0)
+                    st.session_state["overlay_align_video_time_s"] = round(
+                        _clamp_time(st.session_state["overlay_align_video_time_s"] + step), 2
+                    )
+                    _sync_str_from_seconds()
 
-                        return None
+                # label
+                st.markdown(f"**{tr('align_video_time_label')}**")
 
+                # ✅ 手機端不要被壓成 50%：這裡用容器 class 強制全寬
+                st.markdown("<div class='align-time-block'>", unsafe_allow_html=True)
 
-                    return mm * 60.0 + ss
+                # 級距選擇（放在上方，避免手機被擠到最右側）
+                st.radio(
+                    label="",
+                    options=["min", "sec", "csec"],
+                    horizontal=True,
+                    format_func=lambda k: {"min": tr("align_step_min"), "sec": tr("align_step_sec"), "csec": tr("align_step_csec")}[k],
+                    key="overlay_align_step_unit",
+                    label_visibility="collapsed",
+                )
 
+                # [-] [time] [+]
+                bcol1, bcol2, bcol3 = st.columns([1.0, 2.4, 1.0], vertical_alignment="center")
 
-                except Exception:
+                with bcol1:
+                    st.button("－", key="overlay_align_minus", on_click=_on_minus, use_container_width=True)
 
+                with bcol3:
+                    st.button("＋", key="overlay_align_plus", on_click=_on_plus, use_container_width=True)
 
-                    return None
-
-
-
-            v_ref = _parse_mmss_to_seconds(video_time_str)
-
-
-
-            t_ref_raw = None
-
-
-            if (dive_df is not None) and (df_rate is not None):
-
-
-                try:
-
-
-                    if align_mode == "start":
-
-
-                        t_ref_raw = float(dive_start_s)
-
-
-                    elif align_mode == "end":
-
-
-                        t_ref_raw = float(dive_end_s)
-
-
+                with bcol2:
+                    video_time_str = st.text_input(
+                        label="",
+                        key="overlay_align_video_time_str",
+                        label_visibility="collapsed",
+                        help=tr("align_video_time_help"),
+                    )
+                    v_ref_from_text = _parse_time_str_to_seconds_safe(video_time_str)
+                    if v_ref_from_text is None:
+                        st.warning(tr("align_video_time_invalid"))
                     else:
+                        st.session_state["overlay_align_video_time_s"] = float(v_ref_from_text)
 
+                st.markdown("</div>", unsafe_allow_html=True)
 
+                # 最終 v_ref（秒）
+                v_ref = float(st.session_state["overlay_align_video_time_s"])
+
+                # ==========================================================
+                # 4-3) 對齊參考時間（手錶端：下潛 / 最深 / 出水）
+                # ==========================================================
+                t_ref_raw = None
+                if df_rate is not None and dive_df is not None:
+                    if align_mode == "start":
+                        t_ref_raw = dive_start_s
+                    elif align_mode == "end":
+                        t_ref_raw = dive_end_s
+                    elif align_mode == "bottom":
                         raw = dive_df.sort_values("time_s").reset_index(drop=True)
-
-
-                        within = raw[(raw["time_s"] >= float(dive_start_s)) & (raw["time_s"] <= float(dive_end_s))]
-
-
+                        within = raw[(raw["time_s"] >= dive_start_s) & (raw["time_s"] <= dive_end_s)]
                         if not within.empty:
-
-
                             idx_bottom = within["depth_m"].idxmax()
-
-
                             t_ref_raw = float(within.loc[idx_bottom, "time_s"])
 
-
-                except Exception:
-
-
-                    t_ref_raw = None
-
-
-
-            if (v_ref is not None) and (t_ref_raw is not None):
-
-
-                recommended_offset = float(t_ref_raw) - float(v_ref)
-
-
-                st.caption(_t(f"建議偏移：{recommended_offset:+.2f} 秒（按下套用可寫入下方偏移）",
-
-
-                             f"Suggested offset: {recommended_offset:+.2f} s (click Apply to copy)"))
-
-
-                if st.button(_t("套用對齊結果", "Apply alignment"), key="overlay_apply_alignment"):
-
-
-                    st.session_state["overlay_time_offset"] = round(float(recommended_offset), 2)
-
-
-                    st.session_state["overlay_time_offset_force_sync"] = True
-
-
-                    st.rerun()
-
-
-            else:
-
-
-                if v_ref is None:
-
-
-                    st.warning(_t("影片時間格式不正確，請用 mm:ss 或 mm:ss.ss", "Invalid video time format. Use mm:ss or mm:ss.ss"))
-
-
-                elif t_ref_raw is None:
-
-
-                    st.info(_t("尚未偵測到對齊事件（請先上傳手錶資料）", "Alignment event not available yet (upload dive log first)."))
-
-
-
-            # --- (B) Manual fine-tune offset: [-] [input] [+] + step unit ---
-
-
-            step_map = {"min": 60.0, "sec": 1.0, "csec": 0.1}  # 0.1s step
-
-
-            label_map = {
-
-
-                "min": _t("分 (1 min)", "Min (1 min)"),
-
-
-                "sec": _t("秒 (1 s)", "Sec (1 s)"),
-
-
-                "csec": _t("0.1 秒 (100 ms)", "0.1 s (100 ms)"),
-
-
-            }
-
-
-
-            def _clamp_offset(x: float, min_v: float = -3600.0, max_v: float = 3600.0) -> float:
-
-
-                return max(min_v, min(max_v, float(x)))
-
-
-
-            def _on_offset_minus():
-
-
-                step = step_map.get(st.session_state.get("overlay_time_offset_step_unit", "csec"), 0.1)
-
-
-                st.session_state["overlay_time_offset"] = round(_clamp_offset(float(st.session_state["overlay_time_offset"]) - step), 2)
-
-
-                st.session_state["overlay_time_offset_force_sync"] = True
-
-
-                st.rerun()
-
-
-
-            def _on_offset_plus():
-
-
-                step = step_map.get(st.session_state.get("overlay_time_offset_step_unit", "csec"), 0.1)
-
-
-                st.session_state["overlay_time_offset"] = round(_clamp_offset(float(st.session_state["overlay_time_offset"]) + step), 2)
-
-
-                st.session_state["overlay_time_offset_force_sync"] = True
-
-
-                st.rerun()
-
-
-
-            st.radio(
-
-
-                label="",
-
-
-                options=["min", "sec", "csec"],
-
-
-                horizontal=True,
-
-
-                format_func=lambda k: label_map.get(k, str(k)),
-
-
-                key="overlay_time_offset_step_unit",
-
-
-                label_visibility="collapsed",
-
-
-            )
-
-
-
-            c1, c2, c3 = st.columns([1.1, 2.0, 1.1], vertical_alignment="center")
-
-
-            with c1:
-
-
-                st.button("－", key="overlay_time_offset_minus", on_click=_on_offset_minus, use_container_width=True)
-
-
-            with c2:
-
-
-                offset_str = st.text_input(
-
-
-                    label="",
-
-
-                    key="overlay_time_offset_str",
-
-
-                    label_visibility="collapsed",
-
-
+                # ==========================================================
+                # 4-4) time_offset：自動計算並直接套用到 render（不用再按「套用」）
+                #     time_offset = t_ref_for_align - v_ref
+                # ==========================================================
+                if t_ref_raw is not None:
+                    t_ref_for_align = float(t_ref_raw)
+                    time_offset = t_ref_for_align - v_ref - 1.0
+                    st.caption(f"目前計算出的偏移：{time_offset:+.2f} 秒（會套用到渲染）")
+                else:
+                    time_offset = 0.0
+                    st.caption("尚未偵測到潛水事件，暫時使用 0 秒偏移。")
+
+                # ==========================================================
+                # 4-5) 動態 Layout 設定區（修正版，移除 col4）
+                # ==========================================================
+                LAYOUTS_DIR = ASSETS_DIR / "layouts"
+                
+                layouts_config = [
+                    {
+                        "id": "A",
+                        "label_key": "layout_a_label",
+                        "filename": "layout_a.png",
+                        "desc_key": "layout_a_desc",
+                        "uses_diver_info": False,
+                    },
+                    {
+                        "id": "B",
+                        "label_key": "layout_b_label",
+                        "filename": "layout_b.png",
+                        "desc_key": "layout_b_desc",
+                        "uses_diver_info": False,
+                    },
+                    {
+                        "id": "C",
+                        "label_key": "layout_c_label",
+                        "filename": "layout_c.png",
+                        "desc_key": "layout_c_desc",
+                        "uses_diver_info": False,
+                    },
+                    {
+                        "id": "D",
+                        "label_key": "layout_d_label",
+                        "filename": "layout_d.png",
+                        "desc_key": "layout_d_desc",
+                        "uses_diver_info": True,
+                    },
+                ]
+                
+                layout_ids = [cfg["id"] for cfg in layouts_config]
+                
+                # ✅ 直接顯示，不包在任何 col 裡
+                selected_id = st.selectbox(
+                    tr("layout_select_label"),
+                    options=layout_ids,
+                    format_func=lambda i: tr(f"layout_{i.lower()}_label"),
+                    key="overlay_layout_id",
                 )
+                
+                def load_layout_image(cfg, is_selected: bool):
+                    img_path = LAYOUTS_DIR / cfg["filename"]
+                    img = Image.open(img_path).convert("RGBA")
+                
+                    if not is_selected:
+                        return img
+                
+                    border_color = "#FFD700"
+                    border_width = 12
+                    corner_radius = 15
+                
+                    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                    draw = ImageDraw.Draw(overlay)
+                
+                    w, h = img.size
+                    pad = border_width // 2
+                    draw.rounded_rectangle(
+                        [
+                            (-pad, -pad),
+                            (w + pad - 1, h + pad - 1),
+                        ],
+                        radius=corner_radius,
+                        outline=border_color,
+                        width=border_width,
+                    )
+                
+                    return Image.alpha_composite(img, overlay)
+                
+                st.markdown("### " + tr("layout_preview_title"))
+                
+                cols = st.columns(len(layouts_config))
+                for col, cfg in zip(cols, layouts_config):
+                    with col:
+                        img = load_layout_image(cfg, cfg["id"] == selected_id)
+                        st.image(
+                            img,
+                            caption=tr(cfg["label_key"]),
+                            use_container_width=True,
+                        )
+                        if cfg.get("desc_key"):
+                            st.caption(tr(cfg["desc_key"]))
 
 
-                try:
-
-
-                    st.session_state["overlay_time_offset"] = round(float(offset_str), 2)
-
-
-                except Exception:
-
-
-                    pass
-
-
-            with c3:
-
-
-                st.button("＋", key="overlay_time_offset_plus", on_click=_on_offset_plus, use_container_width=True)
-
-
-
-            time_offset = float(st.session_state.get("overlay_time_offset", 0.0))
-
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-
-            time_offset = float(st.session_state["overlay_time_offset"])
-
-        # ------------ 動態 Layout 設定區 ------------
-        LAYOUTS_DIR = ASSETS_DIR / "layouts"
-
-        layouts_config = [
-            {
-                "id": "A",
-                "label_key": "layout_a_label",
-                "filename": "layout_a.png",
-                "desc_key": "layout_a_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "B",
-                "label_key": "layout_b_label",
-                "filename": "layout_b.png",
-                "desc_key": "layout_b_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "C",
-                "label_key": "layout_c_label",
-                "filename": "layout_c.png",
-                "desc_key": "layout_c_desc",
-                "uses_diver_info": False,
-            },
-            {
-                "id": "D",
-                "label_key": "layout_d_label",
-                "filename": "layout_d.png",
-                "desc_key": "layout_d_desc",
-                "uses_diver_info": True,
-            },
-        ]
-
-        layout_ids = [cfg["id"] for cfg in layouts_config]
-
-        with col4:
-            selected_id = st.selectbox(
-                tr("layout_select_label"),
-                options=layout_ids,
-                format_func=lambda i: tr(f"layout_{i.lower()}_label"),
-                key="overlay_layout_id",
-            )
-
-        def load_layout_image(cfg, is_selected: bool):
-            img_path = LAYOUTS_DIR / cfg["filename"]
-            img = Image.open(img_path).convert("RGBA")
-
-            if not is_selected:
-                return img
-
-            border_color = "#FFD700"
-            border_width = 12
-            corner_radius = 15
-
-            overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-            draw = ImageDraw.Draw(overlay)
-
-            w, h = img.size
-            pad = border_width // 2
-            draw.rounded_rectangle(
-                [
-                    (-pad, -pad),
-                    (w + pad - 1, h + pad - 1),
-                ],
-                radius=corner_radius,
-                outline=border_color,
-                width=border_width,
-            )
-
-            img = Image.alpha_composite(img, overlay)
-            return img
-
-        st.markdown("### " + tr("layout_preview_title"))
-
-        cols = st.columns(len(layouts_config))
-
-        for col, cfg in zip(cols, layouts_config):
-            with col:
-                img = load_layout_image(cfg, cfg["id"] == selected_id)
-                st.image(
-                    img,
-                    caption=tr(cfg["label_key"]),
-                    use_container_width=True,
-                )
-                if cfg.get("desc_key"):
-                    st.caption(tr(cfg["desc_key"]))
-
-        # --- 5. 輸入潛水員資訊---
+# --- 5. 輸入潛水員資訊---
         st.subheader(tr("diver_info_subheader"))
 
         nationality_file = ASSETS_DIR / "Nationality.csv"
