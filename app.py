@@ -81,6 +81,14 @@ def cleanup_session_files(keys: list[str]) -> None:
             _safe_unlink(str(v))
         st.session_state.pop(k, None)
 
+def ensure_clean_before_new_job():
+    """
+    Ensure previous overlay job resources are cleaned
+    before starting a new upload/render job.
+    """
+    if st.session_state.get("ov_job_state") in ("done", "error"):
+        reset_overlay_job()
+
 def reset_overlay_job() -> None:
     cleanup_session_files([
         "ov_video_meta",
@@ -946,29 +954,66 @@ with st.container():
     # Tab 1：疊加影片產生器
     # ============================
     with tab_overlay:
+    
+        # --- 0. 若上一輪已完成/失敗，而使用者開始新上傳：先做「下一輪前清理」的兩段式流程 ---
+        # 第一步：本次偵測到新檔案 → 設 flag → rerun
+        # 第二步：rerun 一開始看到 flag → 執行 reset_overlay_job()（避免動到已建立的 widget）
+        if st.session_state.get("ov_reset_on_next_run") is True:
+            st.session_state["ov_reset_on_next_run"] = False
+            reset_overlay_job()
+            cleanup_tmp_dir(max_age_sec=60 * 60 * 2)  # best-effort sweep
+            # 重要：reset 完立刻 rerun，確保狀態乾淨
+            st.rerun()
 
         # --- 1. 上傳區 ---
         col1, col2 = st.columns(2)
-
+        
         with col1:
             st.subheader(tr("upload_watch_subheader"))
             watch_file = st.file_uploader(
                 tr("upload_watch_label"),
                 type=None,
                 key="overlay_watch_file",
-                disabled=(st.session_state.get("ov_job_state") in ("rendering","done")),
+                disabled=(st.session_state.get("ov_job_state") == "rendering"),
             )
-
+        
         with col2:
             st.subheader(tr("upload_video_subheader"))
             video_file = st.file_uploader(
                 tr("upload_video_label"),
                 type=["mp4", "mov", "m4v"],
                 key="overlay_video_file",
-                disabled=(st.session_state.get("ov_job_state") in ("rendering","done")),
+                disabled=(st.session_state.get("ov_job_state") == "rendering"),
             )
+        
+        # --- 2. 新工作開始前的清理（安全觸發）：只在上一輪 done/error 時啟動 ---
+        # 注意：這裡不要直接 reset（因為 widget 已建立），改用 flag + rerun
+        if (watch_file is not None or video_file is not None) and st.session_state.get("ov_job_state") in ("done", "error"):
+            st.session_state["ov_reset_on_next_run"] = True
+            st.rerun()
+        
+        # --- 3. 寫入 /tmp（各自獨立處理）---
+        # watch（通常很小，但仍用串流落地，並避免 rerun 重複寫）
+        if watch_file is not None:
+            wmeta = st.session_state.get("ov_watch_meta")
+            if (wmeta is None) or (wmeta.get("name") != watch_file.name) or (not wmeta.get("path")) or (not os.path.exists(wmeta.get("path", ""))):
+                st.session_state["ov_watch_meta"] = persist_upload_to_tmp(watch_file)
+        
+        # video（大檔必須用串流落地）
+        if video_file is not None:
+            vmeta = st.session_state.get("ov_video_meta")
+            if (vmeta is None) or (vmeta.get("name") != video_file.name) or (not vmeta.get("path")) or (not os.path.exists(vmeta.get("path", ""))):
+                st.session_state["ov_video_meta"] = persist_upload_to_tmp(video_file)
+        
+        # --- 4. 標記 job 進入 idle（可開始下一步） ---
+        if (
+            st.session_state.get("ov_job_state") != "rendering"
+            and st.session_state.get("ov_watch_meta") is not None
+            and st.session_state.get("ov_video_meta") is not None
+        ):
+            st.session_state["ov_job_state"] = "idle"
 
-        # --- 2. 選手錶類型 & 解析 ---
+        # --- 5. 選手錶類型 & 解析 ---
         dive_df = None
         df_rate = None          # 速率重採樣後的 df
         dive_time_s = None      # Dive time（秒）
@@ -978,35 +1023,44 @@ with st.container():
 
         if watch_file is not None:
             suffix = Path(watch_file.name).suffix.lower()
+        
+            # ✅ 一律從已落地的 /tmp 檔讀，避免 UploadedFile 被讀到 EOF
+            watch_meta = st.session_state.get("ov_watch_meta")
+            watch_path = None
+            if watch_meta and watch_meta.get("path") and os.path.exists(watch_meta["path"]):
+                watch_path = watch_meta["path"]
+        
+            if watch_path is None:
+                st.error(tr("error_watch_file_missing"))
+            else:
+                if suffix == ".fit":
+                    st.info(tr("fit_detected"))
+                    with open(watch_path, "rb") as f:
+                        dives = parse_garmin_fit_to_dives(BytesIO(f.read()))
+        
+                    if len(dives) == 0:
+                        st.error(tr("fit_no_dives"))
+                    else:
+                        options = [
+                            f"Dive #{i+1}（{df['depth_m'].max():.1f} m）"
+                            for i, df in enumerate(dives)
+                        ]
+        
+                        selected_dive_index = st.selectbox(
+                            tr("select_dive_label"),
+                            options=list(range(len(dives))),
+                            format_func=lambda i: options[i],
+                            key="overlay_dive_index",
+                        )
+        
+                        dive_df = dives[selected_dive_index]
+        
+                elif suffix == ".uddf":
+                    st.info(tr("uddf_detected"))
+                    with open(watch_path, "rb") as f:
+                        dive_df = parse_atmos_uddf(BytesIO(f.read()))
 
-            if suffix == ".fit":
-                st.info(tr("fit_detected"))
-                dives = parse_garmin_fit_to_dives(BytesIO(watch_file.read()))
-                # dives: List[pd.DataFrame]
-
-                if len(dives) == 0:
-                    st.error(tr("fit_no_dives"))
-                else:
-                    # 用最大深度當顯示文字
-                    options = [
-                        f"Dive #{i+1}（{df['depth_m'].max():.1f} m）"
-                        for i, df in enumerate(dives)
-                    ]
-
-                    selected_dive_index = st.selectbox(
-                        tr("select_dive_label"),
-                        options=list(range(len(dives))),
-                        format_func=lambda i: options[i],
-                        key="overlay_dive_index",
-                    )
-
-                    dive_df = dives[selected_dive_index]
-
-            elif suffix == ".uddf":
-                st.info(tr("uddf_detected"))
-                dive_df = parse_atmos_uddf(BytesIO(watch_file.read()))
-
-        # --- 3. 顯示時間–深度曲線供確認 ---
+        # --- 6. 顯示時間–深度曲線供確認 ---
         if dive_df is not None:
             if len(dive_df) == 0:
                 st.warning(tr("no_depth_samples"))
@@ -1060,7 +1114,7 @@ with st.container():
                         dive_end_s = t_end
                         dive_time_s = max(0.0, dive_end_s - dive_start_s)
 
-                # ====== 3-1. 圖表（上下排列，不再用 columns） ======
+                # ====== 6-1. 圖表（上下排列，不再用 columns） ======
                 if df_rate is not None:
                     t_min = df_rate["time_s"].min()
                     t_resample_max = df_rate["time_s"].max()
@@ -1154,7 +1208,7 @@ with st.container():
                         )
                     )
 
-                    # ====== 3-2. 潛水速率分析（含 Dive Time） ======
+                    # ====== 6-2. 潛水速率分析（含 Dive Time） ======
                     st.markdown(f"### {tr('overlay_speed_analysis_title')}")
 
                     # --- FF 開始深度 ---
@@ -1220,11 +1274,11 @@ with st.container():
                     )
 
 
-                # --- 4. 影片對齊與版型 ---
+                # --- 7. 影片對齊與版型 ---
                 st.subheader(tr("align_layout_subheader"))
 
                 # ==========================================================
-                # 4-1) 對齊方式（下潛 / 最深 / 出水）
+                # 7-1) 對齊方式（下潛 / 最深 / 出水）
                 # ==========================================================
                 align_mode = st.radio(
                     tr("align_mode_label"),
@@ -1239,7 +1293,7 @@ with st.container():
                 )
 
                 # ==========================================================
-                # 4-2) 影片時間輸入（[-] [time] [+] + 級距選擇）
+                # 7-2) 影片時間輸入（[-] [time] [+] + 級距選擇）
                 #     - 注意：避免直接修改 text_input 的 session_state key
                 # ==========================================================
                 def _parse_time_str_to_seconds_safe(s: str):
@@ -1341,7 +1395,7 @@ with st.container():
                 v_ref = float(st.session_state["overlay_align_video_time_s"])
 
                 # ==========================================================
-                # 4-3) 對齊參考時間（手錶端：下潛 / 最深 / 出水）
+                # 7-3) 對齊參考時間（手錶端：下潛 / 最深 / 出水）
                 # ==========================================================
                 t_ref_raw = None
                 if df_rate is not None and dive_df is not None:
@@ -1357,7 +1411,7 @@ with st.container():
                             t_ref_raw = float(within.loc[idx_bottom, "time_s"])
 
                 # ==========================================================
-                # 4-4) time_offset：自動計算並直接套用到 render（不用再按「套用」）
+                # 7-4) time_offset：自動計算並直接套用到 render（不用再按「套用」）
                 #     time_offset = t_ref_for_align - v_ref
                 # ==========================================================
                 if t_ref_raw is not None:
@@ -1369,7 +1423,7 @@ with st.container():
                     st.caption("尚未偵測到潛水事件，暫時使用 0 秒偏移。")
 
                 # ==========================================================
-                # 4-5) 動態 Layout 設定區（修正版，移除 col4）
+                # 7-5) 動態 Layout 設定區（修正版，移除 col4）
                 # ==========================================================
                 LAYOUTS_DIR = ASSETS_DIR / "layouts"
                 
@@ -1457,7 +1511,7 @@ with st.container():
                             st.caption(tr(cfg["desc_key"]))
 
 
-# --- 5. 輸入潛水員資訊---
+# --- 8. 輸入潛水員資訊---
         st.subheader(tr("diver_info_subheader"))
 
         nationality_file = ASSETS_DIR / "Nationality.csv"
@@ -1501,7 +1555,7 @@ with st.container():
                 key="overlay_discipline",
             )
 
-        # --- 6. 產生影片 ---
+        # --- 9. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
             if (dive_df is None) or (video_file is None):
                 st.error(tr("error_need_both_files"))
