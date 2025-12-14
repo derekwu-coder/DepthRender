@@ -512,6 +512,9 @@ TRANSLATIONS = {
 
         "render_button": "🚀 產生疊加數據影片",
         "error_need_both_files": "請先上傳手錶數據與影片檔。",
+        "error_watch_file_missing": "找不到手錶檔案，請重新上傳。",
+        "error_video_missing": "找不到影片檔案，請重新上傳。",
+        "error_video_ext_not_supported": "不支援的影片格式，請上傳 mp4 / mov / m4v。",
         "progress_init": "初始化中...",
         "progress_rendering": "產生影片中...",
         "progress_done": "影片產生完成！",
@@ -632,6 +635,9 @@ TRANSLATIONS = {
 
         "render_button": "🚀 Generate overlay video",
         "error_need_both_files": "Please upload both dive log and video file.",
+        "error_watch_file_missing": "Watch file is missing. Please re-upload.",
+        "error_video_missing": "Video file is missing. Please re-upload.",
+        "error_video_ext_not_supported": "Unsupported video format. Please upload mp4 / mov / m4v.",
         "progress_init": "Initializing...",
         "progress_rendering": "Rendering video...",
         "progress_done": "Rendering finished!",
@@ -1021,11 +1027,14 @@ with st.container():
         dive_end_s = None       # 計時終點（回到 0 m 的時間）
         selected_dive_index = None
 
-        if watch_file is not None:
-            suffix = Path(watch_file.name).suffix.lower()
-        
+        watch_meta = st.session_state.get("ov_watch_meta")
+        watch_meta_ok = bool(watch_meta and watch_meta.get("path") and os.path.exists(watch_meta.get("path", "")))
+
+        if watch_file is not None or watch_meta_ok:
+            watch_name = watch_file.name if watch_file is not None else (watch_meta.get("name", "") if watch_meta else "")
+            suffix = Path(watch_name).suffix.lower()
+
             # ✅ 一律從已落地的 /tmp 檔讀，避免 UploadedFile 被讀到 EOF
-            watch_meta = st.session_state.get("ov_watch_meta")
             watch_path = None
             if watch_meta and watch_meta.get("path") and os.path.exists(watch_meta["path"]):
                 watch_path = watch_meta["path"]
@@ -1557,7 +1566,11 @@ with st.container():
 
         # --- 9. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
-            if (dive_df is None) or (video_file is None):
+            video_meta = st.session_state.get("ov_video_meta")
+            video_path_ok = bool(video_meta and video_meta.get("path") and os.path.exists(video_meta.get("path", "")))
+            watch_meta = st.session_state.get("ov_watch_meta")
+            watch_path_ok = bool(watch_meta and watch_meta.get("path") and os.path.exists(watch_meta.get("path", "")))
+            if (dive_df is None) or (not video_path_ok) or (not watch_path_ok):
                 st.error(tr("error_need_both_files"))
             else:
                 progress_bar = st.progress(0, text=tr("progress_init"))
@@ -1602,12 +1615,12 @@ with st.container():
                 
                 # Persist upload to /tmp without reading into RAM (important for 300-400MB files)
                 # Reuse persisted path across reruns for this session
-                meta = st.session_state.get("ov_video_meta")
-                if (meta is None) or (meta.get("name") != video_file.name) or (not meta.get("path")) or (not os.path.exists(meta.get("path",""))):
-                    meta = persist_upload_to_tmp(video_file)
-                    st.session_state["ov_video_meta"] = meta
+                video_meta = st.session_state.get("ov_video_meta")
+                if (video_meta is None) or (not video_meta.get("path")) or (not os.path.exists(video_meta.get("path", ""))):
+                    st.error(tr("error_video_missing"))
+                    st.stop()
 
-                tmp_video_path = Path(meta["path"])
+                tmp_video_path = Path(video_meta["path"])
                 try:
                     st.session_state["ov_job_state"] = "rendering"
                     st.session_state.pop("ov_render_error", None)
