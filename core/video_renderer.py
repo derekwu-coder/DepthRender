@@ -951,8 +951,10 @@ def render_video(
             codec="libx264",
             fps=clip.fps,
         
-            # 先關音訊測穩定性（非常關鍵）
-            audio=False,
+            audio=True,
+            audio_codec="aac",
+            temp_audiofile=tmp_audio_path,
+            remove_temp=True,
         
             # 降低雲端尖峰
             threads=1,
