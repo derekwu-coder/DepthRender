@@ -927,28 +927,70 @@ def render_video(
     # =========================
     # 4. 寫出影片（MoviePy / ffmpeg encode）
     # =========================
+    import os
+    import uuid
+    import tempfile
+
     t_encode_start = time.perf_counter()
     update_progress(last_p["value"], "編碼影片中...")
 
-    new_clip = VideoClip(make_frame, duration=clip.duration)
-    new_clip = new_clip.set_fps(clip.fps).set_audio(clip.audio)
+    new_clip = None
+    output_path = None
+    tmp_audio_path = None
 
-    output_path = Path("/tmp/dive_overlay_output.mp4")
-    new_clip.write_videofile(
-        str(output_path),
-        codec="libx264",
-        audio=True,
-        audio_codec="aac",
-        fps=clip.fps,
-        # logger=None
-    )
+    try:
+        new_clip = VideoClip(make_frame, duration=clip.duration)
+        new_clip = new_clip.set_fps(clip.fps).set_audio(clip.audio)
 
-    t_encode_end = time.perf_counter()
-    print(f"[render_video] 編碼 / 寫檔耗時 {t_encode_end - t_encode_start:.2f} 秒")
+        # 用唯一檔名，避免多人/多次渲染互相覆蓋
+        output_path = Path(tempfile.gettempdir()) / f"dive_overlay_output_{uuid.uuid4().hex}.mp4"
+        tmp_audio_path = str(Path(tempfile.gettempdir()) / f"dive_overlay_audio_{uuid.uuid4().hex}.m4a")
 
-    t1 = time.perf_counter()
-    print(f"[render_video] 總耗時 {t1 - t0:.2f} 秒")
+        new_clip.write_videofile(
+            str(output_path),
+            codec="libx264",
+            fps=clip.fps,
+        
+            # 先關音訊測穩定性（非常關鍵）
+            audio=False,
+        
+            # 降低雲端尖峰
+            threads=1,
+        
+            # 更保守的 encoder 參數：ultrafast 先求穩
+            ffmpeg_params=[
+                "-movflags", "+faststart",
+                "-preset", "ultrafast",
+            ],
+        )
 
-    update_progress(1.0, "影片產生完成！")
+        t_encode_end = time.perf_counter()
+        print(f"[render_video] 編碼 / 寫檔耗時 {t_encode_end - t_encode_start:.2f} 秒")
 
-    return output_path
+        t1 = time.perf_counter()
+        print(f"[render_video] 總耗時 {t1 - t0:.2f} 秒")
+
+        update_progress(1.0, "影片產生完成！")
+        return output_path
+
+    finally:
+        # 1) 一定要 close，否則 ffmpeg reader/proc 容易殘留
+        try:
+            if new_clip is not None:
+                new_clip.close()
+        except Exception:
+            pass
+
+        try:
+            if clip is not None:
+                clip.close()
+        except Exception:
+            pass
+
+        # 2) 雙保險：如果 MoviePy 沒刪掉 temp audio，這裡補刪
+        try:
+            if tmp_audio_path and os.path.exists(tmp_audio_path):
+                os.remove(tmp_audio_path)
+        except Exception:
+            pass
+

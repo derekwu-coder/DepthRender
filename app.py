@@ -419,7 +419,7 @@ TRANSLATIONS = {
         "layout_d_desc": "Simple_B",
 
         "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給 Layout B 使用）",
-        "diver_name_label": "姓名（暫不支援中文輸入）",
+        "diver_name_label": "姓名（暫不支援中文）",
         "nationality_label": "國籍",
         "discipline_label": "潛水項目（Discipline）",
         "not_specified": "（不指定）",
