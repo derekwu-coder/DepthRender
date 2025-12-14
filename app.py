@@ -11,7 +11,7 @@ import threading
 from core.parser_garmin import parse_garmin_fit_to_dives
 from core.parser_atmos import parse_atmos_uddf
 from core.video_renderer import render_video  # 之後實作
-from typing import Optional
+from typing import Optional, Set
 
 import os
 import tempfile
@@ -36,10 +36,88 @@ def persist_upload_to_tmp(uploaded_file) -> dict:
         "type": uploaded_file.type,
     }
 
+
+# -------------------------------
+# Runtime cleanup helpers (Render/Streamlit long-lived process)
+# -------------------------------
+TMP_PREFIXES = ("upload_", "dive_overlay_output_", "dive_overlay_audio_", "dive_overlay_input_")
+
+def _safe_unlink(path: str) -> None:
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+def cleanup_tmp_dir(max_age_sec: int = 60 * 60 * 2,keep_paths: Optional[Set[str]] = None) -> None:
+    """Delete old temp files created by this app under /tmp to avoid accumulation across sessions."""
+    keep_paths = keep_paths or set()
+    tmp_dir = Path(tempfile.gettempdir())
+    now = time.time()
+    try:
+        for p in tmp_dir.iterdir():
+            try:
+                if not p.is_file():
+                    continue
+                if not any(p.name.startswith(pref) for pref in TMP_PREFIXES):
+                    continue
+                if str(p) in keep_paths:
+                    continue
+                age = now - p.stat().st_mtime
+                if age >= max_age_sec:
+                    p.unlink(missing_ok=True)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+def cleanup_session_files(keys: list[str]) -> None:
+    """Remove files referenced by session_state keys and delete the keys."""
+    for k in keys:
+        v = st.session_state.get(k)
+        if isinstance(v, dict) and "path" in v:
+            _safe_unlink(v.get("path"))
+        elif isinstance(v, (str, Path)):
+            _safe_unlink(str(v))
+        st.session_state.pop(k, None)
+
+def reset_overlay_job() -> None:
+    cleanup_session_files([
+        "ov_video_meta",
+        "ov_output_path",
+        "ov_tmp_audio_path",
+        "ov_render_error",
+    ])
+    # Also clear uploader widgets to allow re-upload
+    for k in ["overlay_video_file", "overlay_watch_file"]:
+        st.session_state.pop(k, None)
+    st.session_state["ov_job_state"] = "idle"
+    try:
+        import gc
+        gc.collect()
+    except Exception:
+        pass
+
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
 
+
 st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
+
+# Overlay job state (idle/rendering/done/error)
+if "ov_job_state" not in st.session_state:
+    st.session_state["ov_job_state"] = "idle"
+
+# Best-effort cleanup of old /tmp files (keep current session files)
+_keep = set()
+for _k in ("ov_video_meta", "ov_output_path"):
+    _v = st.session_state.get(_k)
+    if isinstance(_v, dict) and "path" in _v:
+        _keep.add(_v["path"])
+    elif isinstance(_v, (str, Path)):
+        _keep.add(str(_v))
+cleanup_tmp_dir(max_age_sec=60*60*2, keep_paths=_keep)
+
 
 # ==================================
 # 全局 CSS：讓畫面更像 App
@@ -878,6 +956,7 @@ with st.container():
                 tr("upload_watch_label"),
                 type=None,
                 key="overlay_watch_file",
+                disabled=(st.session_state.get("ov_job_state") in ("rendering","done")),
             )
 
         with col2:
@@ -886,6 +965,7 @@ with st.container():
                 tr("upload_video_label"),
                 type=["mp4", "mov", "m4v"],
                 key="overlay_video_file",
+                disabled=(st.session_state.get("ov_job_state") in ("rendering","done")),
             )
 
         # --- 2. 選手錶類型 & 解析 ---
@@ -1465,11 +1545,18 @@ with st.container():
                         eta_box.empty()
 
 
-                tmp_video_path = Path("/tmp") / video_file.name
-                with open(tmp_video_path, "wb") as f:
-                    f.write(video_file.read())
+                
+                # Persist upload to /tmp without reading into RAM (important for 300-400MB files)
+                # Reuse persisted path across reruns for this session
+                meta = st.session_state.get("ov_video_meta")
+                if (meta is None) or (meta.get("name") != video_file.name) or (not meta.get("path")) or (not os.path.exists(meta.get("path",""))):
+                    meta = persist_upload_to_tmp(video_file)
+                    st.session_state["ov_video_meta"] = meta
 
+                tmp_video_path = Path(meta["path"])
                 try:
+                    st.session_state["ov_job_state"] = "rendering"
+                    st.session_state.pop("ov_render_error", None)
                     output_path = render_video(
                         video_path=tmp_video_path,
                         dive_df=dive_df,
@@ -1490,6 +1577,9 @@ with st.container():
                     progress_callback(1.0, tr("progress_done"))
                     st.success(tr("render_success"))
 
+                    st.session_state["ov_output_path"] = str(output_path)
+                    st.session_state["ov_job_state"] = "done"
+
                     with open(output_path, "rb") as f:
                         st.download_button(
                             tr("download_button"),
@@ -1502,7 +1592,17 @@ with st.container():
                     with col_preview:
                         st.video(str(output_path))
 
+                    # ---- Post-render UX: lock UI and offer clean restart ----
+                    st.info(tr("post_render_tip"))
+
+                    if st.button(tr("start_new_job_btn"), type="primary", key="ov_start_new_job"):
+                        reset_overlay_job()
+                        cleanup_tmp_dir(max_age_sec=60*60*2)  # best-effort sweep
+                        st.rerun()
+
                 except Exception as e:
+                    st.session_state["ov_job_state"] = "error"
+                    st.session_state["ov_render_error"] = str(e)
                     st.error(tr("render_error", error=e))
                     
     # ============================
