@@ -508,7 +508,7 @@ TRANSLATIONS = {
         "layout_d_label": "D: 單純深度",
         "layout_d_desc": "Simple_B",
 
-        "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給 Layout B 使用）",
+        "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給賽事風格使用）",
         "diver_name_label": "姓名（暫不支援中文）",
         "nationality_label": "國籍",
         "discipline_label": "潛水項目（Discipline）",
@@ -659,16 +659,16 @@ TRANSLATIONS = {
         "layout_select_label": "Choose overlay layout",
         "layout_preview_title": "Layout preview",
 
-        "layout_a_label": "賽事風格 1",
+        "layout_a_label": "Competition Style 1",
         "layout_a_desc": "",
-        "layout_b_label": "賽事風格 2",
+        "layout_b_label": "Competition Style 2",
         "layout_b_desc": "",
         "layout_c_label": "C: Depth only",
         "layout_c_desc": "Simple_A",
         "layout_d_label": "D: Depth only",
         "layout_d_desc": "Simple_B",
 
-        "diver_info_subheader": "5️⃣ Diver info (optional, mainly for Layout B)",
+        "diver_info_subheader": "5️⃣ Diver info (optional, mainly for Competition Style)",
         "diver_name_label": "Diver name / Nickname",
         "nationality_label": "Nationality",
         "discipline_label": "Discipline",
