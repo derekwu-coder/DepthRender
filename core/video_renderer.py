@@ -233,11 +233,18 @@ def _layout_a_defaults():
         "h": 50,
         "skew": 25,
         "gap": 20,
-        "w": [165, 250, 135, 130, 120],
+        "w": [165, 250, 135, 130, 125],
         "alpha": 0.65,
         "inner_pad": 14,
         "font_sizes": {"code": 32, "name": 32, "disc": 32, "time": 32, "depth": 32},
-        "offsets": {"code": (-10, -10), "flag": (-20, 0), "name": (-10, -10), "disc": (-10, -10), "time": (-10, -10), "depth": (-10, -10)},
+        "offsets": {
+            "code": (-10, -10), 
+            "flag": (-20, 0), 
+            "name": (-10, -10), 
+            "disc": (-10, -10), 
+            "time": (-13, -10), 
+            "depth": (-10, -10)
+        },
     }
 
 def draw_layout_a_bottom_bar(
