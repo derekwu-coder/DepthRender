@@ -1573,11 +1573,12 @@ with st.container():
                 # label_key：翻譯 key（你原本有 tr()）
                 # filename：示意圖檔名（放在 assets/layouts/）
                 layouts_config = [
-                    {"id": "A", "label_key": "layout_a_label", "filename": "layout_A.png"},
-                    {"id": "B", "label_key": "layout_b_label", "filename": "layout_B.png"},
-                    {"id": "C", "label_key": "layout_c_label", "filename": "layout_C.png"},
-                    {"id": "D", "label_key": "layout_d_label", "filename": "layout_D.png"},
+                    {"id": "A", "label_key": "layout_a_label", "filename": "layout_a.png"},
+                    {"id": "B", "label_key": "layout_b_label", "filename": "layout_b.png"},
+                    {"id": "C", "label_key": "layout_c_label", "filename": "layout_c.png"},
+                    {"id": "D", "label_key": "layout_d_label", "filename": "layout_d.png"},
                 ]
+
                 
                 layout_ids = [c["id"] for c in layouts_config]
                 
