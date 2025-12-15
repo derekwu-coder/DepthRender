@@ -17,6 +17,7 @@ import os
 import tempfile
 import shutil
 import streamlit as st
+import base64
 
 def persist_upload_to_tmp(uploaded_file) -> dict:
     suffix = ""
@@ -369,6 +370,56 @@ div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
 /* Tabs 底部與內文的距離再縮一點 */
 div[data-testid="stTabs"] + div {
     margin-top: 0.20rem !important;
+}
+
+/* ===== Layout Grid Selector ===== */
+.layout-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.layout-card {
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.18s ease-in-out;
+    background: #ffffff;
+}
+
+
+/* 未選取：更灰、更暗、更退色 */
+.layout-card.dimmed img{
+  filter: grayscale(80%) saturate(0%) contrast(85%) brightness(50%);
+  opacity: 0.60;
+}
+
+/* 你如果也想讓整張卡片一起更退，可加這個 */
+.layout-card.dimmed{
+  opacity: 0.92;
+}
+
+/* 選取：黃色高亮 */
+.layout-card.selected {
+    border-color: #FACC15;           /* 黃色邊框 */
+    box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35);
+    filter: none;
+}
+
+.layout-card img {
+    width: 100%;
+    aspect-ratio: 9 / 16;
+    object-fit: cover;
+    display: block;
+}
+
+.layout-card-label {
+    padding: 6px 8px 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
 }
 
 /* ======================================================
@@ -1510,74 +1561,71 @@ with st.container():
                     st.caption("尚未偵測到潛水事件，暫時使用 0 秒偏移。")
 
                 # ==========================================================
-                # 7-5) 動態 Layout 設定區（修正版，移除 col4）
+                # 7-5) 動態 Layout 設定區（2 欄 Grid）
                 # ==========================================================
+                st.subheader(tr("layout_select_label"))
+                
+                # layouts 圖片資料夾（你原本用 ASSETS_DIR，這裡補齊 LAYOUTS_DIR）
                 LAYOUTS_DIR = ASSETS_DIR / "layouts"
                 
+                # 這裡建立 layouts_config（你可以依你的實際檔名調整 filename）
+                # id：layout ID（A/B/C/D...）
+                # label_key：翻譯 key（你原本有 tr()）
+                # filename：示意圖檔名（放在 assets/layouts/）
                 layouts_config = [
-                    {
-                        "id": "A",
-                        "label_key": "layout_a_label",
-                        "filename": "layout_a.png",
-                        "desc_key": "layout_a_desc",
-                        "uses_diver_info": True,
-                    },
-                    {
-                        "id": "B",
-                        "label_key": "layout_b_label",
-                        "filename": "layout_b.png",
-                        "desc_key": "layout_b_desc",
-                        "uses_diver_info": True,
-                    },
-                    {
-                        "id": "C",
-                        "label_key": "layout_c_label",
-                        "filename": "layout_c.png",
-                        "desc_key": "layout_c_desc",
-                        "uses_diver_info": False,
-                    },
-                    {
-                        "id": "D",
-                        "label_key": "layout_d_label",
-                        "filename": "layout_d.png",
-                        "desc_key": "layout_d_desc",
-                        "uses_diver_info": True,
-                    },
+                    {"id": "A", "label_key": "layout_a_label", "filename": "layout_A.png"},
+                    {"id": "B", "label_key": "layout_b_label", "filename": "layout_B.png"},
+                    {"id": "C", "label_key": "layout_c_label", "filename": "layout_C.png"},
+                    {"id": "D", "label_key": "layout_d_label", "filename": "layout_D.png"},
                 ]
                 
-                layout_ids = [cfg["id"] for cfg in layouts_config]
+                layout_ids = [c["id"] for c in layouts_config]
                 
-                # ✅ 直接顯示，不包在任何 col 裡
-                selected_id = st.selectbox(
-                    tr("layout_select_label"),
-                    options=layout_ids,
-                    format_func=lambda i: tr(f"layout_{i.lower()}_label"),
-                    key="overlay_layout_id",
-                )
-
-                # ----------------------------------------------------------
+                # 初始化選擇狀態
+                if "overlay_layout_id" not in st.session_state:
+                    st.session_state["overlay_layout_id"] = layouts_config[0]["id"]
                 
-                # ==========================================================
-                # 7-6) 版型示意圖（Layout Preview）
-                # ==========================================================
-                st.markdown(f"**{tr('layout_preview_title')}**")
+                selected_id = st.session_state["overlay_layout_id"]
                 
-                # 找到目前選到的 layout config
-                cfg_map = {cfg["id"]: cfg for cfg in layouts_config}
-                cfg = cfg_map.get(selected_id)
+                def _img_to_base64_png(path: Path) -> str:
+                    """讀取圖片檔，回傳 base64 字串（給 HTML <img> 用）"""
+                    if not path.exists():
+                        return ""
+                    data = path.read_bytes()
+                    return base64.b64encode(data).decode("utf-8")
                 
-                if cfg:
-                    preview_path = LAYOUTS_DIR / cfg["filename"]
+                # 2 欄 Grid：用 columns 最穩定（手機也能正常換行）
+                cols = st.columns(2, gap="small")
                 
-                    if preview_path.exists():
-                        # 桌機 / 手機都穩的方式：不要用 columns 強塞
-                        st.image(
-                            Image.open(preview_path),
-                            caption=tr(cfg.get("label_key", "")),
-                            use_container_width=True,
+                for idx, cfg in enumerate(layouts_config):
+                    col = cols[idx % 2]
+                    layout_id = cfg["id"]
+                    label = tr(cfg["label_key"])
+                
+                    img_path = LAYOUTS_DIR / cfg["filename"]
+                    is_selected = (layout_id == selected_id)
+                
+                    card_class = "layout-card selected" if is_selected else "layout-card dimmed"
+                    img_b64 = _img_to_base64_png(img_path)
+                
+                    with col:
+                        # 先畫卡片（圖片 + label）
+                        st.markdown(
+                            f"""
+                            <div class="{card_class}">
+                                <img src="data:image/png;base64,{img_b64}">
+                                <div class="layout-card-label">{label}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
                         )
-                    else:
-                        st.info(f"（找不到示意圖：{preview_path.name}）")
+                
+                        # 再放選擇按鈕（點了就更新 session_state）
+                        if st.button(tr("select_label") if "select_label" in globals() else "Select",
+                                     key=f"layout_btn_{layout_id}",
+                                     use_container_width=True):
+                            st.session_state["overlay_layout_id"] = layout_id
+                            st.rerun()
 
 # --- 8. 輸入潛水員資訊---
         st.subheader(tr("diver_info_subheader"))
