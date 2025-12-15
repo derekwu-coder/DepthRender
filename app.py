@@ -392,7 +392,7 @@ div[data-testid="stTabs"] + div {
 
 /* 未選取：更灰、更暗、更退色 */
 .layout-card.dimmed img{
-  filter: grayscale(80%) saturate(0%) contrast(85%) brightness(50%);
+  filter: grayscale(70%) saturate(0%) contrast(85%) brightness(50%);
   opacity: 0.60;
 }
 
