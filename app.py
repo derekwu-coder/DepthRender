@@ -374,53 +374,80 @@ div[data-testid="stTabs"] + div {
 
 /* ===== Layout Grid Selector ===== */
 .layout-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
 }
 
-.layout-card {
-    border-radius: 14px;
-    overflow: hidden;
-    cursor: pointer;
-    border: 2px solid transparent;
-    transition: all 0.18s ease-in-out;
-    background: #ffffff;
+/* 卡片本體 */
+
+.layout-card{
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
+.layout-card img{
+  display:block;
+  width:100%;
+  height:auto;
+}
 
-/* 未選取：更灰、更暗、更退色 */
+/* 未選取：更灰、更暗 */
 .layout-card.dimmed img{
-  filter: grayscale(70%) saturate(0%) contrast(85%) brightness(50%);
-  opacity: 0.60;
+  filter: grayscale(100%) saturate(0%) contrast(85%) brightness(70%);
+  opacity: 0.80;
 }
 
-/* 你如果也想讓整張卡片一起更退，可加這個 */
-.layout-card.dimmed{
-  opacity: 0.92;
+/* 選取：黃框用 inset box-shadow，不會改變卡片尺寸 */
+.layout-card.selected{
+  filter: none;
+  opacity: 1;
+  box-shadow: 0 0 0 10px #FFD700 inset;
 }
 
-/* 選取：黃色高亮 */
-.layout-card.selected {
-    border-color: #FACC15;           /* 黃色邊框 */
-    box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35);
-    filter: none;
+/* footer 固定高度（你要“縮半”就調這個） */
+.layout-footer{
+  position: relative;
+  background: #ffffff;
+  height: 40px;              /* 你想更小就 48px；更大就 64px */
+  display:flex;
+  align-items:center;
+  justify-content:center;    /* 標題置中 */
 }
 
-.layout-card img {
-    width: 100%;
-    aspect-ratio: 9 / 16;
-    object-fit: cover;
-    display: block;
+/* 標題置中 */
+.layout-title{
+  font-weight: 800;
+  font-size: 18px;
+  color: #111;
+  line-height: 1;
 }
 
-.layout-card-label {
-    padding: 6px 8px 8px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    text-align: center;
+/* ✅ 圓形勾勾：固定在左邊，不影響置中排版 */
+.layout-check{
+  position: absolute;
+  left: 14px;
+  width: 24px;               /* 想小一點就 24px */
+  height: 24px;
+  border-radius: 999px;
+  background: #57C36A;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
+
+.layout-check::before{
+  content: "✓";
+  color: #fff;
+  font-weight: 900;
+  font-size: 14px;           /* 想小一點就 14~16 */
+  line-height: 1;
+}
+
+
+
 
 /* ======================================================
    🌟 手機優化區（以下 100% 保證效果正確） 
@@ -660,6 +687,8 @@ TRANSLATIONS = {
         "layout_a_off_time_y": "時間 Y",
         "layout_a_off_depth_x": "深度 X",
         "layout_a_off_depth_y": "深度 Y",
+        "select_layout_btn": "select"
+        
 },
     "en": {
         "app_title": "Dive Overlay Generator",
@@ -820,6 +849,8 @@ TRANSLATIONS = {
         "layout_a_off_time_y": "Time Y",
         "layout_a_off_depth_x": "Depth X",
         "layout_a_off_depth_y": "Depth Y",
+        "select_layout_btn": "select"
+
 },
 }
 
@@ -1564,14 +1595,9 @@ with st.container():
                 # 7-5) 動態 Layout 設定區（2 欄 Grid）
                 # ==========================================================
                 st.subheader(tr("layout_select_label"))
-                
-                # layouts 圖片資料夾（你原本用 ASSETS_DIR，這裡補齊 LAYOUTS_DIR）
+
                 LAYOUTS_DIR = ASSETS_DIR / "layouts"
-                
-                # 這裡建立 layouts_config（你可以依你的實際檔名調整 filename）
-                # id：layout ID（A/B/C/D...）
-                # label_key：翻譯 key（你原本有 tr()）
-                # filename：示意圖檔名（放在 assets/layouts/）
+
                 layouts_config = [
                     {"id": "A", "label_key": "layout_a_label", "filename": "layout_a.png"},
                     {"id": "B", "label_key": "layout_b_label", "filename": "layout_b.png"},
@@ -1579,52 +1605,54 @@ with st.container():
                     {"id": "D", "label_key": "layout_d_label", "filename": "layout_d.png"},
                 ]
 
-                
-                layout_ids = [c["id"] for c in layouts_config]
-                
-                # 初始化選擇狀態
                 if "overlay_layout_id" not in st.session_state:
                     st.session_state["overlay_layout_id"] = layouts_config[0]["id"]
-                
+
                 selected_id = st.session_state["overlay_layout_id"]
-                
+
                 def _img_to_base64_png(path: Path) -> str:
-                    """讀取圖片檔，回傳 base64 字串（給 HTML <img> 用）"""
                     if not path.exists():
                         return ""
-                    data = path.read_bytes()
-                    return base64.b64encode(data).decode("utf-8")
-                
-                # 2 欄 Grid：用 columns 最穩定（手機也能正常換行）
+                    return base64.b64encode(path.read_bytes()).decode("utf-8")
+
+                import textwrap
+
                 cols = st.columns(2, gap="small")
-                
+
                 for idx, cfg in enumerate(layouts_config):
                     col = cols[idx % 2]
                     layout_id = cfg["id"]
                     label = tr(cfg["label_key"])
-                
+
                     img_path = LAYOUTS_DIR / cfg["filename"]
-                    is_selected = (layout_id == selected_id)
-                
-                    card_class = "layout-card selected" if is_selected else "layout-card dimmed"
                     img_b64 = _img_to_base64_png(img_path)
-                
+
+                    is_selected = (layout_id == selected_id)
+                    card_class = "layout-card selected" if is_selected else "layout-card dimmed"
+
+                    # ✅：放在 footer 左側，標題置中
+                    check_html = '<div class="layout-check" aria-label="selected"></div>' if is_selected else ""
+
                     with col:
-                        # 先畫卡片（圖片 + label）
-                        st.markdown(
-                            f"""
-                            <div class="{card_class}">
-                                <img src="data:image/png;base64,{img_b64}">
-                                <div class="layout-card-label">{label}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
+                        check_html = '<div class="layout-check" aria-label="selected"></div>' if is_selected else ""
+                    
+                        card_html = (
+                            f'<div class="{card_class}">'
+                            f'  <img src="data:image/png;base64,{img_b64}" />'
+                            f'  <div class="layout-footer">'
+                            f'    {check_html}'
+                            f'    <div class="layout-title">{label}</div>'
+                            f'  </div>'
+                            f'</div>'
                         )
-                
-                        # 再放選擇按鈕（點了就更新 session_state）
-                        if st.button(tr("select_label") if "select_label" in globals() else "Select",
-                                     key=f"layout_btn_{layout_id}",
-                                     use_container_width=True):
+                    
+                        st.markdown(card_html, unsafe_allow_html=True)
+                    
+                        if st.button(
+                            tr("select_layout_btn"),
+                            key=f"layout_btn_{layout_id}",
+                            use_container_width=True,
+                        ):
                             st.session_state["overlay_layout_id"] = layout_id
                             st.rerun()
 
