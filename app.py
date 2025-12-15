@@ -420,7 +420,7 @@ div[data-testid="stTabs"] + div {
 /* 標題置中 */
 .layout-title{
   font-weight: 800;
-  font-size: 18px;
+  font-size: 16px;
   color: #111;
   line-height: 1;
 }
@@ -429,8 +429,8 @@ div[data-testid="stTabs"] + div {
 .layout-check{
   position: absolute;
   left: 14px;
-  width: 24px;               /* 想小一點就 24px */
-  height: 24px;
+  width: 20px;               /* 想小一點就 24px */
+  height: 20px;
   border-radius: 999px;
   background: #57C36A;
   display:flex;
