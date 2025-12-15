@@ -208,6 +208,176 @@ def format_dive_time(seconds: float) -> str:
     return f"{minutes:02d}:{sec:02d}"
 
 
+
+# ============================================================
+# Layout A helpers (Bottom parallelogram bar)
+# ============================================================
+def _draw_parallelogram(draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, skew: int,
+                        fill_rgba: tuple, outline_rgba: Optional[tuple] = None):
+    """Draw a right-leaning parallelogram. skew > 0 means bottom edge shifts left."""
+    p = [(x, y), (x + w, y), (x + w - skew, y + h), (x - skew, y + h)]
+    draw.polygon(p, fill=fill_rgba)
+    if outline_rgba is not None:
+        draw.line(p + [p[0]], fill=outline_rgba, width=1)
+
+def _safe_lower(s: str) -> str:
+    try:
+        return str(s).lower()
+    except Exception:
+        return ""
+
+def _layout_a_defaults():
+    return {
+        "x_start": 80,
+        "y_from_bottom": 110,
+        "h": 50,
+        "skew": 25,
+        "gap": 20,
+        "w": [165, 250, 135, 130, 120],
+        "alpha": 0.65,
+        "inner_pad": 14,
+        "font_sizes": {"code": 32, "name": 32, "disc": 32, "time": 32, "depth": 32},
+        "offsets": {"code": (-10, -10), "flag": (-20, 0), "name": (-10, -10), "disc": (-10, -10), "time": (-10, -10), "depth": (-10, -10)},
+    }
+
+def draw_layout_a_bottom_bar(
+    overlay: PILImage.Image,
+    assets_dir: Path,
+    base_font_path: Path,
+    nationality: str,
+    diver_name: str,
+    discipline: str,
+    dive_time_s: Optional[float],
+    depth_val: float,
+    params: Optional[dict] = None,
+):
+    """Layout A: five parallelogram plates at bottom (code+flag / name / discipline / time / depth)."""
+    cfg = _layout_a_defaults()
+    if isinstance(params, dict):
+        # shallow merge
+        cfg.update({k: v for k, v in params.items() if k in cfg})
+        if "font_sizes" in params and isinstance(params["font_sizes"], dict):
+            cfg["font_sizes"].update(params["font_sizes"])
+        if "offsets" in params and isinstance(params["offsets"], dict):
+            cfg["offsets"].update(params["offsets"])
+
+    W, H = overlay.size
+    x = int(cfg["x_start"])
+    y = int(H - cfg["y_from_bottom"] - cfg["h"])
+    h = int(cfg["h"])
+    skew = int(cfg["skew"])
+    gap = int(cfg["gap"])
+    w_list = list(cfg["w"])
+    pad = int(cfg["inner_pad"])
+    alpha = float(cfg.get("alpha", 0.20))
+    panel_alpha = max(0, min(255, int(round(alpha * 255))))
+
+    # panel fill: black with alpha
+    fill = (0, 0, 0, panel_alpha)
+
+    # draw plates
+    draw = ImageDraw.Draw(overlay, "RGBA")
+    xs = []
+    cur_x = x
+    for w in w_list:
+        xs.append(cur_x)
+        _draw_parallelogram(draw, cur_x, y, int(w), h, skew, fill)
+        cur_x += int(w) + gap
+
+    # prepare fonts
+    def _load_font(size: int):
+        try:
+            return ImageFont.truetype(str(base_font_path), size=size)
+        except Exception:
+            return ImageFont.load_default()
+
+    fs = cfg["font_sizes"]
+    f_code = _load_font(int(fs.get("code", 34)))
+    f_name = _load_font(int(fs.get("name", 34)))
+    f_disc = _load_font(int(fs.get("disc", 34)))
+    f_time = _load_font(int(fs.get("time", 34)))
+    f_depth = _load_font(int(fs.get("depth", 34)))
+
+    # nationality code + flag
+    code3, _label = _infer_country_code_3(nationality)  # returns (code3, label)
+    code3 = (code3 or "").upper()
+
+    # flag image
+    flag_img = None
+    if code3:
+        flags_dir = resolve_flags_dir(assets_dir)
+        flag_img = _load_flag_png(flags_dir, code3)  # load from assets/flags
+    # plate1: code left, flag right
+    x1 = xs[0]
+    w1 = int(w_list[0])
+    off_code = cfg["offsets"].get("code", (0, 0))
+    off_flag = cfg["offsets"].get("flag", (0, 0))
+
+    code_text = code3 if code3 else (nationality.strip()[:3].upper() if nationality else "")
+    # code position: left padding
+    tx = x1 + pad + int(off_code[0])
+    ty = y + (h - text_size(draw, code_text, f_code)[1]) // 2 + int(off_code[1])
+    if code_text:
+        draw.text((tx, ty), code_text, font=f_code, fill=(255, 255, 255, 255))
+
+    if flag_img is not None:
+        # scale flag to ~60% of height
+        target_h = int(h * 0.62)
+        if target_h <= 0:
+            target_h = 1
+        scale = target_h / float(flag_img.size[1])
+        target_w = max(1, int(round(flag_img.size[0] * scale)))
+        flag_resized = flag_img.resize((target_w, target_h), PILImage.LANCZOS)
+        fx = x1 + w1 - pad - target_w + int(off_flag[0])
+        fy = y + (h - target_h) // 2 + int(off_flag[1])
+        overlay.alpha_composite(flag_resized.convert("RGBA"), (fx, fy))
+
+    # plate2: name centered
+    x2 = xs[1]; w2 = int(w_list[1])
+    name = diver_name or ""
+    off_name = cfg["offsets"].get("name", (0, 0))
+    tw, th = text_size(draw, name, f_name)
+    nx = x2 + (w2 - tw) // 2 + int(off_name[0])
+    ny = y + (h - th) // 2 + int(off_name[1])
+    if name:
+        draw.text((nx, ny), name, font=f_name, fill=(255, 255, 255, 255))
+
+    # plate3: discipline centered
+    x3 = xs[2]; w3 = int(w_list[2])
+    disc = discipline or ""
+    off_disc = cfg["offsets"].get("disc", (0, 0))
+    tw, th = text_size(draw, disc, f_disc)
+    dx = x3 + (w3 - tw) // 2 + int(off_disc[0])
+    dy = y + (h - th) // 2 + int(off_disc[1])
+    if disc:
+        draw.text((dx, dy), disc, font=f_disc, fill=(255, 255, 255, 255))
+
+    # plate4: time mm:ss centered
+    x4 = xs[3]; w4 = int(w_list[3])
+    off_time = cfg["offsets"].get("time", (0, 0))
+    ttxt = format_dive_time(dive_time_s) if dive_time_s is not None else ""
+    tw, th = text_size(draw, ttxt, f_time)
+    tx4 = x4 + (w4 - tw) // 2 + int(off_time[0])
+    ty4 = y + (h - th) // 2 + int(off_time[1])
+    if ttxt:
+        draw.text((tx4, ty4), ttxt, font=f_time, fill=(255, 255, 255, 255))
+
+    # plate5: depth with 1 decimal (e.g. 12.3 m)
+    x5 = xs[4]; w5 = int(w_list[4])
+    off_depth = cfg["offsets"].get("depth", (0, 0))
+    
+    d_val = float(depth_val) if depth_val is not None else 0.0
+    d_val = max(0.0, d_val)
+    
+    dtxt = f"{d_val:.1f} m"
+    
+    tw, th = text_size(draw, dtxt, f_depth)
+    dx5 = x5 + (w5 - tw) // 2 + int(off_depth[0])
+    dy5 = y + (h - th) // 2 + int(off_depth[1])
+    draw.text((dx5, dy5), dtxt, font=f_depth, fill=(255, 255, 255, 255))
+
+    return overlay
+
 # ============================================================
 # 國碼 / 國旗工具
 # ============================================================
@@ -670,7 +840,8 @@ def render_video(
     dive_time_s: Optional[float] = None,   # 目前沒直接用，先保留
     dive_start_s: Optional[float] = None,  # 起始 time_s（深度 >= 0.7m）
     dive_end_s: Optional[float] = None,    # 結束 time_s（回到 0）
-    progress_callback=None,                # 由 app.py 傳進來
+    progress_callback=None,
+    layout_params: Optional[dict] = None,                # 由 app.py 傳進來
 ):
     """
     progress_callback(p: float, message: str) 會被用來更新 Streamlit 進度條：
@@ -803,6 +974,7 @@ def render_video(
     # 用 dict 包起來讓內層 make_frame 可以修改
     last_p = {"value": 0.12}
 
+    base_font_path = FONT_PATH  # Layout A uses this font path
     def make_frame(t):
         # --- 進度條：用影片時間推估 ---
         if duration > 0:
@@ -831,9 +1003,23 @@ def render_video(
         elapsed = elapsed_dive_time(t)
         time_text = format_dive_time(elapsed) if elapsed is not None else ""
 
+        # ===== Layout A: bottom parallelogram bar =====
+        if layout == "A":
+            overlay = draw_layout_a_bottom_bar(
+                overlay=overlay,
+                assets_dir=assets_dir,
+                base_font_path=base_font_path,
+                nationality=nationality,
+                diver_name=diver_name,
+                discipline=discipline,
+                dive_time_s=elapsed,
+                depth_val=depth_val,
+                params=layout_params,
+            )
+
         # ===== 右上角 info 卡（深度 + 速率 + 動態時間）=====
         # 👉 只在「不是 Layout B」時才畫；Layout B 用右下 Board 2/3
-        if layout != "B":
+        if layout not in ("A", "B"):
             lines = [text_depth, text_rate]
             if time_text:
                 lines.append(time_text)
@@ -995,4 +1181,3 @@ def render_video(
                 os.remove(tmp_audio_path)
         except Exception:
             pass
-

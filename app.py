@@ -87,7 +87,11 @@ def ensure_clean_before_new_job():
     before starting a new upload/render job.
     """
     if st.session_state.get("ov_job_state") in ("done", "error"):
+        # Reset session-state pointers and delete per-job temp files
         reset_overlay_job()
+        # Best-effort sweep: remove older /tmp artifacts from prior sessions
+        # (do NOT keep any paths here because new uploads have not been persisted yet)
+        cleanup_tmp_dir(max_age_sec=60 * 60 * 2, keep_paths=set())
 
 def reset_overlay_job() -> None:
     cleanup_session_files([
@@ -495,9 +499,9 @@ TRANSLATIONS = {
         "layout_select_label": "選擇影片版型",
         "layout_preview_title": "版型示意圖",
 
-        "layout_a_label": "A: 深度＋心率＋速率",
+        "layout_a_label": "賽事風格 1",
         "layout_a_desc": "",
-        "layout_b_label": "B: 賽事風格",
+        "layout_b_label": "賽事風格 2",
         "layout_b_desc": "",
         "layout_c_label": "C: 單純深度",
         "layout_c_desc": "Simple_A",
@@ -527,6 +531,10 @@ TRANSLATIONS = {
         "nationality_file_not_found": "找不到 Nationality 檔案：{path}",
         "nationality_read_error": "讀取 Nationality.csv 時發生錯誤：{error}",
         "nationality_missing_columns": "Nationality.csv 缺少必要欄位：{missing}",
+        
+        "preview_skipped_large_file": "檔案較大，為降低雲端記憶體峰值，已略過預覽（請直接下載）。",
+        "post_render_tip": "請先下載影片；如要開始下一支，請點「開始新任務」。",
+        "start_new_job_btn": "開始新任務",
 
         # Compare tab
         "compare_title": "📊 潛水數據比較",
@@ -567,8 +575,41 @@ TRANSLATIONS = {
         "overlay_ff_rate_label": "Free Fall 速率 (m/s)",
         "overlay_metric_unit_mps": "{value:.2f} m/s",
         "overlay_metric_not_available": "—",
-
-    },
+        "layout_a_tuning_title": "Layout A 版面參數（底部平行四邊形）",
+        "layout_a_show_tuning": "顯示進階調整（賽事風格 1）",
+        "layout_a_alpha": "背景板透明度",
+        "layout_a_tuning_hint": "此區只影響 Layout A。若你不調整，會使用預設值。",
+        "layout_a_x_start": "起始 X（左邊界）",
+        "layout_a_y_from_bottom": "距離底部 Y",
+        "layout_a_height": "高度 H",
+        "layout_a_skew": "斜度（skew）",
+        "layout_a_gap": "板塊間距（gap）",
+        "layout_a_w1": "板 1 寬度（國籍/國旗）",
+        "layout_a_w2": "板 2 寬度（姓名）",
+        "layout_a_w3": "板 3 寬度（項目）",
+        "layout_a_w4": "板 4 寬度（時間）",
+        "layout_a_w5": "板 5 寬度（深度）",
+        "layout_a_text_title": "文字大小",
+        "layout_a_fs_code": "國籍三碼 字體大小",
+        "layout_a_fs_name": "姓名 字體大小",
+        "layout_a_fs_disc": "項目 字體大小",
+        "layout_a_fs_time": "時間 字體大小",
+        "layout_a_fs_depth": "深度 字體大小",
+        "layout_a_inner_pad": "內距 padding",
+        "layout_a_offsets_title": "微調偏移（X/Y）",
+        "layout_a_off_code_x": "國籍 X",
+        "layout_a_off_code_y": "國籍 Y",
+        "layout_a_off_flag_x": "國旗 X",
+        "layout_a_off_flag_y": "國旗 Y",
+        "layout_a_off_name_x": "姓名 X",
+        "layout_a_off_name_y": "姓名 Y",
+        "layout_a_off_disc_x": "項目 X",
+        "layout_a_off_disc_y": "項目 Y",
+        "layout_a_off_time_x": "時間 X",
+        "layout_a_off_time_y": "時間 Y",
+        "layout_a_off_depth_x": "深度 X",
+        "layout_a_off_depth_y": "深度 Y",
+},
     "en": {
         "app_title": "Dive Overlay Generator",
         "top_brand": "DepthRender",
@@ -618,9 +659,9 @@ TRANSLATIONS = {
         "layout_select_label": "Choose overlay layout",
         "layout_preview_title": "Layout preview",
 
-        "layout_a_label": "A: Depth + HR + Speed",
+        "layout_a_label": "賽事風格 1",
         "layout_a_desc": "",
-        "layout_b_label": "B: Competition-style",
+        "layout_b_label": "賽事風格 2",
         "layout_b_desc": "",
         "layout_c_label": "C: Depth only",
         "layout_c_desc": "Simple_A",
@@ -651,6 +692,10 @@ TRANSLATIONS = {
         "nationality_file_not_found": "Nationality file not found: {path}",
         "nationality_read_error": "Error reading Nationality.csv: {error}",
         "nationality_missing_columns": "Nationality.csv is missing required columns: {missing}",
+        
+        "preview_skipped_large_file": "Large output file detected. Preview is skipped to reduce memory spikes. Please download the video.",
+        "post_render_tip": "Please download the video first. To start the next job, click “Start new job”.",
+        "start_new_job_btn": "Start new job",
 
         # Compare tab
         "compare_title": "📊 Dual-dive comparison",
@@ -690,8 +735,41 @@ TRANSLATIONS = {
         "overlay_ff_rate_label": "Free-fall speed (m/s)",
         "overlay_metric_unit_mps": "{value:.2f} m/s",
         "overlay_metric_not_available": "—",
-
-    },
+        "layout_a_tuning_title": "Layout A tuning (Bottom parallelograms)",
+        "layout_a_show_tuning": "Show advanced tuning (Race style 1)",
+        "layout_a_alpha": "Background opacity",
+        "layout_a_tuning_hint": "These controls only affect Layout A. Leave as-is to use defaults.",
+        "layout_a_x_start": "X start (left)",
+        "layout_a_y_from_bottom": "Y from bottom",
+        "layout_a_height": "Height H",
+        "layout_a_skew": "Skew",
+        "layout_a_gap": "Gap between plates",
+        "layout_a_w1": "Plate 1 width (Code/Flag)",
+        "layout_a_w2": "Plate 2 width (Name)",
+        "layout_a_w3": "Plate 3 width (Discipline)",
+        "layout_a_w4": "Plate 4 width (Time)",
+        "layout_a_w5": "Plate 5 width (Depth)",
+        "layout_a_text_title": "Font sizes",
+        "layout_a_fs_code": "Code font size",
+        "layout_a_fs_name": "Name font size",
+        "layout_a_fs_disc": "Discipline font size",
+        "layout_a_fs_time": "Time font size",
+        "layout_a_fs_depth": "Depth font size",
+        "layout_a_inner_pad": "Inner padding",
+        "layout_a_offsets_title": "Fine offsets (X/Y)",
+        "layout_a_off_code_x": "Code X",
+        "layout_a_off_code_y": "Code Y",
+        "layout_a_off_flag_x": "Flag X",
+        "layout_a_off_flag_y": "Flag Y",
+        "layout_a_off_name_x": "Name X",
+        "layout_a_off_name_y": "Name Y",
+        "layout_a_off_disc_x": "Discipline X",
+        "layout_a_off_disc_y": "Discipline Y",
+        "layout_a_off_time_x": "Time X",
+        "layout_a_off_time_y": "Time Y",
+        "layout_a_off_depth_x": "Depth X",
+        "layout_a_off_depth_y": "Depth Y",
+},
 }
 
 def tr(key: str, **kwargs) -> str:
@@ -1442,14 +1520,14 @@ with st.container():
                         "label_key": "layout_a_label",
                         "filename": "layout_a.png",
                         "desc_key": "layout_a_desc",
-                        "uses_diver_info": False,
+                        "uses_diver_info": True,
                     },
                     {
                         "id": "B",
                         "label_key": "layout_b_label",
                         "filename": "layout_b.png",
                         "desc_key": "layout_b_desc",
-                        "uses_diver_info": False,
+                        "uses_diver_info": True,
                     },
                     {
                         "id": "C",
@@ -1476,49 +1554,30 @@ with st.container():
                     format_func=lambda i: tr(f"layout_{i.lower()}_label"),
                     key="overlay_layout_id",
                 )
+
+                # ----------------------------------------------------------
                 
-                def load_layout_image(cfg, is_selected: bool):
-                    img_path = LAYOUTS_DIR / cfg["filename"]
-                    img = Image.open(img_path).convert("RGBA")
+                # ==========================================================
+                # 7-6) 版型示意圖（Layout Preview）
+                # ==========================================================
+                st.markdown(f"**{tr('layout_preview_title')}**")
                 
-                    if not is_selected:
-                        return img
+                # 找到目前選到的 layout config
+                cfg_map = {cfg["id"]: cfg for cfg in layouts_config}
+                cfg = cfg_map.get(selected_id)
                 
-                    border_color = "#FFD700"
-                    border_width = 12
-                    corner_radius = 15
+                if cfg:
+                    preview_path = LAYOUTS_DIR / cfg["filename"]
                 
-                    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-                    draw = ImageDraw.Draw(overlay)
-                
-                    w, h = img.size
-                    pad = border_width // 2
-                    draw.rounded_rectangle(
-                        [
-                            (-pad, -pad),
-                            (w + pad - 1, h + pad - 1),
-                        ],
-                        radius=corner_radius,
-                        outline=border_color,
-                        width=border_width,
-                    )
-                
-                    return Image.alpha_composite(img, overlay)
-                
-                st.markdown("### " + tr("layout_preview_title"))
-                
-                cols = st.columns(len(layouts_config))
-                for col, cfg in zip(cols, layouts_config):
-                    with col:
-                        img = load_layout_image(cfg, cfg["id"] == selected_id)
+                    if preview_path.exists():
+                        # 桌機 / 手機都穩的方式：不要用 columns 強塞
                         st.image(
-                            img,
-                            caption=tr(cfg["label_key"]),
+                            Image.open(preview_path),
+                            caption=tr(cfg.get("label_key", "")),
                             use_container_width=True,
                         )
-                        if cfg.get("desc_key"):
-                            st.caption(tr(cfg["desc_key"]))
-
+                    else:
+                        st.info(f"（找不到示意圖：{preview_path.name}）")
 
 # --- 8. 輸入潛水員資訊---
         st.subheader(tr("diver_info_subheader"))
@@ -1639,7 +1698,7 @@ with st.container():
                         dive_start_s=dive_start_s,
                         dive_end_s=dive_end_s,
                         progress_callback=progress_callback,
-                    )
+)
 
                     progress_callback(1.0, tr("progress_done"))
                     st.success(tr("render_success"))
@@ -1655,9 +1714,18 @@ with st.container():
                             mime="video/mp4",
                         )
 
-                    col_preview, col_empty = st.columns([1, 1])
-                    with col_preview:
-                        st.video(str(output_path))
+                    # Preview policy: skip inline preview for large outputs to reduce memory spikes on cloud
+                    try:
+                        out_size_mb = os.path.getsize(output_path) / 1024 / 1024
+                    except Exception:
+                        out_size_mb = 9999.0
+
+                    if out_size_mb <= 120:
+                        col_preview, col_empty = st.columns([1, 1])
+                        with col_preview:
+                            st.video(str(output_path))
+                    else:
+                        st.info(tr("preview_skipped_large_file"))
 
                     # ---- Post-render UX: lock UI and offer clean restart ----
                     st.info(tr("post_render_tip"))
