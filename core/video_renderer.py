@@ -7,6 +7,7 @@ from moviepy.editor import VideoFileClip
 from moviepy.video.VideoClip import VideoClip
 from pathlib import Path
 from PIL import Image as PILImage, ImageDraw, ImageFont, Image
+from dataclasses import dataclass
 import time
 
 # ============================================================
@@ -15,6 +16,18 @@ import time
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FONT_PATH = BASE_DIR / "assets" / "fonts" / "RobotoCondensedBold.ttf"
+
+# ============================================================
+# Layout C 專用字型（深度值 / 單位）
+# ============================================================
+
+LAYOUT_C_VALUE_FONT_PATH = BASE_DIR / "assets" / "fonts" / "nereus-bold.ttf"
+
+if not LAYOUT_C_VALUE_FONT_PATH.exists():
+    print(f"[WARN] Layout C value font NOT found: {LAYOUT_C_VALUE_FONT_PATH}")
+else:
+    print(f"[INFO] Layout C value font FOUND: {LAYOUT_C_VALUE_FONT_PATH}")
+
 
 print(f"[FONT] FONT_PATH = {FONT_PATH}")
 
@@ -246,6 +259,239 @@ def _layout_a_defaults():
             "depth": (-10, -10)
         },
     }
+
+
+# ============================================================
+# Layout C - Depth Module (v1)
+# Moving scale + clipping window + fixed indicator
+# ============================================================
+
+@dataclass
+class LayoutCDepthConfig:
+    enabled: bool = True
+
+    # Window (clipping)
+    window_top: int = 1600
+    window_bottom_margin: int = 80   # bottom = H - margin
+    px_per_m: int = 20
+    
+    # Window fade (alpha gradient at top/bottom)
+    fade_enable: bool = True
+    fade_margin_px: int = 80          # 1600~1680, 1760~1840
+    fade_edge_transparency: float = 0.95  # 95% transparent at the very edge
+
+    # Scale
+    depth_min_m: int = 0
+    depth_max_m: int = 140
+    scale_x: int = 80
+    
+    # Scale offset (global)
+    scale_x_offset: int = 40   # +right / -left
+    scale_y_offset: int = 0   # +down / -up
+
+    tick_len_10m: int = 73
+    tick_len_5m: int = 53
+    tick_len_1m: int = 53
+
+    tick_w_10m: int = 5
+    tick_w_5m: int = 3
+    tick_w_1m: int = 3
+
+    tick_color: tuple = (220, 220, 220, 255)
+
+    # Numbers
+    num_left_margin: int = 40
+    num_offset_x: int = 0     # +right / -left
+    num_offset_y: int = -9     # +down / -up
+    num_font_size: int = 30
+    num_color: tuple = (220, 220, 220, 255)
+
+    
+
+    # Indicator (fixed)
+    depth_value_font_size: int = 110
+    depth_unit_font_size: int = 65
+    depth_value_color: tuple = (255, 215, 0, 255)
+    unit_gap_px: int = 8
+    value_y_offset: int = -36
+    unit_offset_x: int = 0    # +right / -left
+    unit_offset_y: int = 20    # +down / -up
+
+    arrow_w: int = 24
+    arrow_h: int = 20
+    arrow_color: tuple = (220, 220, 220, 255)
+
+    arrow_to_value_gap: int = 17  #original = 14
+    value_x: int = 205
+    arrow_y_offset: int = 35
+
+from typing import Optional
+
+def render_layout_c_depth_module(
+    base_img: Image.Image,
+    current_depth_m: float,
+    cfg: LayoutCDepthConfig,
+    font_path: Optional[str] = None,
+) -> Image.Image:
+
+    """Render Layout C depth module onto base_img (RGBA PIL Image)."""
+    if not cfg.enabled:
+        return base_img
+
+    W, H = base_img.size
+
+    y0 = int(cfg.window_top)
+    y1 = int(H - cfg.window_bottom_margin)
+    indicator_y = (y0 + y1) // 2
+
+    # ---------- Moving layer ----------
+    moving = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(moving)
+
+    # --- Fonts ---
+    if font_path:
+        # 刻度數字：沿用原本（RobotoCondensedBold）
+        num_font = ImageFont.truetype(font_path, cfg.num_font_size)
+    
+        # 深度值 / 單位：Layout C 專用字體（nereus-bold）
+        if LAYOUT_C_VALUE_FONT_PATH.exists():
+            value_font = ImageFont.truetype(
+                str(LAYOUT_C_VALUE_FONT_PATH),
+                cfg.depth_value_font_size,
+            )
+            unit_font = ImageFont.truetype(
+                str(LAYOUT_C_VALUE_FONT_PATH),
+                cfg.depth_unit_font_size,
+            )
+        else:
+            # fallback
+            value_font = ImageFont.truetype(font_path, cfg.depth_value_font_size)
+            unit_font = ImageFont.truetype(font_path, cfg.depth_unit_font_size)
+    else:
+        num_font = ImageFont.load_default()
+        value_font = ImageFont.load_default()
+        unit_font = ImageFont.load_default()
+
+    for m in range(cfg.depth_min_m, cfg.depth_max_m + 1):
+        y = m * cfg.px_per_m + cfg.scale_y_offset
+
+        if m % 10 == 0:
+            w, L = cfg.tick_w_10m, cfg.tick_len_10m
+        elif m % 5 == 0:
+            w, L = cfg.tick_w_5m, cfg.tick_len_5m
+        else:
+            w, L = cfg.tick_w_1m, cfg.tick_len_1m
+
+        center_x = cfg.scale_x + cfg.scale_x_offset
+        x1 = center_x - L // 2
+        x2 = center_x + L // 2
+        
+        d.line(
+            [(x1, y), (x2, y)],
+            fill=cfg.tick_color,
+            width=w,
+        )
+
+        if m % 10 == 0:
+            txt = str(m)
+            bbox = d.textbbox((0, 0), txt, font=num_font)
+            th = bbox[3] - bbox[1]
+            num_x = cfg.num_left_margin + cfg.num_offset_x
+            num_y = (y - th // 2) + cfg.num_offset_y
+            
+            d.text(
+                (num_x, num_y),
+                txt,
+                font=num_font,
+                fill=cfg.num_color,
+            )
+
+    # Align current depth to indicator
+    offset_y = int(round(indicator_y - current_depth_m * cfg.px_per_m))
+
+    moved = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
+    moved.alpha_composite(moving, (0, offset_y))
+
+    # Clip window
+    clipped = moved.crop((0, y0, W, y1))
+    
+    # Apply top/bottom fade (alpha gradient)
+    if cfg.fade_enable and cfg.fade_margin_px > 0 and 0.0 <= cfg.fade_edge_transparency < 1.0:
+        win_h = clipped.size[1]
+        fade = int(cfg.fade_margin_px)
+        fade = max(0, min(fade, win_h // 2))  # avoid overlap
+    
+        # Build opacity factors per row: center=1.0, edges=(1 - transparency)
+        edge_opacity = 1.0 - float(cfg.fade_edge_transparency)  # e.g. 0.10
+        factors = np.ones((win_h,), dtype=np.float32)
+    
+        if fade > 0:
+            # top fade: from edge_opacity (at y=0) -> 1.0 (at y=fade)
+            top = np.linspace(edge_opacity, 1.0, fade, dtype=np.float32)
+            factors[:fade] = top
+    
+            # bottom fade: from 1.0 (at y=win_h-fade) -> edge_opacity (at y=win_h-1)
+            bot = np.linspace(1.0, edge_opacity, fade, dtype=np.float32)
+            factors[win_h - fade:] = bot
+    
+        # Multiply clipped alpha by factors row-wise
+        a = np.array(clipped.getchannel("A"), dtype=np.float32)  # (H, W)
+        a *= factors[:, None]
+        a = np.clip(a, 0, 255).astype(np.uint8)
+    
+        clipped.putalpha(Image.fromarray(a, mode="L"))
+    
+    # Composite back into base image
+    base_img.alpha_composite(clipped, (0, y0))
+
+    # ---------- Fixed layer ----------
+    draw = ImageDraw.Draw(base_img)
+
+    depth_txt = f"{current_depth_m:.1f}"
+    vb = draw.textbbox((0, 0), depth_txt, font=value_font)
+    v_w = vb[2] - vb[0]
+    v_h = vb[3] - vb[1]
+
+    # Arrow (left pointing)
+    value_center_y = indicator_y + cfg.value_y_offset
+    arrow_cy = value_center_y + cfg.arrow_y_offset
+
+    arrow_right_x = cfg.value_x - cfg.arrow_to_value_gap
+    
+    tri = [
+        (arrow_right_x, arrow_cy - cfg.arrow_h // 2),
+        (arrow_right_x, arrow_cy + cfg.arrow_h // 2),
+        (arrow_right_x - cfg.arrow_w, arrow_cy),
+    ]
+
+    draw.polygon(tri, fill=cfg.arrow_color)
+
+    # Depth value
+    value_center_y = indicator_y + cfg.value_y_offset
+    
+    draw.text(
+        (cfg.value_x, value_center_y - v_h // 2),
+        depth_txt,
+        font=value_font,
+        fill=cfg.depth_value_color,
+    )
+
+    # Unit
+    unit_txt = "m"
+    ub = draw.textbbox((0, 0), unit_txt, font=unit_font)
+    u_h = ub[3] - ub[1]
+    unit_x = cfg.value_x + v_w + cfg.unit_gap_px + cfg.unit_offset_x
+    unit_y = (value_center_y - u_h // 2) + cfg.unit_offset_y
+    
+    draw.text(
+        (unit_x, unit_y),
+        "m",
+        font=unit_font,
+        fill=cfg.depth_value_color,
+    )
+
+    return base_img
+
 
 def draw_layout_a_bottom_bar(
     overlay: PILImage.Image,
@@ -1026,7 +1272,7 @@ def render_video(
 
         # ===== 右上角 info 卡（深度 + 速率 + 動態時間）=====
         # 👉 只在「不是 Layout B」時才畫；Layout B 用右下 Board 2/3
-        if layout not in ("A", "B"):
+        if layout not in ("A", "B", "C"):
             lines = [text_depth, text_rate]
             if time_text:
                 lines.append(time_text)
@@ -1084,7 +1330,18 @@ def render_video(
                 )
                 cur_y += h_txt + line_spacing
 
-        # ===== Layout B 專屬元件 =====
+        
+        # ===== Layout C 專屬元件 (v1: Depth module only) =====
+        if layout == "C":
+            layout_c_cfg = LayoutCDepthConfig()
+            overlay = render_layout_c_depth_module(
+                base_img=overlay,
+                current_depth_m=depth_val,
+                cfg=layout_c_cfg,
+                font_path=base_font_path,
+            )
+
+# ===== Layout B 專屬元件 =====
         if layout == "B":
             # 是否顯示「最大深度泡泡」：
             #  - 規則：當 t_global >= best_time_global 時，一路顯示到影片結束

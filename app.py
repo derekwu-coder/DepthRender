@@ -18,6 +18,7 @@ import tempfile
 import shutil
 import streamlit as st
 import base64
+import textwrap
 
 def persist_upload_to_tmp(uploaded_file) -> dict:
     suffix = ""
@@ -131,6 +132,64 @@ for _k in ("ov_video_meta", "ov_output_path"):
         _keep.add(str(_v))
 cleanup_tmp_dir(max_age_sec=60*60*2, keep_paths=_keep)
 
+def render_layout_selector(layouts_config, assets_dir, tr, key="overlay_layout_id"):
+    """
+    Render 2-column layout selector with preview cards.
+    Returns selected layout id.
+    """
+    from pathlib import Path
+    import base64
+    import streamlit as st
+
+    LAYOUTS_DIR = Path(assets_dir) / "layouts"
+
+    # init
+    if key not in st.session_state:
+        st.session_state[key] = layouts_config[0]["id"]
+    selected_id = st.session_state[key]
+
+    def _img_to_base64_png(path: Path) -> str:
+        if not path.exists():
+            return ""
+        return base64.b64encode(path.read_bytes()).decode("utf-8")
+
+    cols = st.columns(2, gap="small")
+
+    for idx, cfg in enumerate(layouts_config):
+        col = cols[idx % 2]
+        layout_id = cfg["id"]
+        label = tr(cfg["label_key"])
+        img_path = LAYOUTS_DIR / cfg["filename"]
+        img_b64 = _img_to_base64_png(img_path)
+
+        is_selected = (layout_id == selected_id)
+        card_state_class = "selected" if is_selected else "dimmed"
+
+        # ✅ 勾勾（只在 selected 顯示）
+        check_html = '<div class="layout-check"><span class="layout-checkmark">✓</span></div>' if is_selected else ""
+
+        card_html = f"""
+        <div class="layout-card {card_state_class}">
+            <img src="data:image/png;base64,{img_b64}" />
+            <div class="layout-footer">
+                {check_html}
+                <div class="layout-title">{label}</div>
+            </div>
+        </div>
+        """
+
+        with col:
+            st.markdown(card_html, unsafe_allow_html=True)
+
+            if st.button(
+                tr("select_layout_btn"),              # <<< 你現在已經修好翻譯了，用這個 key
+                key=f"select_layout_btn_{layout_id}",
+                use_container_width=True,
+            ):
+                st.session_state[key] = layout_id
+                st.rerun()
+
+    return st.session_state[key]
 
 # ==================================
 # 全局 CSS：讓畫面更像 App
@@ -400,58 +459,45 @@ div[data-testid="stTabs"] + div {
   opacity: 0.80;
 }
 
-/* 選取：黃框用 inset box-shadow，不會改變卡片尺寸 */
-.layout-card.selected{
-  filter: none;
-  opacity: 1;
-  box-shadow: none;
-}
-
-/* footer 固定高度（你要“縮半”就調這個） */
-.layout-footer{
-  background: #f3f4f6;
-  border-top: 1px solid rgba(0,0,0,0.06);
-
-  height: 40px;                 /* 你之前縮小後的理想高度 */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-
-  box-sizing: border-box;
-}
-
-/* 標題置中 */
-.layout-title{
-  font-weight: 800;
-  font-size: 16px;
+.layout-card.selected .layout-title{
   color: #111;
-  line-height: 1;
 }
 
-/* ✅ 圓形勾勾：固定在左邊，不影響置中排版 */
-.layout-check{
-  position: absolute;
-  left: 14px;
-  width: 20px;               /* 想小一點就 24px */
-  height: 20px;
-  border-radius: 999px;
-  background: #57C36A;
+.layout-card.dimmed .layout-title{
+  color: #666;
+}
+
+/* footer：預設（dark mode 下也好看） */
+.layout-footer{
+  background: #f2f2f2;   /* 白天模式不融入背景 */
+  height: 40px;          /* footer 高度（你之前太大就改小） */
   display:flex;
   align-items:center;
   justify-content:center;
+  gap: 10px;
 }
 
-.layout-check::before{
-  content: "✓";
-  color: #fff;
-  font-weight: 900;
-  font-size: 14px;           /* 想小一點就 14~16 */
+.layout-check{
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #4CAF50;          /* 綠色圓底 */
+  color: #ffffff;               /* 白色勾勾 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 
-
+.layout-title{
+  font-size: 18px;       /* 標題大小 */
+  font-weight: 800;
+  color: #111;
+}
 
 /* ======================================================
    🌟 手機優化區（以下 100% 保證效果正確） 
@@ -1599,62 +1645,59 @@ with st.container():
                 # 7-5) 動態 Layout 設定區（2 欄 Grid）
                 # ==========================================================
                 st.subheader(tr("layout_select_label"))
-
+                
                 LAYOUTS_DIR = ASSETS_DIR / "layouts"
-
+                
                 layouts_config = [
                     {"id": "A", "label_key": "layout_a_label", "filename": "layout_a.png"},
                     {"id": "B", "label_key": "layout_b_label", "filename": "layout_b.png"},
                     {"id": "C", "label_key": "layout_c_label", "filename": "layout_c.png"},
                     {"id": "D", "label_key": "layout_d_label", "filename": "layout_d.png"},
                 ]
-
+                
+                # 初始化選擇狀態
                 if "overlay_layout_id" not in st.session_state:
                     st.session_state["overlay_layout_id"] = layouts_config[0]["id"]
-
+                
                 selected_id = st.session_state["overlay_layout_id"]
-
+                
                 def _img_to_base64_png(path: Path) -> str:
                     if not path.exists():
                         return ""
                     return base64.b64encode(path.read_bytes()).decode("utf-8")
-
-                import textwrap
-
+                
                 cols = st.columns(2, gap="small")
-
+                
                 for idx, cfg in enumerate(layouts_config):
                     col = cols[idx % 2]
                     layout_id = cfg["id"]
                     label = tr(cfg["label_key"])
-
+                
                     img_path = LAYOUTS_DIR / cfg["filename"]
                     img_b64 = _img_to_base64_png(img_path)
-
+                
                     is_selected = (layout_id == selected_id)
                     card_class = "layout-card selected" if is_selected else "layout-card dimmed"
-
-                    # ✅：放在 footer 左側，標題置中
-                    check_html = '<div class="layout-check" aria-label="selected"></div>' if is_selected else ""
-
+                
+                    # ✅ 這裡用「字串拼接」避免三引號縮排變 code block
+                    check_html = '<span class="layout-check">✓</span>' if is_selected else ""
+                
+                    card_html = (
+                        f'<div class="{card_class}">'
+                        f'  <img src="data:image/png;base64,{img_b64}" />'
+                        f'  <div class="layout-footer">'
+                        f'    {check_html}'
+                        f'    <span class="layout-title">{label}</span>'
+                        f'  </div>'
+                        f'</div>'
+                    )
+                
                     with col:
-                        check_html = '<div class="layout-check" aria-label="selected"></div>' if is_selected else ""
-                    
-                        card_html = (
-                            f'<div class="{card_class}">'
-                            f'  <img src="data:image/png;base64,{img_b64}" />'
-                            f'  <div class="layout-footer">'
-                            f'    {check_html}'
-                            f'    <div class="layout-title">{label}</div>'
-                            f'  </div>'
-                            f'</div>'
-                        )
-                    
                         st.markdown(card_html, unsafe_allow_html=True)
-                    
+                
                         if st.button(
-                            tr("select_layout_btn"),
-                            key=f"layout_btn_{layout_id}",
+                            tr("select_layout_btn"),              # 你已經修好 select_label 的翻譯就用這個
+                            key=f"select_layout_btn_{layout_id}",
                             use_container_width=True,
                         ):
                             st.session_state["overlay_layout_id"] = layout_id
