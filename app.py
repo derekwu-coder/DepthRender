@@ -404,17 +404,21 @@ div[data-testid="stTabs"] + div {
 .layout-card.selected{
   filter: none;
   opacity: 1;
-  box-shadow: 0 0 0 10px #FFD700 inset;
+  box-shadow: none;
 }
 
 /* footer 固定高度（你要“縮半”就調這個） */
 .layout-footer{
-  position: relative;
-  background: #ffffff;
-  height: 40px;              /* 你想更小就 48px；更大就 64px */
-  display:flex;
-  align-items:center;
-  justify-content:center;    /* 標題置中 */
+  background: #f3f4f6;
+  border-top: 1px solid rgba(0,0,0,0.06);
+
+  height: 40px;                 /* 你之前縮小後的理想高度 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  box-sizing: border-box;
 }
 
 /* 標題置中 */
