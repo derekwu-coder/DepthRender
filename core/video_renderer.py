@@ -286,27 +286,39 @@ class LayoutCDepthConfig:
     scale_x: int = 80
     
     # Scale offset (global)
-    scale_x_offset: int = 40   # +right / -left
+    scale_x_offset: int = 38   # +right / -left original = 40
     scale_y_offset: int = 0   # +down / -up
+    scale_pad_top: int = 80
+    scale_pad_bottom: int = 80
 
     tick_len_10m: int = 73
-    tick_len_5m: int = 53
-    tick_len_1m: int = 53
-
+    tick_len_5m: int = 55
+    tick_len_1m: int = 55
+    tick_len_max: int = 73
     tick_w_10m: int = 5
     tick_w_5m: int = 3
     tick_w_1m: int = 3
+    tick_w_max: int = 6
+    max_label_font_size: int = 28
 
     tick_color: tuple = (220, 220, 220, 255)
 
     # Numbers
-    num_left_margin: int = 40
+    num_left_margin: int = 45 # original = 40
     num_offset_x: int = 0     # +right / -left
-    num_offset_y: int = -9     # +down / -up
-    num_font_size: int = 30
+    num_offset_y: int = -2     # +down / -up
+    num_font_size: int = 28
     num_color: tuple = (220, 220, 220, 255)
-
+    num_clip_padding_top: int = 6
+    zero_top_pad_px: int = 6   # 0 若被切，上緣至少留 6px
+    zero_num_offset_y: int = 0   # 只影響 m==0 的數字，負數往上
     
+    # --- Special number offsets ---
+    zero_num_offset_x: int = 10   # only for m == 0
+    zero_num_offset_y: int = 0
+    
+    max_num_offset_x: int = 0    # only for MaxDepth label
+    max_num_offset_y: int = 4
 
     # Indicator (fixed)
     depth_value_font_size: int = 110
@@ -316,6 +328,8 @@ class LayoutCDepthConfig:
     value_y_offset: int = -36
     unit_offset_x: int = 0    # +right / -left
     unit_offset_y: int = 20    # +down / -up
+    unit_follow_value: bool = True   # True: 跟著數字寬度動（目前行為）
+    unit_x_fixed: int = 360            # 當 unit_follow_value=False 時使用的固定 X（0 表示未啟用/用預設）
 
     arrow_w: int = 24
     arrow_h: int = 20
@@ -332,6 +346,7 @@ def render_layout_c_depth_module(
     current_depth_m: float,
     cfg: LayoutCDepthConfig,
     font_path: Optional[str] = None,
+    max_depth_m: Optional[float] = None,   # NEW
 ) -> Image.Image:
 
     """Render Layout C depth module onto base_img (RGBA PIL Image)."""
@@ -345,7 +360,11 @@ def render_layout_c_depth_module(
     indicator_y = (y0 + y1) // 2
 
     # ---------- Moving layer ----------
-    moving = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
+    pad_top = int(getattr(cfg, "scale_pad_top", 0))
+    pad_bot = int(getattr(cfg, "scale_pad_bottom", 0))
+    
+    moving_h = H + pad_top + pad_bot
+    moving = PILImage.new("RGBA", (W, moving_h), (0, 0, 0, 0))
     d = ImageDraw.Draw(moving)
 
     # --- Fonts ---
@@ -371,43 +390,81 @@ def render_layout_c_depth_module(
         num_font = ImageFont.load_default()
         value_font = ImageFont.load_default()
         unit_font = ImageFont.load_default()
+        
+    # Decide scale max depth to display
+    if max_depth_m is not None and np.isfinite(max_depth_m):
+        depth_max_display = int(np.ceil(float(max_depth_m)))  # 無條件進位到個位數
+        depth_max_display = max(cfg.depth_min_m, depth_max_display)
+    else:
+        depth_max_display = int(cfg.depth_max_m)
 
-    for m in range(cfg.depth_min_m, cfg.depth_max_m + 1):
-        y = m * cfg.px_per_m + cfg.scale_y_offset
+    for m in range(cfg.depth_min_m, depth_max_display + 1):
+        y = pad_top + m * cfg.px_per_m + cfg.scale_y_offset
 
-        if m % 10 == 0:
+        # --- 判斷是否為 MaxDepth ---
+        is_max = (m == depth_max_display)
+    
+        # --- 刻度線樣式 ---
+        if is_max:
+            w, L = cfg.tick_w_max, cfg.tick_len_max
+        elif m % 10 == 0:
             w, L = cfg.tick_w_10m, cfg.tick_len_10m
         elif m % 5 == 0:
             w, L = cfg.tick_w_5m, cfg.tick_len_5m
         else:
             w, L = cfg.tick_w_1m, cfg.tick_len_1m
-
+    
+        # --- 刻度線位置 ---
         center_x = cfg.scale_x + cfg.scale_x_offset
         x1 = center_x - L // 2
         x2 = center_x + L // 2
-        
+    
         d.line(
             [(x1, y), (x2, y)],
             fill=cfg.tick_color,
             width=w,
         )
-
-        if m % 10 == 0:
+    
+        # --- 是否顯示左側數字 ---
+        if (m % 10 == 0) or is_max:
             txt = str(m)
-            bbox = d.textbbox((0, 0), txt, font=num_font)
-            th = bbox[3] - bbox[1]
+    
+            # MaxDepth 的字體（可選）
+            if is_max and hasattr(cfg, "max_label_font_size"):
+                try:
+                    max_font = ImageFont.truetype(
+                        font_path,
+                        int(cfg.max_label_font_size),
+                    ) if font_path else ImageFont.load_default()
+                    use_font = max_font
+                except Exception:
+                    use_font = num_font
+            else:
+                use_font = num_font
+    
+            # --- base position ---
             num_x = cfg.num_left_margin + cfg.num_offset_x
-            num_y = (y - th // 2) + cfg.num_offset_y
+            num_y_center = y + cfg.num_offset_y
+            
+            # --- special offsets ---
+            if m == 0:
+                num_x += int(getattr(cfg, "zero_num_offset_x", 0))
+                num_y_center += int(getattr(cfg, "zero_num_offset_y", 0))
+            
+            if is_max:
+                num_x += int(getattr(cfg, "max_num_offset_x", 0))
+                num_y_center += int(getattr(cfg, "max_num_offset_y", 0))
             
             d.text(
-                (num_x, num_y),
+                (int(num_x), int(num_y_center)),
                 txt,
-                font=num_font,
+                font=use_font,
                 fill=cfg.num_color,
+                anchor="lm",   # left + middle
             )
 
     # Align current depth to indicator
-    offset_y = int(round(indicator_y - current_depth_m * cfg.px_per_m))
+    offset_y = int(round(indicator_y - (pad_top + current_depth_m * cfg.px_per_m)))
 
     moved = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
     moved.alpha_composite(moving, (0, offset_y))
@@ -480,8 +537,21 @@ def render_layout_c_depth_module(
     unit_txt = "m"
     ub = draw.textbbox((0, 0), unit_txt, font=unit_font)
     u_h = ub[3] - ub[1]
-    unit_x = cfg.value_x + v_w + cfg.unit_gap_px + cfg.unit_offset_x
-    unit_y = (value_center_y - u_h // 2) + cfg.unit_offset_y
+    
+    if getattr(cfg, "unit_follow_value", True):
+        unit_x = cfg.value_x + v_w + cfg.unit_gap_px
+    else:
+        # 固定 X：如果 unit_x_fixed 沒設（<=0），就用「數字最大可能寬度」當基準
+        if getattr(cfg, "unit_x_fixed", 0) > 0:
+            unit_x = cfg.unit_x_fixed
+        else:
+            # fallback：以 "88.8" 當最大寬度估計，避免 unit 太靠近數字
+            v_max_bbox = draw.textbbox((0, 0), "88.8", font=value_font)
+            v_max_w = v_max_bbox[2] - v_max_bbox[0]
+            unit_x = cfg.value_x + v_max_w + cfg.unit_gap_px
+    
+    unit_x = int(unit_x + cfg.unit_offset_x)
+    unit_y = int((value_center_y - u_h // 2) + cfg.unit_offset_y)
     
     draw.text(
         (unit_x, unit_y),
@@ -1339,6 +1409,7 @@ def render_video(
                 current_depth_m=depth_val,
                 cfg=layout_c_cfg,
                 font_path=base_font_path,
+                max_depth_m=best_depth,   # NEW：用你已算好的最大深度
             )
 
 # ===== Layout B 專屬元件 =====
