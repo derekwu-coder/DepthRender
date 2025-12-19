@@ -1,116 +1,28 @@
 from PIL import Image, ImageOps, ImageDraw
 import streamlit as st
 from pathlib import Path
-import pandas as pd
 from io import BytesIO
+from typing import Optional, Set
+
+import pandas as pd
 import numpy as np
 import altair as alt
 import time
-import threading
-
-from core.parser_garmin import parse_garmin_fit_to_dives
-from core.parser_atmos import parse_atmos_uddf
-from core.video_renderer import render_video  # 之後實作
-from typing import Optional, Set
-
 import os
-import tempfile
-import shutil
-import streamlit as st
 import base64
-import textwrap
 
-def persist_upload_to_tmp(uploaded_file) -> dict:
-    suffix = ""
-    if uploaded_file.name and "." in uploaded_file.name:
-        suffix = "." + uploaded_file.name.split(".")[-1].lower()
+from core.parser_garmin import parse_garmin_fit_to_dives, parse_garmin_fit_to_dives_with_hr
+from core.parser_atmos import parse_atmos_uddf
+from core.video_renderer import render_video
 
-    fd, path = tempfile.mkstemp(prefix="upload_", suffix=suffix)
-    os.close(fd)
+from core.i18n import init_lang, tr, LANG_OPTIONS, set_language
+from core.tmp_store import persist_upload_to_tmp, cleanup_tmp_dir, reset_overlay_job
+from core.nationality import load_nationality_options
+from core.dive_curve import prepare_dive_curve, compute_dive_metrics
+from ui.styles import inject_app_css
+from ui.layout_selector import render_layout_selector
+from typing import Dict, List, Optional, Union
 
-    with open(path, "wb") as f:
-        shutil.copyfileobj(uploaded_file, f, length=1024 * 1024)
-
-    return {
-        "path": path,
-        "name": uploaded_file.name,
-        "size": uploaded_file.size,
-        "type": uploaded_file.type,
-    }
-
-
-# -------------------------------
-# Runtime cleanup helpers (Render/Streamlit long-lived process)
-# -------------------------------
-TMP_PREFIXES = ("upload_", "dive_overlay_output_", "dive_overlay_audio_", "dive_overlay_input_")
-
-def _safe_unlink(path: str) -> None:
-    try:
-        if path and os.path.exists(path):
-            os.remove(path)
-    except Exception:
-        pass
-
-def cleanup_tmp_dir(max_age_sec: int = 60 * 60 * 2,keep_paths: Optional[Set[str]] = None) -> None:
-    """Delete old temp files created by this app under /tmp to avoid accumulation across sessions."""
-    keep_paths = keep_paths or set()
-    tmp_dir = Path(tempfile.gettempdir())
-    now = time.time()
-    try:
-        for p in tmp_dir.iterdir():
-            try:
-                if not p.is_file():
-                    continue
-                if not any(p.name.startswith(pref) for pref in TMP_PREFIXES):
-                    continue
-                if str(p) in keep_paths:
-                    continue
-                age = now - p.stat().st_mtime
-                if age >= max_age_sec:
-                    p.unlink(missing_ok=True)
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-def cleanup_session_files(keys: list[str]) -> None:
-    """Remove files referenced by session_state keys and delete the keys."""
-    for k in keys:
-        v = st.session_state.get(k)
-        if isinstance(v, dict) and "path" in v:
-            _safe_unlink(v.get("path"))
-        elif isinstance(v, (str, Path)):
-            _safe_unlink(str(v))
-        st.session_state.pop(k, None)
-
-def ensure_clean_before_new_job():
-    """
-    Ensure previous overlay job resources are cleaned
-    before starting a new upload/render job.
-    """
-    if st.session_state.get("ov_job_state") in ("done", "error"):
-        # Reset session-state pointers and delete per-job temp files
-        reset_overlay_job()
-        # Best-effort sweep: remove older /tmp artifacts from prior sessions
-        # (do NOT keep any paths here because new uploads have not been persisted yet)
-        cleanup_tmp_dir(max_age_sec=60 * 60 * 2, keep_paths=set())
-
-def reset_overlay_job() -> None:
-    cleanup_session_files([
-        "ov_video_meta",
-        "ov_output_path",
-        "ov_tmp_audio_path",
-        "ov_render_error",
-    ])
-    # Also clear uploader widgets to allow re-upload
-    for k in ["overlay_video_file", "overlay_watch_file"]:
-        st.session_state.pop(k, None)
-    st.session_state["ov_job_state"] = "idle"
-    try:
-        import gc
-        gc.collect()
-    except Exception:
-        pass
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
@@ -132,797 +44,12 @@ for _k in ("ov_video_meta", "ov_output_path"):
         _keep.add(str(_v))
 cleanup_tmp_dir(max_age_sec=60*60*2, keep_paths=_keep)
 
-def render_layout_selector(layouts_config, assets_dir, tr, key="overlay_layout_id"):
-    """
-    Render 2-column layout selector with preview cards.
-    Returns selected layout id.
-    """
-    from pathlib import Path
-    import base64
-    import streamlit as st
-
-    LAYOUTS_DIR = Path(assets_dir) / "layouts"
-
-    # init
-    if key not in st.session_state:
-        st.session_state[key] = layouts_config[0]["id"]
-    selected_id = st.session_state[key]
-
-    def _img_to_base64_png(path: Path) -> str:
-        if not path.exists():
-            return ""
-        return base64.b64encode(path.read_bytes()).decode("utf-8")
-
-    cols = st.columns(2, gap="small")
-
-    for idx, cfg in enumerate(layouts_config):
-        col = cols[idx % 2]
-        layout_id = cfg["id"]
-        label = tr(cfg["label_key"])
-        img_path = LAYOUTS_DIR / cfg["filename"]
-        img_b64 = _img_to_base64_png(img_path)
-
-        is_selected = (layout_id == selected_id)
-        card_state_class = "selected" if is_selected else "dimmed"
-
-        # ✅ 勾勾（只在 selected 顯示）
-        check_html = '<div class="layout-check"><span class="layout-checkmark">✓</span></div>' if is_selected else ""
-
-        card_html = f"""
-        <div class="layout-card {card_state_class}">
-            <img src="data:image/png;base64,{img_b64}" />
-            <div class="layout-footer">
-                {check_html}
-                <div class="layout-title">{label}</div>
-            </div>
-        </div>
-        """
-
-        with col:
-            st.markdown(card_html, unsafe_allow_html=True)
-
-            if st.button(
-                tr("select_layout_btn"),              # <<< 你現在已經修好翻譯了，用這個 key
-                key=f"select_layout_btn_{layout_id}",
-                use_container_width=True,
-            ):
-                st.session_state[key] = layout_id
-                st.rerun()
-
-    return st.session_state[key]
-
-# ==================================
-# 全局 CSS：讓畫面更像 App
-# ==================================
-APP_CSS = """
-<style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-
-/* ===== 版面置中並限制最大寬度 ===== */
-.main > div {
-    display: flex;
-    justify-content: center;
-}
-
-.main > div > div {
-    max-width: 1200px;
-}
-
-/* ===== 主內容往下推一點，騰出 header 空間 ===== */
-.block-container {
-    padding-top: 112px;   /* header + tabs 的總高度，大約 100~120 之間自己可以微調 */
-}
-
-/* ===== 頂部品牌列：包成一個 fixed header ===== */
-.app-header-row {
-    position: fixed;         /* 原本是 sticky，改成 fixed 綁在視窗 */
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    padding: 0.25rem 0.1rem 0.35rem 0.1rem;
-    backdrop-filter: blur(10px);
-    background: rgba(248,250,252,0.96);  /* 淺色模式淡底 */
-}
-
-/* 深色模式下 header 背景 */
-@media (prefers-color-scheme: dark) {
-    .app-header-row {
-        background: rgba(15,23,42,0.98);
-    }
-}
-
-/* 內層品牌列內容 */
-.app-top-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.2rem 0.6rem 0.4rem;
-}
-
-.app-top-icon {
-    font-size: 1.6rem;
-}
-
-.app-title-text {
-    font-size: 1.9rem;
-    font-weight: 700;
-    line-height: 1.9rem;
-}
-
-.app-title-sub {
-    font-size: 1.0rem;
-    opacity: 0.8;
-}
-
-/* ⭐ 手機版品牌標題縮小 */
-@media (max-width: 600px) {
-    .app-title-text {
-        font-size: 1.45rem !important;
-        line-height: 1.45rem !important;
-    }
-    .app-title-sub {
-        font-size: 0.9rem !important;
-    }
-}
-
-/* ===== app-card（白底卡片） ===== */
-.app-card {
-    background-color: rgba(255,255,255,0.90);
-    border-radius: 18px;
-    padding: 1rem 1.2rem 1.4rem 1.2rem;
-    box-shadow: 0 8px 20px rgba(15,23,42,0.10);
-}
-
-/* 深色模式 */
-@media (prefers-color-scheme: dark) {
-    .app-card {
-        background-color: rgba(15,23,42,0.90);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.60);
-    }
-}
-
-/* ===== 標題縮小 ===== */
-h3 {
-    font-size: 1.05rem !important;
-    margin-top: 0.6rem;
-    margin-bottom: 0.2rem;
-}
-
-
-/* ===== Align time block: force 100% width on mobile ===== */
-.align-time-block { width: 100%; }
-@media (max-width: 600px){
-  .align-time-block { width: 100% !important; max-width: 100% !important; }
-  .align-time-block div[data-testid="stHorizontalBlock"]{ width: 100% !important; }
-}
-
-/* ======================================================
-   🌑 Tabs 外觀：背景融入 + 保留膠囊造型
-   ====================================================== */
-
-/* 讓 stTabs 整塊本身不要多餘底線/陰影 */
-div[data-testid="stTabs"] {
-    border-bottom: none !important;
-    box-shadow: none !important;
-    background: transparent !important;
-}
-
-/* Tabs 的 tablist：上面那條長條所在的區域 */
-div[data-testid="stTabs"] div[role="tablist"] {
-    position: fixed;
-    top: 60px;  /* 往上靠一點，讓長條更貼近 header 底部 */
-    left: 0;
-    right: 0;
-    z-index: 90;
-
-    /* 上方 padding 改為 0，避免標籤長條上面還有一層空隙 */
-    padding: 0 0.4rem 0.20rem 0.4rem !important;
-    margin-bottom: 0 !important;
-
-    background: #f8fafc !important;
-    border-bottom: none !important;
-    box-shadow: none !important;
-}
-
-
-
-/* 深色模式：改成你實際量到的 #0E1117 */
-@media (prefers-color-scheme: dark) {
-    div[data-testid="stTabs"] div[role="tablist"] {
-        background: #0E1117 !important;
-    }
-}
-
-/* 移除 tablist 可能附加的裝飾 bar（避免多一層亮條）*/
-div[data-testid="stTabs"] div[role="tablist"]::before,
-div[data-testid="stTabs"] div[role="tablist"]::after {
-    content: none !important;
-    border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-/* 👉 移動中的 pill / highlight：直接關掉整個元素 */
-div[data-baseweb="tab-highlight"] {
-    display: none !important;          /* 最直接：整條不畫 */
-    background: transparent !important;
-    box-shadow: none !important;
-    border: none !important;
-    height: 0 !important;
-    opacity: 0 !important;
-}
-
-/* 深色模式保險再蓋一次 */
-@media (prefers-color-scheme: dark) {
-    div[data-baseweb="tab-highlight"] {
-        display: none !important;
-        background: transparent !important;
-        opacity: 0 !important;
-    }
-}
-
-/* 這個通常是 Tabs 底部那條長 bar，用同色把它「蓋掉」 */
-div[data-baseweb="tab-border"] {
-    background: #f8fafc !important;
-    box-shadow: none !important;
-    border: none !important;
-    height: 0.10rem !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* 深色模式下，底部 bar 也改成 #0E1117（跟背景完全融在一起） */
-@media (prefers-color-scheme: dark) {
-    div[data-baseweb="tab-border"] {
-        background: #0E1117 !important;
-    }
-}
-
-/* ⭐ 真正的膠囊 tab 按鈕樣式（這一段是你現在少掉的，所以膠囊會消失） */
-div[data-testid="stTabs"] button[role="tab"] {
-    border-radius: 999px !important;        /* 膠囊形狀 */
-    padding: 0.18rem 0.9rem !important;
-    margin-right: 0.45rem !important;
-    border: 1px solid rgba(148,163,184,0.7) !important;  /* gray-ish 邊框 */
-    background-color: #f3f4f6 !important;   /* 淺灰 */
-    color: #111827 !important;              /* 深字 */
-    font-size: 0.88rem !important;          /* 稍微小一點，手機不會太霸佔 */
-    font-weight: 500 !important;
-    box-shadow: none !important;
-}
-
-/* 取消 Streamlit 原本的 underline */
-div[data-testid="stTabs"] button[role="tab"]::after {
-    content: none !important;
-    border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
-}
-
-/* 被選中的 tab（淺色模式）：淡藍色膠囊 */
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-    background-color: #dbeafe !important;    /* light blue */
-    border-color: #38bdf8 !important;        /* cyan-ish */
-    color: #0f172a !important;               /* slate-900 */
-}
-
-/* 深色模式下 tabs 的顏色配置 */
-@media (prefers-color-scheme: dark) {
-
-    /* 未選取：深灰膠囊 */
-    div[data-testid="stTabs"] button[role="tab"] {
-        background-color: #111827 !important;
-        border-color: rgba(55,65,81,0.9) !important;
-        color: #e5e7eb !important;
-    }
-
-    /* 已選取：稍亮一點的藍灰膠囊 */
-    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-        background-color: #1f2937 !important;   /* 深藍灰 */
-        border-color: #38bdf8 !important;
-        color: #e5f2ff !important;
-    }
-}
-
-/* Tabs 底部與內文的距離再縮一點 */
-div[data-testid="stTabs"] + div {
-    margin-top: 0.20rem !important;
-}
-
-/* ===== Layout Grid Selector ===== */
-.layout-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-/* 卡片本體 */
-
-.layout-card{
-  position: relative;
-  border-radius: 18px;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.layout-card img{
-  display:block;
-  width:100%;
-  height:auto;
-}
-
-/* 未選取：更灰、更暗 */
-.layout-card.dimmed img{
-  filter: grayscale(100%) saturate(0%) contrast(85%) brightness(70%);
-  opacity: 0.80;
-}
-
-.layout-card.selected .layout-title{
-  color: #111;
-}
-
-.layout-card.dimmed .layout-title{
-  color: #666;
-}
-
-/* footer：預設（dark mode 下也好看） */
-.layout-footer{
-  background: #f2f2f2;   /* 白天模式不融入背景 */
-  height: 40px;          /* footer 高度（你之前太大就改小） */
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap: 10px;
-}
-
-.layout-check{
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #4CAF50;          /* 綠色圓底 */
-  color: #ffffff;               /* 白色勾勾 */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-
-.layout-title{
-  font-size: 18px;       /* 標題大小 */
-  font-weight: 800;
-  color: #111;
-}
-
-/* ======================================================
-   🌟 手機優化區（以下 100% 保證效果正確） 
-   ====================================================== */
-@media (max-width: 768px) {
-
-    .app-card {
-        padding: 0.8rem 0.9rem 1.1rem 0.9rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(15,23,42,0.15);
-    }
-
-    h3 {
-        font-size: 0.95rem !important;
-    }
-
-    .stButton>button,
-    .stDownloadButton>button {
-        width: 100%;
-    }
-
-    /* ==========================================================
-       ① 全站預設：所有 st.columns 手機上「左右並排」(50/50)
-       ========================================================== */
-    div[data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        align-items: flex-start;
-    }
-
-    div[data-testid="stHorizontalBlock"] > div {
-        flex: 1 1 0 !important;
-        min-width: 0 !important;
-        max-width: 50% !important;
-        padding-left: 0.35rem;
-        padding-right: 0.35rem;
-        box-sizing: border-box;
-    }
-
-    div[data-testid="stHorizontalBlock"] > div > div {
-        max-width: 100% !important;
-    }
-
-    /* ==========================================================
-       ② 在「疊加影片產生器 tab」裡把 st.columns 改回上下排列
-          （避免深度圖 / 速率圖在手機端被擠成兩欄）
-       ========================================================== */
-
-    /* 疊加影片頁面的 wrapper */
-    .overlay-stack-mobile div[data-testid="stHorizontalBlock"] {
-        flex-direction: column !important;
-        flex-wrap: nowrap !important;
-    }
-
-    /* 每欄吃滿 100% */
-    .overlay-stack-mobile div[data-testid="stHorizontalBlock"] > div {
-        max-width: 100% !important;
-        width: 100% !important;
-    }
-}
-
-</style>
-"""
-
-st.markdown(APP_CSS, unsafe_allow_html=True)
-
-# ==================================
-# 🗣️ 多語系字典 & 文字取得函式
-# ==================================
-
-# 預設語言
-if "lang" not in st.session_state:
-    st.session_state["lang"] = "zh"  # 先預設中文
-
-LANG_OPTIONS = {
-    "zh": "中文",
-    "en": "English",
-}
-
-TRANSLATIONS = {
-    "zh": {
-        "app_title": "Dive Overlay Generator",
-        "top_brand": "DepthRender",
-        "language_label": "🌐 語言",
-
-        "tab_overlay_title": "疊加影片產生器",
-        "tab_compare_title": "潛水數據比較",
-        "compare_coming_soon": "這裡未來會加入不同潛水之間的曲線比較功能，例如：\n\n- 深度曲線對比\n- 速率 / FF 比例比較\n- 不同比賽 / 不同天的表現差異",
-
-        # Overlay tab
-        "upload_watch_subheader": "1️⃣ 上傳手錶數據",
-        "upload_watch_label": "手錶數據 (.fit/.uddf)",
-        "upload_video_subheader": "2️⃣ 上傳潛水影片",
-        "upload_video_label": "影片檔（任意解析度）",
-        "fit_detected": "偵測到 Garmin .fit 檔，開始解析多潛資料...",
-        "fit_no_dives": "這個 .fit 裡面沒有偵測到有效的潛水紀錄。",
-        "select_dive_label": "選擇要使用的那一潛：",
-        "uddf_detected": "偵測到 ATMOS UDDF 檔，開始解析單一潛水紀錄...",
-        "no_depth_samples": "成功讀取手錶檔，但沒有找到任何深度樣本點。",
-        "dive_time_detected": "偵測到的 Dive Time：約 {mm:02d}:{ss:02d} （從深度 ≥ 0.7 m 開始，到回到 0 m）",
-        "preview_subheader": "3️⃣ 潛水曲線預覽（時間 vs 深度 / 速率）",
-        "axis_time_seconds": "時間（秒）",
-        "axis_depth_m": "深度（m）",
-        "axis_rate_mps": "速率（m/s）",
-        "tooltip_time": "時間 (s)",
-        "tooltip_depth": "深度 (m)",
-        "tooltip_rate": "速率 (m/s)",
-        "depth_chart_title": "深度 vs 時間",
-        "rate_chart_title": "速率 vs 時間",
-        "preview_caption": "原始資料點數：{n_points}，重採樣時間範圍：{t_min:.0f}～{t_max:.0f} 秒，最大深度：約 {max_depth:.1f} m",
-
-        "align_layout_subheader": "4️⃣ 影片對齊與版型",
-        "time_offset_label": "潛水開始時間調整",
-        "time_offset_help": "如果影片比實際下潛早開始，請用負值調整。",
-        "align_mode_label": "對齊方式",
-        "align_mode_start": "對齊下潛時間 (開始躬身)",
-        "align_mode_bottom": "對齊最深時間 (轉身/摘到tag)",
-        "align_mode_end": "對齊出水時間 (手錶出水)",
-
-        "align_video_time_label": "影片時間（mm:ss.ss，例如 01:10.05）",
-        "align_video_time_help": "請輸入分鐘:秒.小數，秒與小數最多 2 位，例如 00:03.18",
-        "align_video_time_invalid": "影片時間格式不正確，請使用 mm:ss 或 mm:ss.ss，例如 00:03.18",
-
-        "align_step_min": "分 (1 min)",
-        "align_step_sec": "秒 (1 s)",
-        "align_step_csec": "0.1 秒 (100 ms)",
-        "layout_select_label": "選擇影片版型",
-        "layout_preview_title": "版型示意圖",
-
-        "layout_a_label": "賽事風格 1",
-        "layout_a_desc": "",
-        "layout_b_label": "賽事風格 2",
-        "layout_b_desc": "",
-        "layout_c_label": "C: 單純深度",
-        "layout_c_desc": "Simple_A",
-        "layout_d_label": "D: 單純深度",
-        "layout_d_desc": "Simple_B",
-
-        "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給賽事風格使用）",
-        "diver_name_label": "姓名（暫不支援中文）",
-        "nationality_label": "國籍",
-        "discipline_label": "潛水項目（Discipline）",
-        "not_specified": "（不指定）",
-
-        "render_button": "🚀 產生疊加數據影片",
-        "error_need_both_files": "請先上傳手錶數據與影片檔。",
-        "error_watch_file_missing": "找不到手錶檔案，請重新上傳。",
-        "error_video_missing": "找不到影片檔案，請重新上傳。",
-        "error_video_ext_not_supported": "不支援的影片格式，請上傳 mp4 / mov / m4v。",
-        "progress_init": "初始化中...",
-        "progress_rendering": "產生影片中...",
-        "progress_done": "影片產生完成！",
-        "progress_eta_estimating": "剩餘時間預估中⋯⋯請勿離開此畫面或關閉螢幕",
-        "progress_eta": "預估剩餘時間：約 {mm:02d}:{ss:02d} ⋯⋯請勿離開此畫面或關閉螢幕",
-        "render_success": "影片產生完成！",
-        "download_button": "下載 1080p 影片",
-        "render_error": "產生影片時發生錯誤：{error}",
-
-        "nationality_file_not_found": "找不到 Nationality 檔案：{path}",
-        "nationality_read_error": "讀取 Nationality.csv 時發生錯誤：{error}",
-        "nationality_missing_columns": "Nationality.csv 缺少必要欄位：{missing}",
-        
-        "preview_skipped_large_file": "檔案較大，為降低雲端記憶體峰值，已略過預覽（請直接下載）。",
-        "post_render_tip": "請先下載影片；如要開始下一支，請點「開始新任務」。",
-        "start_new_job_btn": "開始新任務",
-
-        # Compare tab
-        "compare_title": "📊 潛水數據比較",
-        "compare_upload_a": "上傳數據 A（.fit / .uddf）",
-        "compare_upload_b": "上傳數據 B（.fit / .uddf）",
-        "compare_select_dive_a": "數據A 要比較的那一潛：",
-        "compare_select_dive_b": "數據B 要比較的那一潛：",
-        "compare_smooth_label": "速率平滑度",
-        "compare_align_label": "調整數據 B 的時間偏移（秒，用來對齊兩組曲線）",
-        "compare_no_data": "請先上傳並選擇兩組有效的潛水數據。",
-        "compare_depth_chart_title": "深度 vs 時間",
-        "compare_rate_chart_title": "速率 vs 時間",
-        "compare_series_legend": "數據來源",
-        "compare_align_current": "偏移：{offset:.1f} 秒",
-        "compare_desc_rate_label": "下潛速率 (m/s)",
-        "compare_asc_rate_label": "上升速率 (m/s)",
-        "compare_ff_depth_label_a": "數據A：FF 開始深度 (m)",
-        "compare_ff_depth_label_b": "數據B：FF 開始深度 (m)",
-        "compare_ff_rate_label": "Free Fall 速率 (m/s)",
-        "compare_metric_unit_mps": "{value:.2f} m/s",
-        "compare_metric_not_available": "—",
-        "compare_ff_rate_label": "Free Fall 速率 (m/s)",
-        "compare_metric_unit_mps": "{value:.2f} m/s",
-        "compare_metric_not_available": "—",
-
-        # Overlay 速率分析 + 潛水時間顯示
-        "overlay_speed_analysis_title": "潛水速率分析",
-        "overlay_ff_depth_label": "FF 開始深度 (m)",
-        "metric_dive_time_label": "潛水時間",
-        "metric_dive_time_value": "{mm:02d}:{ss:02d}",
-
-        
-        # Overlay rate analysis (單一潛水速率分析)
-        "overlay_rate_section_title": "潛水速率分析",
-        "overlay_ff_depth_label": "FF 開始深度 (m)",
-        "overlay_desc_rate_label": "下潛速率 (m/s)",
-        "overlay_asc_rate_label": "上升速率 (m/s)",
-        "overlay_ff_rate_label": "Free Fall 速率 (m/s)",
-        "overlay_metric_unit_mps": "{value:.2f} m/s",
-        "overlay_metric_not_available": "—",
-        "layout_a_tuning_title": "Layout A 版面參數（底部平行四邊形）",
-        "layout_a_show_tuning": "顯示進階調整（賽事風格 1）",
-        "layout_a_alpha": "背景板透明度",
-        "layout_a_tuning_hint": "此區只影響 Layout A。若你不調整，會使用預設值。",
-        "layout_a_x_start": "起始 X（左邊界）",
-        "layout_a_y_from_bottom": "距離底部 Y",
-        "layout_a_height": "高度 H",
-        "layout_a_skew": "斜度（skew）",
-        "layout_a_gap": "板塊間距（gap）",
-        "layout_a_w1": "板 1 寬度（國籍/國旗）",
-        "layout_a_w2": "板 2 寬度（姓名）",
-        "layout_a_w3": "板 3 寬度（項目）",
-        "layout_a_w4": "板 4 寬度（時間）",
-        "layout_a_w5": "板 5 寬度（深度）",
-        "layout_a_text_title": "文字大小",
-        "layout_a_fs_code": "國籍三碼 字體大小",
-        "layout_a_fs_name": "姓名 字體大小",
-        "layout_a_fs_disc": "項目 字體大小",
-        "layout_a_fs_time": "時間 字體大小",
-        "layout_a_fs_depth": "深度 字體大小",
-        "layout_a_inner_pad": "內距 padding",
-        "layout_a_offsets_title": "微調偏移（X/Y）",
-        "layout_a_off_code_x": "國籍 X",
-        "layout_a_off_code_y": "國籍 Y",
-        "layout_a_off_flag_x": "國旗 X",
-        "layout_a_off_flag_y": "國旗 Y",
-        "layout_a_off_name_x": "姓名 X",
-        "layout_a_off_name_y": "姓名 Y",
-        "layout_a_off_disc_x": "項目 X",
-        "layout_a_off_disc_y": "項目 Y",
-        "layout_a_off_time_x": "時間 X",
-        "layout_a_off_time_y": "時間 Y",
-        "layout_a_off_depth_x": "深度 X",
-        "layout_a_off_depth_y": "深度 Y",
-        "select_layout_btn": "select"
-        
-},
-    "en": {
-        "app_title": "Dive Overlay Generator",
-        "top_brand": "DepthRender",
-        "language_label": "🌐 Language",
-
-        "tab_overlay_title": "Overlay Generator",
-        "tab_compare_title": "Dive Comparison",
-        "compare_coming_soon": "This tab will later provide dive-to-dive comparison, such as:\n\n- Depth curve comparison\n- Speed / free-fall ratio\n- Performance across different sessions / competitions",
-
-        # Overlay tab
-        "upload_watch_subheader": "1️⃣ Upload dive log",
-        "upload_watch_label": "Dive log (.fit/.uddf)",
-        "upload_video_subheader": "2️⃣ Upload dive video",
-        "upload_video_label": "Video file (any resolution)",
-        "fit_detected": "Detected Garmin .fit file. Parsing multi-dive data...",
-        "fit_no_dives": "No valid dives found in this .fit file.",
-        "select_dive_label": "Select which dive to use:",
-        "uddf_detected": "Detected ATMOS UDDF file. Parsing single dive...",
-        "no_depth_samples": "Log file loaded, but no depth samples were found.",
-        "dive_time_detected": "Detected dive time: approx {mm:02d}:{ss:02d} (from depth ≥ 0.7 m until back to 0 m)",
-        "preview_subheader": "3️⃣ Dive curve preview (time vs depth / speed)",
-        "axis_time_seconds": "Time (s)",
-        "axis_depth_m": "Depth (m)",
-        "axis_rate_mps": "Speed (m/s)",
-        "tooltip_time": "Time (s)",
-        "tooltip_depth": "Depth (m)",
-        "tooltip_rate": "Speed (m/s)",
-        "depth_chart_title": "Depth vs Time",
-        "rate_chart_title": "Speed vs Time",
-        "preview_caption": "Raw samples: {n_points}, resampled time range: {t_min:.0f}–{t_max:.0f} s, max depth: ~{max_depth:.1f} m",
-
-        "align_layout_subheader": "4️⃣ Video alignment & layout",
-        "time_offset_label": "Align video start",
-        "time_offset_help": "If the video starts before the actual dive, use a negative offset.",
-        "align_mode_label": "Alignment mode",
-        "align_mode_start": "Align descent time (start of duck dive)",
-        "align_mode_bottom": "Align bottom time (turn / tag grab)",
-        "align_mode_end": "Align surfacing time (watch exits water)",
-
-        "align_video_time_label": "Video time (mm:ss.ss, e.g. 01:10.05)",
-        "align_video_time_help": "Use mm:ss or mm:ss.ss, up to 2 decimals (e.g. 00:03.18)",
-        "align_video_time_invalid": "Invalid video time format. Use mm:ss or mm:ss.ss (e.g. 00:03.18)",
-
-        "align_step_min": "Min (1 min)",
-        "align_step_sec": "Sec (1 s)",
-        "align_step_csec": "0.1 s (100 ms)",
-        "layout_select_label": "Choose overlay layout",
-        "layout_preview_title": "Layout preview",
-
-        "layout_a_label": "Competition Style 1",
-        "layout_a_desc": "",
-        "layout_b_label": "Competition Style 2",
-        "layout_b_desc": "",
-        "layout_c_label": "C: Depth only",
-        "layout_c_desc": "Simple_A",
-        "layout_d_label": "D: Depth only",
-        "layout_d_desc": "Simple_B",
-
-        "diver_info_subheader": "5️⃣ Diver info (optional, mainly for Competition Style)",
-        "diver_name_label": "Diver name / Nickname",
-        "nationality_label": "Nationality",
-        "discipline_label": "Discipline",
-        "not_specified": "(Not specified)",
-
-        "render_button": "🚀 Generate overlay video",
-        "error_need_both_files": "Please upload both dive log and video file.",
-        "error_watch_file_missing": "Watch file is missing. Please re-upload.",
-        "error_video_missing": "Video file is missing. Please re-upload.",
-        "error_video_ext_not_supported": "Unsupported video format. Please upload mp4 / mov / m4v.",
-        "progress_init": "Initializing...",
-        "progress_rendering": "Rendering video...",
-        "progress_done": "Rendering finished!",
-        "progress_eta_estimating": "Estimating remaining time... Please stay on this page and keep the screen on.",
-        "progress_eta": "Estimated remaining time: ~{mm:02d}:{ss:02d} ... Please stay on this page and keep the screen on.",
-
-        "render_success": "Video rendered successfully!",
-        "download_button": "Download 1080p video",
-        "render_error": "Error while rendering video: {error}",
-
-        "nationality_file_not_found": "Nationality file not found: {path}",
-        "nationality_read_error": "Error reading Nationality.csv: {error}",
-        "nationality_missing_columns": "Nationality.csv is missing required columns: {missing}",
-        
-        "preview_skipped_large_file": "Large output file detected. Preview is skipped to reduce memory spikes. Please download the video.",
-        "post_render_tip": "Please download the video first. To start the next job, click “Start new job”.",
-        "start_new_job_btn": "Start new job",
-
-        # Compare tab
-        "compare_title": "📊 Dual-dive comparison",
-        "compare_upload_a": "Upload log A (.fit / .uddf)",
-        "compare_upload_b": "Upload log B (.fit / .uddf)",
-        "compare_select_dive_a": "Dive A:",
-        "compare_select_dive_b": "Dive B:",
-        "compare_smooth_label": "Speed smoothing",
-        "compare_align_label": "Time offset for log B (seconds, to align two curves)",
-        "compare_no_data": "Please upload and select two valid dive logs first.",
-        "compare_depth_chart_title": "Depth vs Time (comparison)",
-        "compare_rate_chart_title": "Speed vs Time (comparison)",
-        "compare_series_legend": "Series",
-        "compare_align_current": "Offset: {offset:.1f}s",
-        "compare_desc_rate_label": "Descent Rate (m/s)",
-        "compare_asc_rate_label": "Ascent Rate (m/s)",
-        "compare_ff_depth_label_a": "A: FF start depth (m)",
-        "compare_ff_depth_label_b": "B: FF start depth (m)",
-        "compare_ff_rate_label": "Free-fall Descent Rate (m/s)",
-        "compare_metric_unit_mps": "{value:.2f} m/s",
-        "compare_metric_not_available": "—",
-        "compare_ff_rate_label": "Free-fall Descent Rate (m/s)",
-        "compare_metric_unit_mps": "{value:.2f} m/s",
-        "compare_metric_not_available": "—",
-        
-        # Overlay speed analysis + dive time display
-        "overlay_speed_analysis_title": "Dive speed analysis",
-        "overlay_ff_depth_label": "FF start depth (m)",
-        "metric_dive_time_label": "Dive time",
-        "metric_dive_time_value": "{mm:02d}:{ss:02d}",
-
-        # Overlay rate analysis (single-dive metrics)
-        "overlay_rate_section_title": "Dive speed metrics",
-        "overlay_ff_depth_label": "FF start depth (m)",
-        "overlay_desc_rate_label": "Descent speed (m/s)",
-        "overlay_asc_rate_label": "Ascent speed (m/s)",
-        "overlay_ff_rate_label": "Free-fall speed (m/s)",
-        "overlay_metric_unit_mps": "{value:.2f} m/s",
-        "overlay_metric_not_available": "—",
-        "layout_a_tuning_title": "Layout A tuning (Bottom parallelograms)",
-        "layout_a_show_tuning": "Show advanced tuning (Race style 1)",
-        "layout_a_alpha": "Background opacity",
-        "layout_a_tuning_hint": "These controls only affect Layout A. Leave as-is to use defaults.",
-        "layout_a_x_start": "X start (left)",
-        "layout_a_y_from_bottom": "Y from bottom",
-        "layout_a_height": "Height H",
-        "layout_a_skew": "Skew",
-        "layout_a_gap": "Gap between plates",
-        "layout_a_w1": "Plate 1 width (Code/Flag)",
-        "layout_a_w2": "Plate 2 width (Name)",
-        "layout_a_w3": "Plate 3 width (Discipline)",
-        "layout_a_w4": "Plate 4 width (Time)",
-        "layout_a_w5": "Plate 5 width (Depth)",
-        "layout_a_text_title": "Font sizes",
-        "layout_a_fs_code": "Code font size",
-        "layout_a_fs_name": "Name font size",
-        "layout_a_fs_disc": "Discipline font size",
-        "layout_a_fs_time": "Time font size",
-        "layout_a_fs_depth": "Depth font size",
-        "layout_a_inner_pad": "Inner padding",
-        "layout_a_offsets_title": "Fine offsets (X/Y)",
-        "layout_a_off_code_x": "Code X",
-        "layout_a_off_code_y": "Code Y",
-        "layout_a_off_flag_x": "Flag X",
-        "layout_a_off_flag_y": "Flag Y",
-        "layout_a_off_name_x": "Name X",
-        "layout_a_off_name_y": "Name Y",
-        "layout_a_off_disc_x": "Discipline X",
-        "layout_a_off_disc_y": "Discipline Y",
-        "layout_a_off_time_x": "Time X",
-        "layout_a_off_time_y": "Time Y",
-        "layout_a_off_depth_x": "Depth X",
-        "layout_a_off_depth_y": "Depth Y",
-        "select_layout_btn": "select"
-
-},
-}
-
-def tr(key: str, **kwargs) -> str:
-    """依據目前語言取得對應字串，可帶入 format 參數。"""
-    lang = st.session_state.get("lang", "zh")
-    text = TRANSLATIONS.get(lang, TRANSLATIONS["zh"]).get(key, key)
-    if kwargs:
-        try:
-            text = text.format(**kwargs)
-        except Exception:
-            pass
-    return text
-
-def set_language():
-    """讓 selectbox 改變時更新 session_state['lang']"""
-    label_to_code = {v: k for k, v in LANG_OPTIONS.items()}
-    # 🔁 這裡改成新的 key 名稱
-    selected_label = st.session_state.get("_lang_select_top", LANG_OPTIONS["zh"])
-    st.session_state["lang"] = label_to_code.get(selected_label, "zh")
-
 # -------------------------------
+# UI bootstrap: CSS + language + header
+# -------------------------------
+init_lang(default="zh")
+inject_app_css()
+
 # 頂部：左邊品牌、右邊語言選單（整排 sticky）
 # -------------------------------
 st.markdown("<div class='app-header-row'>", unsafe_allow_html=True)
@@ -955,205 +82,17 @@ with top_right:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
+
+
+# 頂部：左邊品牌、右邊語言選單（整排 sticky）
+# -------------------------------
+st.markdown("<div class='app-header-row'>", unsafe_allow_html=True)
+
+top_left, top_right = st.columns([8, 1])
+
+with top_right:
+    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 # 讀取國籍 / 國碼清單
-@st.cache_data
-def load_nationality_options(csv_path: Path) -> pd.DataFrame:
-    """
-    從 CSV 讀取國籍清單，欄位需包含：
-    - Country
-    - Code（Alpha-3）
-    
-    並組合成選單 label，例如：
-        Taiwan (TWN)
-        Japan (JPN)
-    """
-
-    # --- 防呆：檔案不存在 ---
-    if not csv_path.exists():
-        st.error(tr("nationality_file_not_found", path=csv_path))
-        return pd.DataFrame(columns=["Country", "Code", "label"])
-
-    # --- 讀取 CSV ---
-    try:
-        df = pd.read_csv(csv_path)
-    except Exception as e:
-        st.error(tr("nationality_read_error", error=e))
-        return pd.DataFrame(columns=["Country", "Code", "label"])
-
-    # --- 檢查必要欄位 ---
-    required_cols = {"Country", "Code"}
-    missing = required_cols - set(df.columns)
-    if missing:
-        st.error(tr("nationality_missing_columns", missing=list(missing)))
-        return pd.DataFrame(columns=["Country", "Code", "label"])
-
-    # --- 整理資料 ---
-    df = df.dropna(subset=["Country", "Code"]).copy()
-    df["Country"] = df["Country"].astype(str).str.strip()
-    df["Code"] = df["Code"].astype(str).str.upper().str.strip()
-
-    # --- 下拉選單顯示字串 ---
-    df["label"] = df["Country"] + " (" + df["Code"] + ")"
-
-    return df
-
-# ================================
-# 共用：把潛水資料重採樣成「每秒一點」並計算速率
-# ================================
-def prepare_dive_curve(
-    dive_df: pd.DataFrame,
-    smooth_window: int
-) -> Optional[pd.DataFrame]:
-
-    """
-    輸入原始 dive_df（需含 time_s, depth_m）
-    回傳：
-        time_s: 每秒一個點（整數秒）
-        depth_m: 線性插值後深度
-        rate_abs_mps: 每秒深度變化量的絕對值
-        rate_abs_mps_smooth: 平滑後速率
-    """
-    if dive_df is None or len(dive_df) == 0:
-        return None
-
-    df = dive_df.sort_values("time_s").reset_index(drop=True).copy()
-    if "time_s" not in df.columns or "depth_m" not in df.columns:
-        return None
-
-    t_min = float(df["time_s"].min())
-    t_max = float(df["time_s"].max())
-    t0 = int(np.floor(t_min))
-    t1 = int(np.ceil(t_max))
-
-    if t1 <= t0:
-        return None
-
-    uniform_time = np.arange(t0, t1 + 1, 1.0)
-
-    depth_interp = np.interp(
-        uniform_time,
-        df["time_s"].to_numpy(),
-        df["depth_m"].to_numpy()
-    )
-
-    rate_uniform = np.diff(depth_interp, prepend=depth_interp[0])
-    rate_abs = np.abs(rate_uniform)
-    rate_abs_clipped = np.clip(rate_abs, 0.0, 3.0)
-
-    out = pd.DataFrame({
-        "time_s": uniform_time.astype(float),
-        "depth_m": depth_interp,
-        "rate_abs_mps": rate_abs_clipped,
-    })
-
-    if smooth_window <= 1:
-        out["rate_abs_mps_smooth"] = out["rate_abs_mps"]
-    else:
-        out["rate_abs_mps_smooth"] = (
-            out["rate_abs_mps"]
-            .rolling(window=smooth_window, center=True, min_periods=1)
-            .mean()
-        )
-
-    return out
-
-def compute_dive_metrics(
-    df_rate: pd.DataFrame,
-    dive_df_raw: Optional[pd.DataFrame],
-    ff_start_depth_m: float,
-) -> dict:
-    """
-    根據重採樣後的 df_rate（time_s, depth_m, rate_abs_mps_smooth）
-    與原始 dive_df_raw（time_s, depth_m），計算：
-      - descent_avg: 下潛平均速率（扣除開頭與底部各 1 秒）
-      - ascent_avg: 上升平均速率（扣除一開始 1 秒）
-      - ff_avg: Free Fall 開始後到最低點前 1 秒的平均速率
-    回傳 dict，若無法計算則為 None。
-    """
-    result = {
-        "descent_avg": None,
-        "ascent_avg": None,
-        "ff_avg": None,
-    }
-
-    if df_rate is None or dive_df_raw is None:
-        return result
-    if "time_s" not in dive_df_raw.columns or "depth_m" not in dive_df_raw.columns:
-        return result
-    if "time_s" not in df_rate.columns or "depth_m" not in df_rate.columns:
-        return result
-    if "rate_abs_mps_smooth" not in df_rate.columns:
-        return result
-
-    raw = dive_df_raw.sort_values("time_s").reset_index(drop=True).copy()
-
-    # 1) 找 Dive start / end（跟 Overlay tab 一樣邏輯）
-    start_rows = raw[raw["depth_m"] >= 0.7]
-    if start_rows.empty:
-        return result
-
-    t_start = float(start_rows["time_s"].iloc[0])
-    after = raw[raw["time_s"] >= t_start]
-    end_candidates = after[after["depth_m"] <= 0.05]
-    if not end_candidates.empty:
-        t_end = float(end_candidates["time_s"].iloc[-1])
-    else:
-        t_end = float(after["time_s"].iloc[-1])
-
-    if t_end <= t_start:
-        return result
-
-    # 2) 找到底點時間 t_bottom（只看 t_start ~ t_end 區間）
-    within_dive = after[after["time_s"] <= t_end]
-    if within_dive.empty:
-        return result
-
-    idx_bottom = within_dive["depth_m"].idxmax()
-    t_bottom = float(within_dive.loc[idx_bottom, "time_s"])
-
-    # 3) 在 df_rate 上切出對應區段
-    df = df_rate.sort_values("time_s").reset_index(drop=True)
-
-    # ---- 下潛平均速率：從 t_start + 1 到 t_bottom - 1 ----
-    desc_start = t_start + 1.0
-    desc_end = t_bottom - 1.0
-    if desc_end > desc_start:
-        mask_desc = (df["time_s"] >= desc_start) & (df["time_s"] <= desc_end)
-        seg_desc = df.loc[mask_desc]
-        if not seg_desc.empty:
-            result["descent_avg"] = float(seg_desc["rate_abs_mps_smooth"].mean())
-
-    # ---- 上升平均速率：從 t_bottom + 1 到 t_end ----
-    asc_start = t_bottom + 1.0
-    asc_end = t_end
-    if asc_end > asc_start:
-        mask_asc = (df["time_s"] >= asc_start) & (df["time_s"] <= asc_end)
-        seg_asc = df.loc[mask_asc]
-        if not seg_asc.empty:
-            result["ascent_avg"] = float(seg_asc["rate_abs_mps_smooth"].mean())
-
-    # ---- Free Fall 段平均速率 ----
-    # 從指定 FF 深度開始，到 t_bottom - 1
-    max_depth = float(within_dive["depth_m"].max())
-    if ff_start_depth_m > 0.0 and ff_start_depth_m < max_depth:
-        # 找 raw 裡面第一次達到 FF 深度的時間（只看下潛區間）
-        ff_zone = within_dive[
-            (within_dive["time_s"] >= t_start) &
-            (within_dive["time_s"] <= t_bottom)
-        ]
-        ff_candidates = ff_zone[ff_zone["depth_m"] >= ff_start_depth_m]
-        if not ff_candidates.empty:
-            t_ff_start = float(ff_candidates["time_s"].iloc[0])
-            ff_end = t_bottom - 1.0
-            if ff_end > t_ff_start:
-                mask_ff = (df["time_s"] >= t_ff_start) & (df["time_s"] <= ff_end)
-                seg_ff = df.loc[mask_ff]
-                if not seg_ff.empty:
-                    result["ff_avg"] = float(seg_ff["rate_abs_mps_smooth"].mean())
-
-    return result
-
-
 # ================================
 # 主畫面內容開始（卡片 + Tabs）
 # ================================
@@ -1231,6 +170,7 @@ with st.container():
 
         # --- 5. 選手錶類型 & 解析 ---
         dive_df = None
+        hr_df = None
         df_rate = None          # 速率重採樣後的 df
         dive_time_s = None      # Dive time（秒）
         dive_start_s = None     # 計時起點（深度 ≥ 0.7 m 的時間）
@@ -1255,8 +195,11 @@ with st.container():
                 if suffix == ".fit":
                     st.info(tr("fit_detected"))
                     with open(watch_path, "rb") as f:
-                        dives = parse_garmin_fit_to_dives(BytesIO(f.read()))
-        
+                        file_like = BytesIO(f.read())
+                        result = parse_garmin_fit_to_dives_with_hr(file_like)
+                        dives = result["dives"]
+                        hr_list = result.get("heart_rate", [])
+
                     if len(dives) == 0:
                         st.error(tr("fit_no_dives"))
                     else:
@@ -1273,6 +216,10 @@ with st.container():
                         )
         
                         dive_df = dives[selected_dive_index]
+                        dive_df = dives[int(selected_dive_index)]
+                        hr_df = None
+                        if isinstance(hr_list, list) and 0 <= int(selected_dive_index) < len(hr_list):
+                            hr_df = hr_list[int(selected_dive_index)]
         
                 elif suffix == ".uddf":
                     st.info(tr("uddf_detected"))
@@ -1290,6 +237,9 @@ with st.container():
                 # --- 強制加入起始/結束的 0 m 點 ---
                 if len(dive_df) > 0 and "time_s" in dive_df.columns and "depth_m" in dive_df.columns:
                     dive_df["time_s"] = dive_df["time_s"] + 1.0
+                    if hr_df is not None and len(hr_df) > 0 and "time_s" in hr_df.columns:
+                         hr_df = hr_df.sort_values("time_s").reset_index(drop=True)
+                         hr_df["time_s"] = hr_df["time_s"] + 1.0
 
                     first_row = dive_df.iloc[0].copy()
                     first_row["time_s"] = 0.0
@@ -1703,51 +653,60 @@ with st.container():
                             st.session_state["overlay_layout_id"] = layout_id
                             st.rerun()
 
-# --- 8. 輸入潛水員資訊---
-        st.subheader(tr("diver_info_subheader"))
-
-        nationality_file = ASSETS_DIR / "Nationality.csv"
-        nat_df = load_nationality_options(nationality_file)
-
+        # Defaults for diver info (only shown for Layout A/B, but must exist for all layouts)
+        diver_name = st.session_state.get("overlay_diver_name", "")
+        nationality = ""
         not_spec_label = tr("not_specified")
+        discipline = st.session_state.get("overlay_discipline", not_spec_label)
+        
+        # Current selected layout
+        selected_id = st.session_state.get("overlay_layout_id", "C")
 
-        if nat_df.empty:
-            nationality_options = [not_spec_label]
-        else:
-            nationality_labels = nat_df["label"].tolist()
-            nationality_options = [not_spec_label] + nationality_labels
+# --- 8. 輸入潛水員資訊---
+        if selected_id in ("A", "B"):
+            st.subheader(tr("diver_info_subheader"))
 
-        default_label = "Taiwan (TWN)"
-        if default_label in nationality_options:
-            default_index = nationality_options.index(default_label)
-        else:
-            default_index = 0
+            nationality_file = ASSETS_DIR / "Nationality.csv"
+            nat_df = load_nationality_options(nationality_file)
 
-        col_info_1, col_info_2 = st.columns(2)
+            not_spec_label = tr("not_specified")
 
-        with col_info_1:
-            diver_name = st.text_input(tr("diver_name_label"), value="", key="overlay_diver_name")
-
-            nationality_label = st.selectbox(
-                tr("nationality_label"),
-                options=nationality_options,
-                index=default_index,
-                key="overlay_nationality",
-            )
-
-            if nationality_label == not_spec_label:
-                nationality = ""
+            if nat_df.empty:
+                nationality_options = [not_spec_label]
             else:
-                nationality = nationality_label
+                nationality_labels = nat_df["label"].tolist()
+                nationality_options = [not_spec_label] + nationality_labels
 
-        with col_info_2:
-            discipline = st.selectbox(
-                tr("discipline_label"),
-                options=[not_spec_label, "CWT", "CWTB", "CNF", "FIM"],
-                key="overlay_discipline",
-            )
+            default_label = "Taiwan (TWN)"
+            if default_label in nationality_options:
+                default_index = nationality_options.index(default_label)
+            else:
+                default_index = 0
 
-        # --- 9. 產生影片 ---
+            col_info_1, col_info_2 = st.columns(2)
+
+            with col_info_1:
+                diver_name = st.text_input(tr("diver_name_label"), value="", key="overlay_diver_name")
+
+                nationality_label = st.selectbox(
+                    tr("nationality_label"),
+                    options=nationality_options,
+                    index=default_index,
+                    key="overlay_nationality",
+                )
+
+                if nationality_label == not_spec_label:
+                    nationality = ""
+                else:
+                    nationality = nationality_label
+
+            with col_info_2:
+                discipline = st.selectbox(
+                    tr("discipline_label"),
+                    options=[not_spec_label, "CWT", "CWTB", "CNF", "FIM"],
+                    key="overlay_discipline",
+                )
+# --- 9. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
             video_meta = st.session_state.get("ov_video_meta")
             video_path_ok = bool(video_meta and video_meta.get("path") and os.path.exists(video_meta.get("path", "")))
@@ -1822,6 +781,7 @@ with st.container():
                         dive_start_s=dive_start_s,
                         dive_end_s=dive_end_s,
                         progress_callback=progress_callback,
+                        hr_df=hr_df,
 )
 
                     progress_callback(1.0, tr("progress_done"))

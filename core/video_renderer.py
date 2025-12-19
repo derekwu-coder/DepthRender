@@ -1,5 +1,6 @@
 # core/video_renderer.py
 from typing import Optional, Tuple
+import math
 import numpy as np
 import pandas as pd
 from moviepy.editor import VideoFileClip
@@ -25,6 +26,9 @@ else:
 
 # Layout C - Value font (Nereus Bold) for depth/rate numeric value
 LAYOUT_C_VALUE_FONT_PATH = BASE_DIR / "assets" / "fonts" / "nereus-bold.ttf"
+
+# Layout C Heart Rate icon (place the PNG at: assets/icons/heart_rate_icon.png)
+LAYOUT_C_HR_ICON_REL = Path("icons") / "heart_rate_icon.png"
 if not LAYOUT_C_VALUE_FONT_PATH.exists():
     print(f"[WARN] Layout C value font NOT found: {LAYOUT_C_VALUE_FONT_PATH}")
 else:
@@ -264,7 +268,7 @@ class LayoutCDepthConfig:
     px_per_m: int = 20
 
     fade_enable: bool = True
-    fade_margin_px: int = 80
+    fade_margin_px: int = 70
     fade_edge_transparency: float = 0.95
 
     depth_min_m: int = 0
@@ -317,7 +321,6 @@ class LayoutCDepthConfig:
     value_x: int = 205
     arrow_y_offset: int = 35
 
-
 def render_layout_c_depth_module(
     base_img: Image.Image,
     current_depth_m: float,
@@ -325,11 +328,14 @@ def render_layout_c_depth_module(
     font_path: Optional[str] = None,
     max_depth_m: Optional[float] = None,
 ) -> Image.Image:
-    """Render Layout C depth module onto base_img (RGBA PIL Image)."""
+    """Render Layout C depth module onto base_img (RGBA PIL Image) with shadow."""
     if not cfg.enabled:
         return base_img
 
-    W, H = base_img.size
+    # Ensure RGBA
+    out = base_img.copy().convert("RGBA")
+    W, H = out.size
+
     y0 = int(cfg.window_top)
     y1 = int(H - cfg.window_bottom_margin)
     indicator_y = (y0 + y1) // 2
@@ -341,6 +347,7 @@ def render_layout_c_depth_module(
     moving = PILImage.new("RGBA", (W, moving_h), (0, 0, 0, 0))
     d = ImageDraw.Draw(moving)
 
+    # Fonts
     if font_path:
         num_font = ImageFont.truetype(str(font_path), cfg.num_font_size)
         if LAYOUT_C_VALUE_FONT_PATH.exists():
@@ -354,12 +361,14 @@ def render_layout_c_depth_module(
         value_font = ImageFont.load_default()
         unit_font = ImageFont.load_default()
 
+    # Depth scale range
     if max_depth_m is not None and np.isfinite(max_depth_m):
         depth_max_display = int(np.ceil(float(max_depth_m)))
         depth_max_display = max(cfg.depth_min_m, depth_max_display)
     else:
         depth_max_display = int(cfg.depth_max_m)
 
+    # Draw ticks + numbers onto moving canvas
     for m in range(cfg.depth_min_m, depth_max_display + 1):
         y = pad_top + m * cfg.px_per_m + cfg.scale_y_offset
         is_max = (m == depth_max_display)
@@ -380,8 +389,6 @@ def render_layout_c_depth_module(
 
         if (m % 10 == 0) or is_max:
             txt = str(m)
-            use_font = num_font
-
             num_x = cfg.num_left_margin + cfg.num_offset_x
             num_y_center = y + cfg.num_offset_y
 
@@ -393,14 +400,22 @@ def render_layout_c_depth_module(
                 num_x += int(getattr(cfg, "max_num_offset_x", 0))
                 num_y_center += int(getattr(cfg, "max_num_offset_y", 0))
 
-            d.text((int(num_x), int(num_y_center)), txt, font=use_font, fill=cfg.num_color, anchor="lm")
+            d.text(
+                (int(num_x), int(num_y_center)),
+                txt,
+                font=num_font,
+                fill=cfg.num_color,
+                anchor="lm",
+            )
 
+    # Move scale so current depth aligns to indicator
     offset_y = int(round(indicator_y - (pad_top + current_depth_m * cfg.px_per_m)))
 
     moved = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
     moved.alpha_composite(moving, (0, offset_y))
-    clipped = moved.crop((0, y0, W, y1))
+    clipped = moved.crop((0, y0, W, y1))  # RGBA
 
+    # Fade edges (on clipped)
     if cfg.fade_enable and cfg.fade_margin_px > 0 and 0.0 <= cfg.fade_edge_transparency < 1.0:
         win_h = clipped.size[1]
         fade = int(cfg.fade_margin_px)
@@ -420,12 +435,15 @@ def render_layout_c_depth_module(
         a = np.clip(a, 0, 255).astype(np.uint8)
         clipped.putalpha(Image.fromarray(a, mode="L"))
 
-    base_img.alpha_composite(clipped, (0, y0))
+    # --- Build a clean module layer (scale window + arrow + value + unit) ---
+    layer = PILImage.new("RGBA", out.size, (0, 0, 0, 0))
+    layer.alpha_composite(clipped, (0, y0))
 
-    draw = ImageDraw.Draw(base_img)
+    ld = ImageDraw.Draw(layer)
 
+    # Value text + arrow
     depth_txt = f"{current_depth_m:.1f}"
-    vb = draw.textbbox((0, 0), depth_txt, font=value_font)
+    vb = ld.textbbox((0, 0), depth_txt, font=value_font)
     v_w = vb[2] - vb[0]
     v_h = vb[3] - vb[1]
 
@@ -438,11 +456,17 @@ def render_layout_c_depth_module(
         (arrow_right_x, arrow_cy + cfg.arrow_h // 2),
         (arrow_right_x - cfg.arrow_w, arrow_cy),
     ]
-    draw.polygon(tri, fill=cfg.arrow_color)
-    draw.text((cfg.value_x, value_center_y - v_h // 2), depth_txt, font=value_font, fill=cfg.depth_value_color)
+    ld.polygon(tri, fill=cfg.arrow_color)
+    ld.text(
+        (int(cfg.value_x), int(value_center_y - v_h // 2)),
+        depth_txt,
+        font=value_font,
+        fill=cfg.depth_value_color,
+    )
 
+    # Unit
     unit_txt = "m"
-    ub = draw.textbbox((0, 0), unit_txt, font=unit_font)
+    ub = ld.textbbox((0, 0), unit_txt, font=unit_font)
     u_h = ub[3] - ub[1]
 
     if getattr(cfg, "unit_follow_value", True):
@@ -451,16 +475,26 @@ def render_layout_c_depth_module(
         if getattr(cfg, "unit_x_fixed", 0) > 0:
             unit_x = cfg.unit_x_fixed
         else:
-            v_max_bbox = draw.textbbox((0, 0), "88.8", font=value_font)
+            v_max_bbox = ld.textbbox((0, 0), "88.8", font=value_font)
             v_max_w = v_max_bbox[2] - v_max_bbox[0]
             unit_x = cfg.value_x + v_max_w + cfg.unit_gap_px
 
     unit_x = int(unit_x + cfg.unit_offset_x)
     unit_y = int((value_center_y - u_h // 2) + cfg.unit_offset_y)
 
-    draw.text((unit_x, unit_y), "m", font=unit_font, fill=cfg.depth_value_color)
-    return base_img
+    ld.text((unit_x, unit_y), "m", font=unit_font, fill=cfg.depth_value_color)
 
+    # Shadow on the module layer
+    layer = _apply_shadow_layer(
+        layer,
+        offset=(5, 6),
+        blur_radius=8,
+        shadow_color=(0, 0, 0, 130),
+    )
+
+    # Composite back
+    out.alpha_composite(layer)
+    return out
 
 # ============================================================
 # Layout C - Rate Module
@@ -480,8 +514,8 @@ class LayoutCRateConfig:
     decimals: int = 2
 
     label_color: tuple = (115, 255, 157, 255)   # Descent label
-    value_color: tuple = (170, 210, 230, 255)
-    unit_color: tuple = (170, 210, 230, 255)
+    value_color: tuple = (255, 255, 255, 255)   # original = (170, 210, 230, 255)
+    unit_color: tuple = (255, 255, 255, 255)
     arrow_color: tuple = (255, 255, 255, 255)
 
     label_ox: int = 70
@@ -500,6 +534,148 @@ class LayoutCRateConfig:
     arrow_h: int = 28
 
 
+
+@dataclass
+class LayoutCHeartRateConfig:
+    enabled: bool = True
+
+
+    # Global anchor (top-left)
+    global_x: int = 63
+    global_y: int = 150
+
+    # Icon
+    icon_size: int = 100
+
+    # Value text
+    value_font_size: int = 120
+    value_color: tuple = (255, 255, 255, 255)
+
+    # Offsets (relative to global)
+    icon_ox: int = 0
+    icon_oy: int = 0
+    value_ox: int = 110
+    value_oy: int = 10
+
+    # Animation
+    pulse_amp: float = 0.08
+
+
+
+
+@dataclass
+class LayoutCTimeConfig:
+    enabled: bool = True
+
+    # Global anchor (top-left of time text)
+    global_x: int = 80
+    global_y: int = 900
+
+    # Text style
+    font_size: int = 80
+    color: tuple = (255, 255, 255, 255)
+
+    # Colon uses base font due to Nereus lacking ":"
+    colon_font_size: Optional[int] = None  # None => same as font_size
+
+    # Optional fine-tune offsets
+    ox: int = 0
+    oy: int = 0
+    part_gap_px: int = 0  # extra gap between parts (mm ":" ss)
+
+# ==========================================================
+# Layout C - Centralized manual tuning block
+#   Adjust Layout C (Depth / Rate / Heart Rate / Shadow) here
+# ==========================================================
+
+@dataclass
+class LayoutCShadowConfig:
+    enabled: bool = True
+    offset: tuple = (4, 4)          # (dx, dy) pixels
+    blur_radius: int = 6            # Gaussian blur radius
+    color: tuple = (0, 0, 0, 120)   # RGBA
+
+@dataclass
+class LayoutCAllConfig:
+    depth: "LayoutCDepthConfig"
+    rate: "LayoutCRateConfig"
+    hr: "LayoutCHeartRateConfig"
+    time: "LayoutCTimeConfig"
+    shadow: LayoutCShadowConfig
+
+def get_layout_c_config() -> LayoutCAllConfig:
+    """Single source of truth for Layout C defaults."""
+    shadow_cfg = LayoutCShadowConfig(
+        enabled=False, # original = True
+        offset=(4, 4),
+        blur_radius=6,
+        color=(0, 0, 0, 120),
+    )
+
+    # Depth config is mostly driven by LayoutCDepthConfig defaults (tuned in dataclass)
+    depth_cfg = LayoutCDepthConfig()
+
+    # Rate config default (your tuned values)
+    rate_cfg = LayoutCRateConfig(
+        enabled=True,
+        global_x=720,
+        global_y=60,
+        label_font_size=48,
+        value_font_size=120,
+        unit_font_size=50,
+        decimals=1,
+        label_ox=50, label_oy=82,
+        arrow_ox=12, arrow_oy=87,
+        value_ox=50, value_oy=100,
+        unit_ox=-4, unit_oy=141,
+        unit_follow_value=True,
+        unit_gap_px=10,
+    )
+
+    # Heart rate config default (your tuned values)
+    hr_cfg = LayoutCHeartRateConfig(
+        enabled=True,
+        global_x=63,
+        global_y=150,
+        icon_size=100,
+        value_font_size=120,
+        value_color=(255, 255, 255, 255),
+        icon_ox=0,
+        icon_oy=0,
+        value_ox=110,
+        value_oy=10,
+        pulse_amp=0.08,
+    )
+
+
+    # Time config (Layout C): mm:ss under depth value (":" uses base font)
+    time_cfg = LayoutCTimeConfig(
+        enabled=True,
+    
+        global_x=204,
+        global_y=1743,
+    
+        font_size=75,
+        color=(255, 255, 255, 255),
+    
+        # ":" base font size (tunable)
+        colon_font_size=50,
+    
+        ox=0,
+        oy=-4,
+        part_gap_px=0,
+    )
+
+    return LayoutCAllConfig(depth=depth_cfg, rate=rate_cfg, hr=hr_cfg, time=time_cfg, shadow=shadow_cfg)
+
+# Default Layout C shadow parameters (used by all Layout C modules)
+_layout_c_shadow_defaults = get_layout_c_config().shadow
+LAYOUT_C_SHADOW_ENABLED = bool(_layout_c_shadow_defaults.enabled)
+LAYOUT_C_SHADOW_OFFSET = tuple(_layout_c_shadow_defaults.offset)
+LAYOUT_C_SHADOW_BLUR = int(_layout_c_shadow_defaults.blur_radius)
+LAYOUT_C_SHADOW_COLOR = tuple(_layout_c_shadow_defaults.color)
+
+
 def _load_font_path(path: Path, size: int) -> ImageFont.FreeTypeFont:
     try:
         if path and Path(path).exists():
@@ -508,6 +684,33 @@ def _load_font_path(path: Path, size: int) -> ImageFont.FreeTypeFont:
         pass
     return ImageFont.load_default()
 
+# ==========================================================
+# Shadow helper for Layout C modules
+# ==========================================================
+from PIL import ImageFilter
+
+def _apply_shadow_layer(
+    img: PILImage.Image,
+    offset: tuple = (4, 4),
+    blur_radius: int = 6,
+    shadow_color=(0, 0, 0, 120),
+) -> PILImage.Image:
+    """
+    Apply a drop shadow to the non-transparent area of img.
+    """
+    shadow = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
+    alpha = img.split()[-1]
+
+    # paint shadow using alpha as mask
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.bitmap((0, 0), alpha, fill=shadow_color)
+
+    shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
+
+    base = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
+    base.paste(shadow, offset, shadow)
+    base.paste(img, (0, 0), img)
+    return base
 
 def _try_render_textbbox(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont):
     try:
@@ -515,7 +718,6 @@ def _try_render_textbbox(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.I
     except Exception:
         w, h = font.getsize(text)
         return (0, 0, w, h)
-
 
 def render_layout_c_rate_module(
     base_img: PILImage.Image,
@@ -534,8 +736,9 @@ def render_layout_c_rate_module(
     if not cfg.enabled:
         return base_img
 
-    img = base_img
-    draw = ImageDraw.Draw(img)
+    # --- Draw on a dedicated transparent layer so shadow is clean ---
+    layer = PILImage.new("RGBA", base_img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
 
     if is_descent_override is not None:
         is_descent = bool(is_descent_override)
@@ -572,12 +775,12 @@ def render_layout_c_rate_module(
     # Label
     lx = gx + int(cfg.label_ox)
     ly = gy + int(cfg.label_oy)
-    draw.text((lx, ly), label_txt, font=label_font, fill=label_color)
+    draw.text((int(lx), int(ly)), label_txt, font=label_font, fill=label_color)
 
     # Value
     vx = gx + int(cfg.value_ox)
     vy = gy + int(cfg.value_oy)
-    draw.text((vx, vy), value_txt, font=value_font, fill=cfg.value_color)
+    draw.text((int(vx), int(vy)), value_txt, font=value_font, fill=cfg.value_color)
 
     # Unit
     vb = _try_render_textbbox(draw, value_txt, value_font)
@@ -591,10 +794,168 @@ def render_layout_c_rate_module(
     uy = gy + int(cfg.unit_oy)
     draw.text((int(ux), int(uy)), unit_txt, font=unit_font, fill=cfg.unit_color)
 
-    return img
+    # Shadow on the module layer (arrow + label + value + unit)
+    if LAYOUT_C_SHADOW_ENABLED:
+        layer = _apply_shadow_layer(
+            layer,
+            offset=LAYOUT_C_SHADOW_OFFSET,
+            blur_radius=LAYOUT_C_SHADOW_BLUR,
+            shadow_color=LAYOUT_C_SHADOW_COLOR,
+        )
+
+    # Composite back onto base image
+    out = base_img.copy().convert("RGBA")
+    out.alpha_composite(layer)
+    return out
 
 
 # ============================================================
+# Layout C Heart Rate module
+# ============================================================
+
+def _resize_icon(base_icon: PILImage.Image, scale: float, size: int) -> PILImage.Image:
+    s = max(1, int(round(float(size) * float(scale))))
+    try:
+        return base_icon.resize((s, s), resample=PILImage.BICUBIC)
+    except Exception:
+        return base_icon.resize((s, s))
+
+
+def render_layout_c_heart_rate_module(
+    base_img: PILImage.Image,
+    *,
+    hr_text: str,
+    cfg: LayoutCHeartRateConfig,
+    assets_dir: Path,
+    pulse_scale: float = 1.0,
+    show_value: bool = True,
+    show_icon: bool = True,
+) -> PILImage.Image:
+    if not cfg.enabled:
+        return base_img
+    if not show_icon:
+        return base_img
+
+    icon_path = (Path(assets_dir) / LAYOUT_C_HR_ICON_REL)
+    if not icon_path.exists():
+        return base_img
+    try:
+        icon_base = PILImage.open(str(icon_path)).convert("RGBA")
+    except Exception:
+        return base_img
+
+    # --- Draw HR module onto its own transparent layer (so shadow is clean) ---
+    layer = PILImage.new("RGBA", base_img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+
+    gx = int(cfg.global_x)
+    gy = int(cfg.global_y)
+    icon_size = int(cfg.icon_size)
+
+    # Icon (animated scale)
+    icon_scaled = _resize_icon(icon_base, float(pulse_scale), icon_size)
+    ox = (icon_size - icon_scaled.size[0]) // 2
+    oy = (icon_size - icon_scaled.size[1]) // 2
+    ix = gx + int(cfg.icon_ox) + ox
+    iy = gy + int(cfg.icon_oy) + oy
+    layer.paste(icon_scaled, (int(ix), int(iy)), icon_scaled)
+
+    # Value text
+    if show_value:
+        # use base font for "--", Nereus for bpm
+        if str(hr_text).strip() == "--":
+            value_font = _load_font_path(FONT_PATH, cfg.value_font_size)
+        else:
+            value_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, cfg.value_font_size)
+
+        vx = gx + int(cfg.value_ox)
+        vy = gy + int(cfg.value_oy)
+        draw.text((int(vx), int(vy)), str(hr_text), font=value_font, fill=cfg.value_color)
+
+    # Shadow on the module layer (icon + text)
+    if LAYOUT_C_SHADOW_ENABLED:
+        layer = _apply_shadow_layer(
+            layer,
+            offset=LAYOUT_C_SHADOW_OFFSET,
+            blur_radius=LAYOUT_C_SHADOW_BLUR,
+            shadow_color=LAYOUT_C_SHADOW_COLOR,
+        )
+
+    # Composite back onto base image
+    out = base_img.copy().convert("RGBA")
+    out.alpha_composite(layer)
+    return out
+
+
+
+
+
+
+def _format_mmss(seconds: float) -> str:
+    s = max(0, int(math.floor(float(seconds) + 1e-6)))
+    mm = s // 60
+    ss = s % 60
+    return f"{mm:02d}:{ss:02d}"
+
+
+def render_layout_c_time_module(
+    base_img: PILImage.Image,
+    *,
+    time_s: float,
+    cfg: LayoutCTimeConfig,
+) -> PILImage.Image:
+    """Render Layout C dive time (mm:ss). Uses Nereus for digits; ':' uses base font."""
+    if not cfg.enabled:
+        return base_img
+
+    text_mmss = _format_mmss(time_s)
+    mm_txt, ss_txt = text_mmss.split(":")
+    colon_txt = ":"
+
+    # Fonts
+    nereus_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, int(cfg.font_size))
+    colon_size = int(cfg.colon_font_size) if cfg.colon_font_size else int(cfg.font_size)
+    colon_font = _load_font_path(FONT_PATH, colon_size)  # base font so ":" renders
+
+    # Dedicated layer for clean shadow
+    layer = PILImage.new("RGBA", base_img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+
+    x0 = int(cfg.global_x) + int(cfg.ox)
+    y0 = int(cfg.global_y) + int(cfg.oy)
+
+    # Measure parts
+    b_mm = _try_render_textbbox(draw, mm_txt, nereus_font)
+    w_mm = b_mm[2] - b_mm[0]
+
+    b_col = _try_render_textbbox(draw, colon_txt, colon_font)
+    w_col = b_col[2] - b_col[0]
+
+    # Draw mm
+    draw.text((x0, y0), mm_txt, font=nereus_font, fill=cfg.color)
+
+    # Draw colon
+    x1 = x0 + w_mm + int(cfg.part_gap_px)
+    draw.text((x1, y0), colon_txt, font=colon_font, fill=cfg.color)
+
+    # Draw ss
+    x2 = x1 + w_col + int(cfg.part_gap_px)
+    draw.text((x2, y0), ss_txt, font=nereus_font, fill=cfg.color)
+
+    # Shadow (same global params as other Layout C modules)
+    if bool(LAYOUT_C_SHADOW_ENABLED):
+        layer = _apply_shadow_layer(
+            layer,
+            offset=LAYOUT_C_SHADOW_OFFSET,
+            blur_radius=int(LAYOUT_C_SHADOW_BLUR),
+            shadow_color=LAYOUT_C_SHADOW_COLOR,
+        )
+
+    out = base_img.copy().convert("RGBA")
+    out.alpha_composite(layer)
+    return out
+
+
 # Layout A: bottom bar
 # ============================================================
 
@@ -1030,6 +1391,7 @@ def render_video(
     dive_end_s: Optional[float] = None,
     progress_callback=None,
     layout_params: Optional[dict] = None,
+    hr_df: Optional[pd.DataFrame] = None,
 ):
     """
     progress_callback(p: float, message: str) updates Streamlit progress:
@@ -1060,6 +1422,12 @@ def render_video(
     t_load_end = time.perf_counter()
     print(f"[render_video] 載入 + resize 影片耗時 {t_load_end - t_load_start:.2f} 秒")
     update_progress(0.08, "載入影片完成")
+    
+    # ===============================
+    # HR animation timing base
+    # ===============================
+    _fps = float(getattr(clip, "fps", 30.0))
+    dt = 1.0 / _fps
 
     # =========================
     # Depth / rate prep
@@ -1269,23 +1637,85 @@ def render_video(
 
     base_font_path = FONT_PATH
 
-    layout_c_depth_cfg = LayoutCDepthConfig()
-    layout_c_rate_cfg = LayoutCRateConfig(
-        enabled=True,
-        global_x=720,
-        global_y=60,
-        label_font_size=48,
-        value_font_size=120,
-        unit_font_size=50,
-        decimals=1,
-        label_ox=50, label_oy=82,
-        arrow_ox=12, arrow_oy=87,
-        value_ox=50, value_oy=100,
-        unit_ox=-4, unit_oy=141,
-        unit_follow_value=True,
-        unit_gap_px=10,
-    )
+    # =========================
+    # Layout C configs (centralized)
+    # =========================
+    layout_c_all = get_layout_c_config()
+    layout_c_depth_cfg = layout_c_all.depth
+    layout_c_rate_cfg = layout_c_all.rate
+    hr_cfg = layout_c_all.hr
+    layout_c_time_cfg = layout_c_all.time
+    shadow_cfg = layout_c_all.shadow
 
+    # Optional overrides from layout_params (dict)
+    try:
+        if isinstance(layout_params, dict):
+            if isinstance(layout_params.get("layout_c_depth_cfg"), dict):
+                layout_c_depth_cfg = LayoutCDepthConfig(**layout_params["layout_c_depth_cfg"])
+            if isinstance(layout_params.get("layout_c_rate_cfg"), dict):
+                layout_c_rate_cfg = LayoutCRateConfig(**layout_params["layout_c_rate_cfg"])
+            # Backward-compatible key
+            if isinstance(layout_params.get("layout_c_hr_cfg"), dict):
+                hr_cfg = LayoutCHeartRateConfig(**layout_params["layout_c_hr_cfg"])
+            if isinstance(layout_params.get("layout_c_time_cfg"), dict):
+                layout_c_time_cfg = LayoutCTimeConfig(**layout_params["layout_c_time_cfg"])
+            if isinstance(layout_params.get("layout_c_shadow_cfg"), dict):
+                shadow_cfg = LayoutCShadowConfig(**layout_params["layout_c_shadow_cfg"])
+    except Exception:
+        pass
+
+    # Apply Layout C shadow (global for all Layout C modules)
+    global LAYOUT_C_SHADOW_ENABLED, LAYOUT_C_SHADOW_OFFSET, LAYOUT_C_SHADOW_BLUR, LAYOUT_C_SHADOW_COLOR
+    LAYOUT_C_SHADOW_ENABLED = bool(getattr(shadow_cfg, "enabled", False)) # original = True
+    LAYOUT_C_SHADOW_OFFSET = tuple(getattr(shadow_cfg, "offset", (4, 4)))
+    LAYOUT_C_SHADOW_BLUR = int(getattr(shadow_cfg, "blur_radius", 6))
+    LAYOUT_C_SHADOW_COLOR = tuple(getattr(shadow_cfg, "color", (0, 0, 0, 120)))
+
+# =========================
+    # Heart rate prep (Layout C)
+    # =========================
+    hr_available = False
+    hr_times = None
+    hr_values = None
+    hr_last_value = {"v": None}
+    hr_anim = {"phase": 0.0, "bpm_active": None, "bpm_pending": None, "switch_pending": False}
+    # hr_cfg is prepared above (Layout C configs)
+
+    if hr_df is not None and isinstance(hr_df, pd.DataFrame) and not hr_df.empty:
+        if "time_s" in hr_df.columns:
+            hr_col = "heart_rate" if "heart_rate" in hr_df.columns else ("hr" if "hr" in hr_df.columns else None)
+            if hr_col is not None:
+                _tmp = hr_df[["time_s", hr_col]].copy()
+                _tmp = _tmp.dropna()
+                _tmp["time_s"] = pd.to_numeric(_tmp["time_s"], errors="coerce")
+                _tmp[hr_col] = pd.to_numeric(_tmp[hr_col], errors="coerce")
+                _tmp = _tmp.dropna()
+                if not _tmp.empty:
+                    _tmp = _tmp.sort_values("time_s")
+                    hr_times = _tmp["time_s"].to_numpy(dtype=float)
+                    hr_values = _tmp[hr_col].to_numpy(dtype=float)
+                    hr_available = len(hr_times) > 1
+                    # --- Normalize HR time base if it looks like absolute / non-relative time_s ---
+                    # If HR time_s starts far beyond the video duration, treat it as "absolute" and shift to start at 0.
+                    try:
+                        if duration is not None and duration > 0 and len(hr_times) > 0:
+                            if float(hr_times[0]) > float(duration) + 2.0:
+                                hr_times = hr_times - float(hr_times[0])
+                    except Exception:
+                        pass
+
+
+    def hr_at(t_local: float) -> Optional[float]:
+        if not hr_available or hr_times is None or hr_values is None:
+            return None
+        try:
+            if t_local <= float(hr_times[0]):
+                return float(hr_values[0])
+            if t_local >= float(hr_times[-1]):
+                return float(hr_values[-1])
+            return float(np.interp(float(t_local), hr_times, hr_values))
+        except Exception:
+            return None
 
     def make_frame(t):
         if duration > 0:
@@ -1310,6 +1740,58 @@ def render_video(
 
         # Layout C (signed, Layout B-aligned: magnitude from df_rate + sign from depth trend)
         rate_val_signed_raw = rate_c_signed_like_layout_b(t)
+
+        # Heart rate (Layout C only)
+        hr_text = "--"
+        show_hr_module = False
+        show_hr_value = False
+        pulse_scale = 1.0
+
+        if layout.upper() == "C" and hr_cfg.enabled and hr_available:
+            t_data = float(t_global)
+            data_start = float(hr_times[0]) if (hr_times is not None and len(hr_times) > 0) else 0.0
+            data_end = float(hr_times[-1]) if (hr_times is not None and len(hr_times) > 0) else (float(duration) if duration else 0.0)
+
+
+            if t_data < data_start:
+                hr_text = "--"
+                show_hr_module = True
+                show_hr_value = True
+                pulse_scale = 1.0
+            else:
+                if t_data <= data_end:
+                    hr_now = hr_at(t_data)
+                    if hr_now is not None and not np.isnan(hr_now):
+                        hr_last_value["v"] = float(hr_now)
+
+                if hr_last_value["v"] is not None:
+                    hr_text = str(int(round(hr_last_value["v"])))
+                    show_hr_module = True
+                    show_hr_value = True
+
+                    target_bpm = float(hr_last_value["v"])
+                    if hr_anim["bpm_active"] is None:
+                        hr_anim["bpm_active"] = target_bpm
+                    if hr_anim["bpm_active"] is not None:
+                        if abs(target_bpm - float(hr_anim["bpm_active"])) > 0.1 and not hr_anim["switch_pending"]:
+                            hr_anim["bpm_pending"] = target_bpm
+                            hr_anim["switch_pending"] = True
+
+                    bpm_for_phase = float(hr_anim["bpm_active"] or 0.0)
+                    hr_anim["phase"] += 2.0 * math.pi * (bpm_for_phase / 60.0) * dt
+                    if hr_anim["phase"] >= 2.0 * math.pi:
+                        hr_anim["phase"] -= 2.0 * math.pi
+                        if hr_anim["switch_pending"]:
+                            hr_anim["bpm_active"] = hr_anim["bpm_pending"]
+                            hr_anim["switch_pending"] = False
+
+                    pulse_scale = 1.0 + float(hr_cfg.pulse_amp) * math.sin(float(hr_anim["phase"]))
+                else:
+                    hr_text = "--"
+                    show_hr_module = True
+                    show_hr_value = True
+                    pulse_scale = 1.0
+
 
         # Unified in-dive gating (A/B/C should share the same timing behavior)
         in_dive = (dive_start_s is not None and t_global >= dive_start_s) and (dive_end_s is None or t_global <= dive_end_s)
@@ -1408,12 +1890,30 @@ def render_video(
                 max_depth_m=best_depth,
             )
 
+            overlay = render_layout_c_time_module(
+                overlay,
+                time_s=float(max(0.0, t_global)),
+                cfg=layout_c_time_cfg,
+            )
+
             overlay = render_layout_c_rate_module(
                 base_img=overlay,
                 speed_mps_signed=rate_val_signed_c,
                 cfg=layout_c_rate_cfg,
                 is_descent_override=direction_is_descent,
             )
+
+            # Heart rate module (icon + value) - only when HR data exists
+            if show_hr_module:
+                overlay = render_layout_c_heart_rate_module(
+                    overlay,
+                    hr_text=hr_text,
+                    cfg=hr_cfg,
+                    assets_dir=assets_dir,
+                    pulse_scale=pulse_scale,
+                    show_value=show_hr_value,
+                    show_icon=True,
+                )
 
         # ===== Layout B =====
         if layout == "B":
