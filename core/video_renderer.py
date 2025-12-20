@@ -36,12 +36,6 @@ class LayoutCRateConfig:
     label_font_size: int = 48
     value_font_size: int = 120
     unit_font_size: int = 50
-    # Colors (RGBA)
-    label_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
-    value_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
-    unit_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
-    arrow_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
-
     decimals: int = 1
     label_ox: int = 50
     label_oy: int = 82
