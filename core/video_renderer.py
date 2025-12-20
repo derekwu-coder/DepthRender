@@ -661,7 +661,7 @@ def get_layout_c_config() -> LayoutCAllConfig:
         icon_oy=0,
         value_ox=110,
         value_oy=10,
-        pulse_amp=0.07,
+        pulse_amp=0.06,  # original = 0.08
     )
 
     # Time config (Layout C): mm:ss under depth value (":" uses base font)
