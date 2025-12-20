@@ -272,12 +272,12 @@ def _layout_a_defaults():
 class LayoutCDepthConfig:
     enabled: bool = True
 
-    window_top: int = 1590           # original = 1600
-    window_bottom_margin: int = 70   # original = 80
-    px_per_m: int = 16               # original = 20
+    window_top: int = 1600
+    window_bottom_margin: int = 80
+    px_per_m: int = 17              # original = 20
 
     fade_enable: bool = True
-    fade_margin_px: int = 80
+    fade_margin_px: int = 70
     fade_edge_transparency: float = 0.95
 
     depth_min_m: int = 0
@@ -599,10 +599,17 @@ class LayoutCTimeConfig:
 
 @dataclass
 class LayoutCShadowConfig:
-    enabled: bool = True
-    offset: tuple = (4, 4)          # (dx, dy) pixels
-    blur_radius: int = 6            # Gaussian blur radius
-    color: tuple = (0, 0, 0, 120)   # RGBA
+    """Layout C shadow control.
+
+    shadow_mode:
+      - "off": no shadow
+      - "solid": solid translucent shadow with dx/dy offset (no blur)
+    """
+    shadow_mode: str = "solid"       # "off" | "solid"
+    enabled: bool = True             # legacy switch; ignored when shadow_mode="off"
+    offset: tuple = (4, 4)           # (dx, dy) pixels
+    blur_radius: int = 0             # kept for backward-compat; not used in solid mode
+    color: tuple = (80, 80, 80, 120) # RGBA (solid gray translucent)
 
 @dataclass
 class LayoutCAllConfig:
@@ -615,10 +622,11 @@ class LayoutCAllConfig:
 def get_layout_c_config() -> LayoutCAllConfig:
     """Single source of truth for Layout C defaults."""
     shadow_cfg = LayoutCShadowConfig(
-        enabled=False, # original = True
+        shadow_mode="solid",
+        enabled=True,
         offset=(4, 4),
-        blur_radius=6,
-        color=(0, 0, 0, 120),
+        blur_radius=0,
+        color=(80, 80, 80, 120),
     )
 
     # Depth config is mostly driven by LayoutCDepthConfig defaults (tuned in dataclass)
@@ -653,9 +661,8 @@ def get_layout_c_config() -> LayoutCAllConfig:
         icon_oy=0,
         value_ox=110,
         value_oy=10,
-        pulse_amp=0.08,
+        pulse_amp=0.07,
     )
-
 
     # Time config (Layout C): mm:ss under depth value (":" uses base font)
     time_cfg = LayoutCTimeConfig(
@@ -713,8 +720,8 @@ def _apply_shadow_layer(
     # paint shadow using alpha as mask
     shadow_draw = ImageDraw.Draw(shadow)
     shadow_draw.bitmap((0, 0), alpha, fill=shadow_color)
-
-    shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
+    if blur_radius and int(blur_radius) > 0:
+        shadow = shadow.filter(ImageFilter.GaussianBlur(int(blur_radius)))
 
     base = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
     base.paste(shadow, offset, shadow)
@@ -872,7 +879,7 @@ def render_layout_c_heart_rate_module(
     # Value text
     if show_value:
         # use base font for "--", Nereus for bpm
-        if str(hr_text).strip() == "":   # original = "--"
+        if str(hr_text).strip() == "":     # original = "--"
             value_font = _load_font_path(FONT_PATH, cfg.value_font_size)
         else:
             value_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, cfg.value_font_size)
@@ -1435,8 +1442,8 @@ def render_video(
     # ===============================
     # HR animation timing base
     # ===============================
-    _fps = float(getattr(clip, "fps", 30.0)) # original = 30.0
-    dt = 1.0 / _fps    # original = 1.0
+    _fps = float(getattr(clip, "fps", 10.0)) # original = 30.0
+    dt = 1.0 / _fps
 
     # =========================
     # Depth / rate prep
@@ -1674,11 +1681,18 @@ def render_video(
         pass
 
     # Apply Layout C shadow (global for all Layout C modules)
-    global LAYOUT_C_SHADOW_ENABLED, LAYOUT_C_SHADOW_OFFSET, LAYOUT_C_SHADOW_BLUR, LAYOUT_C_SHADOW_COLOR
-    LAYOUT_C_SHADOW_ENABLED = bool(getattr(shadow_cfg, "enabled", False)) # original = True
+    global LAYOUT_C_SHADOW_MODE, LAYOUT_C_SHADOW_ENABLED, LAYOUT_C_SHADOW_OFFSET, LAYOUT_C_SHADOW_BLUR, LAYOUT_C_SHADOW_COLOR
+    LAYOUT_C_SHADOW_MODE = str(getattr(shadow_cfg, "shadow_mode", "solid")).strip().lower()
+    if LAYOUT_C_SHADOW_MODE == "off":
+        LAYOUT_C_SHADOW_ENABLED = False
+    else:
+        # "solid" (default) or any unknown value falls back to solid
+        LAYOUT_C_SHADOW_ENABLED = bool(getattr(shadow_cfg, "enabled", True))
+
     LAYOUT_C_SHADOW_OFFSET = tuple(getattr(shadow_cfg, "offset", (4, 4)))
-    LAYOUT_C_SHADOW_BLUR = int(getattr(shadow_cfg, "blur_radius", 6))
-    LAYOUT_C_SHADOW_COLOR = tuple(getattr(shadow_cfg, "color", (0, 0, 0, 120)))
+    # Solid shadow: no blur. Keep blur_radius only for backward-compat.
+    LAYOUT_C_SHADOW_BLUR = 0 if LAYOUT_C_SHADOW_MODE == "solid" else int(getattr(shadow_cfg, "blur_radius", 0))
+    LAYOUT_C_SHADOW_COLOR = tuple(getattr(shadow_cfg, "color", (80, 80, 80, 120)))
 
 # =========================
     # Heart rate prep (Layout C)
@@ -1774,7 +1788,7 @@ def render_video(
         rate_val_signed_raw = rate_c_signed_like_layout_b(t_use)
 
         # Heart rate (Layout C only)
-        hr_text = ""   # original = "--"
+        hr_text = ""    # original = "--"
         show_hr_module = False
         show_hr_value = False
         pulse_scale = 1.0
@@ -1786,7 +1800,7 @@ def render_video(
 
 
             if t_data < data_start:
-                hr_text = ""   # original = "--"
+                hr_text = ""    # original = "--"
                 show_hr_module = True
                 show_hr_value = True
                 pulse_scale = 1.0
@@ -1809,10 +1823,10 @@ def render_video(
                             hr_anim["bpm_pending"] = target_bpm
                             hr_anim["switch_pending"] = True
 
-                    # Use real elapsed time between HR overlay updates (overlay may be throttled)
-                    t_now = float(t_global)
+                    # Use real dt based on t_data to keep HR animation in sync even when overlay updates are decoupled
+                    t_now = float(t_data)
                     t_prev = hr_anim.get("t_prev")
-                    dt_real = 0.0 if t_prev is None else max(0.0, t_now - float(t_prev))
+                    dt_real = 0.0 if (t_prev is None) else max(0.0, t_now - float(t_prev))
                     hr_anim["t_prev"] = t_now
 
                     bpm_for_phase = float(hr_anim["bpm_active"] or 0.0)
@@ -1825,7 +1839,7 @@ def render_video(
 
                     pulse_scale = 1.0 + float(hr_cfg.pulse_amp) * math.sin(float(hr_anim["phase"]))
                 else:
-                    hr_text = ""   # original = "--"
+                    hr_text = ""    # original = "--"
                     show_hr_module = True
                     show_hr_value = True
                     pulse_scale = 1.0
@@ -1930,7 +1944,7 @@ def render_video(
 
             overlay = render_layout_c_time_module(
                 overlay,
-                time_s=float(elapsed_dive_time(t_use) or 0.0),
+                time_s=float(max(0.0, t_global)),
                 cfg=layout_c_time_cfg,
             )
 

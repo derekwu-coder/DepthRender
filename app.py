@@ -732,11 +732,11 @@ with st.container():
                     progress_bar.progress(percent, text=text)
 
                     # ETA info box under the progress bar
-                    if percent <= 40:
+                    if percent <= 26:                                  # original = 40
                         eta_box.info(tr("progress_eta_estimating"))
                         return
 
-                    if 41 <= percent <= 99:
+                    if 27 <= percent <= 99:                            # original = 41 - 99
                         elapsed = max(0.1, time.time() - render_t0)
                         if p > 0.0001:
                             total_est = elapsed / p
