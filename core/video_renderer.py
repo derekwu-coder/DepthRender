@@ -272,9 +272,9 @@ def _layout_a_defaults():
 class LayoutCDepthConfig:
     enabled: bool = True
 
-    window_top: int = 1580           # original = 1600
-    window_bottom_margin: int = 60   # original = 80
-    px_per_m: int = 18               # original = 20
+    window_top: int = 1590           # original = 1600
+    window_bottom_margin: int = 70   # original = 80
+    px_per_m: int = 16               # original = 20
 
     fade_enable: bool = True
     fade_margin_px: int = 80
@@ -872,7 +872,7 @@ def render_layout_c_heart_rate_module(
     # Value text
     if show_value:
         # use base font for "--", Nereus for bpm
-        if str(hr_text).strip() == "--":
+        if str(hr_text).strip() == "":   # original = "--"
             value_font = _load_font_path(FONT_PATH, cfg.value_font_size)
         else:
             value_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, cfg.value_font_size)
@@ -1435,8 +1435,8 @@ def render_video(
     # ===============================
     # HR animation timing base
     # ===============================
-    _fps = float(getattr(clip, "fps", 10.0)) # original = 30.0
-    dt = 1.0 / _fps
+    _fps = float(getattr(clip, "fps", 30.0)) # original = 30.0
+    dt = 1.0 / _fps    # original = 1.0
 
     # =========================
     # Depth / rate prep
@@ -1687,7 +1687,7 @@ def render_video(
     hr_times = None
     hr_values = None
     hr_last_value = {"v": None}
-    hr_anim = {"phase": 0.0, "bpm_active": None, "bpm_pending": None, "switch_pending": False}
+    hr_anim = {"phase": 0.0, "bpm_active": None, "bpm_pending": None, "switch_pending": False, "t_prev": None}
     # hr_cfg is prepared above (Layout C configs)
 
     if hr_df is not None and isinstance(hr_df, pd.DataFrame) and not hr_df.empty:
@@ -1774,7 +1774,7 @@ def render_video(
         rate_val_signed_raw = rate_c_signed_like_layout_b(t_use)
 
         # Heart rate (Layout C only)
-        hr_text = "--"
+        hr_text = ""   # original = "--"
         show_hr_module = False
         show_hr_value = False
         pulse_scale = 1.0
@@ -1786,7 +1786,7 @@ def render_video(
 
 
             if t_data < data_start:
-                hr_text = "--"
+                hr_text = ""   # original = "--"
                 show_hr_module = True
                 show_hr_value = True
                 pulse_scale = 1.0
@@ -1809,8 +1809,14 @@ def render_video(
                             hr_anim["bpm_pending"] = target_bpm
                             hr_anim["switch_pending"] = True
 
+                    # Use real elapsed time between HR overlay updates (overlay may be throttled)
+                    t_now = float(t_global)
+                    t_prev = hr_anim.get("t_prev")
+                    dt_real = 0.0 if t_prev is None else max(0.0, t_now - float(t_prev))
+                    hr_anim["t_prev"] = t_now
+
                     bpm_for_phase = float(hr_anim["bpm_active"] or 0.0)
-                    hr_anim["phase"] += 2.0 * math.pi * (bpm_for_phase / 60.0) * dt
+                    hr_anim["phase"] += 2.0 * math.pi * (bpm_for_phase / 60.0) * dt_real
                     if hr_anim["phase"] >= 2.0 * math.pi:
                         hr_anim["phase"] -= 2.0 * math.pi
                         if hr_anim["switch_pending"]:
@@ -1819,7 +1825,7 @@ def render_video(
 
                     pulse_scale = 1.0 + float(hr_cfg.pulse_amp) * math.sin(float(hr_anim["phase"]))
                 else:
-                    hr_text = "--"
+                    hr_text = ""   # original = "--"
                     show_hr_module = True
                     show_hr_value = True
                     pulse_scale = 1.0
