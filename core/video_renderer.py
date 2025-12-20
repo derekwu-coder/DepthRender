@@ -11,81 +11,17 @@ from dataclasses import dataclass
 import time
 
 # ============================================================
+# Overlay render throttling (decouple overlay updates from video fps)
+# ============================================================
+LAYOUT_AB_OVERLAY_FPS = 15   # Layout A & B overlay update fps
+LAYOUT_C_OVERLAY_FPS  = 10   # Layout C overlay update fps
+
+# Internal overlay cache (per layout): {"tq": float, "size": (w,h), "overlay": PIL.Image}
+_OVERLAY_CACHE = {}
+
+# ============================================================
 # Font paths
 # ============================================================
-
-
-# ==========================
-# Layout C config dataclasses (minimal, required for this standalone script)
-# ==========================
-from dataclasses import dataclass
-from typing import Tuple
-
-@dataclass
-class LayoutCShadowConfig:
-    enabled: bool = True
-    offset: Tuple[int, int] = (4, 4)
-    blur_radius: int = 6
-    color: Tuple[int, int, int, int] = (0, 0, 0, 120)
-
-@dataclass
-class LayoutCRateConfig:
-    enabled: bool = True
-    global_x: int = 720
-    global_y: int = 60
-    label_font_size: int = 48
-    value_font_size: int = 120
-    unit_font_size: int = 50
-    decimals: int = 1
-    label_ox: int = 50
-    label_oy: int = 82
-    arrow_ox: int = 12
-    arrow_oy: int = 87
-    value_ox: int = 50
-    value_oy: int = 100
-    unit_ox: int = -4
-    unit_oy: int = 141
-    unit_follow_value: bool = True
-    unit_gap_px: int = 10
-
-@dataclass
-class LayoutCHeartRateConfig:
-    enabled: bool = True
-    global_x: int = 63
-    global_y: int = 150
-    icon_size: int = 100
-    value_font_size: int = 120
-    value_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
-    icon_ox: int = 0
-    icon_oy: int = 0
-    value_ox: int = 110
-    value_oy: int = 10
-    pulse_amp: float = 0.08
-
-@dataclass
-@dataclass
-class LayoutCTimeConfig:
-    enabled: bool = True
-    global_x: int = 204
-    global_y: int = 1743
-    font_size: int = 75
-    colon_font_size: int = 75
-    color: Tuple[int, int, int, int] = (255, 255, 255, 255)
-
-    # Offsets relative to (global_x, global_y)
-    ox: int = 0
-    oy: int = 0
-
-    # Gap between "mm" ":" "ss" parts
-    part_gap_px: int = 6
-
-@dataclass
-class LayoutCAllConfig:
-    depth: 'LayoutCDepthConfig'
-    rate: LayoutCRateConfig
-    hr: LayoutCHeartRateConfig
-    time: LayoutCTimeConfig
-    shadow: LayoutCShadowConfig
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FONT_PATH = BASE_DIR / "assets" / "fonts" / "RobotoCondensedBold.ttf"
@@ -309,7 +245,7 @@ def _layout_a_defaults():
         "w": [165, 250, 135, 130, 125],
         "alpha": 0.75,
 
-        "shadow_enable": True,
+        "shadow_enable": True, # original = True
         "shadow_dx": 5,
         "shadow_dy": 8,
         "shadow_blur": 10,
@@ -336,12 +272,12 @@ def _layout_a_defaults():
 class LayoutCDepthConfig:
     enabled: bool = True
 
-    window_top: int = 1600
-    window_bottom_margin: int = 80
-    px_per_m: int = 20
+    window_top: int = 1580           # original = 1600
+    window_bottom_margin: int = 60   # original = 80
+    px_per_m: int = 18               # original = 20
 
     fade_enable: bool = True
-    fade_margin_px: int = 70
+    fade_margin_px: int = 80
     fade_edge_transparency: float = 0.95
 
     depth_min_m: int = 0
@@ -394,7 +330,6 @@ class LayoutCDepthConfig:
     value_x: int = 205
     arrow_y_offset: int = 35
 
-
 def render_layout_c_depth_module(
     base_img: Image.Image,
     current_depth_m: float,
@@ -402,26 +337,24 @@ def render_layout_c_depth_module(
     font_path: Optional[str] = None,
     max_depth_m: Optional[float] = None,
 ) -> Image.Image:
-    """
-    Render Layout C depth module with LOCAL shadow rendering.
-    Key optimizations:
-      - Render only within a limited module width (instead of full frame width).
-      - Avoid full-frame intermediate layers; operate on the depth-window region only.
-      - Apply shadow only on the module canvas, not on a full-frame layer.
-    """
+    """Render Layout C depth module onto base_img (RGBA PIL Image) with shadow."""
     if not cfg.enabled:
         return base_img
 
+    # Ensure RGBA
     out = base_img.copy().convert("RGBA")
-    W_full, H_full = out.size
+    W, H = out.size
 
     y0 = int(cfg.window_top)
-    y1 = int(H_full - cfg.window_bottom_margin)
-    win_h = max(1, y1 - y0)
-    indicator_y = win_h // 2
+    y1 = int(H - cfg.window_bottom_margin)
+    indicator_y = (y0 + y1) // 2
 
     pad_top = int(getattr(cfg, "scale_pad_top", 0))
     pad_bot = int(getattr(cfg, "scale_pad_bottom", 0))
+
+    moving_h = H + pad_top + pad_bot
+    moving = PILImage.new("RGBA", (W, moving_h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(moving)
 
     # Fonts
     if font_path:
@@ -437,67 +370,41 @@ def render_layout_c_depth_module(
         value_font = ImageFont.load_default()
         unit_font = ImageFont.load_default()
 
-    # Determine display depth max
+    # Depth scale range
     if max_depth_m is not None and np.isfinite(max_depth_m):
         depth_max_display = int(np.ceil(float(max_depth_m)))
         depth_max_display = max(cfg.depth_min_m, depth_max_display)
     else:
         depth_max_display = int(cfg.depth_max_m)
 
-    # Estimate module width (limit heavy pixel ops)
-    meas = PILImage.new("RGBA", (10, 10), (0, 0, 0, 0))
-    md = ImageDraw.Draw(meas)
-    depth_txt = f"{current_depth_m:.{int(getattr(cfg, 'depth_decimals', 0))}f}"
-    vb = _try_render_textbbox(md, depth_txt, value_font)
-    value_w = vb[2] - vb[0]
-    ub = _try_render_textbbox(md, "m", unit_font)
-    unit_w = ub[2] - ub[0]
-
-    rightmost = max(
-        int(getattr(cfg, "unit_x_fixed", int(cfg.unit_x_fixed))),
-        int(cfg.value_x) + int(getattr(cfg, "value_extra_right_pad", 0)) + value_w + int(getattr(cfg, "unit_gap_px", 8)) + unit_w + 40,
-        int(cfg.scale_x) + int(getattr(cfg, "scale_x_offset", 0)) + int(getattr(cfg, "tick_w_max", 40)) + 120,
-    )
-    module_w = int(min(W_full, max(200, rightmost)))
-
-    # --- 1) Build moving scale canvas (module_w only) ---
-    # Height needs to cover all tick positions. We draw from depth_min..depth_max_display
-    # so the max y is pad_top + depth_max_display*px_per_m + offsets.
-    max_tick_y = pad_top + depth_max_display * int(cfg.px_per_m) + int(getattr(cfg, "scale_y_offset", 0)) + 10
-    moving_h = int(max(win_h + pad_top + pad_bot + 10, max_tick_y + pad_bot + 10))
-    moving = PILImage.new("RGBA", (module_w, moving_h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(moving)
-
-    # Draw ticks + numbers
-    for m in range(int(cfg.depth_min_m), int(depth_max_display) + 1):
-        y = pad_top + m * int(cfg.px_per_m) + int(getattr(cfg, "scale_y_offset", 0))
-        is_max = (m == int(depth_max_display))
+    # Draw ticks + numbers onto moving canvas
+    for m in range(cfg.depth_min_m, depth_max_display + 1):
+        y = pad_top + m * cfg.px_per_m + cfg.scale_y_offset
+        is_max = (m == depth_max_display)
 
         if is_max:
-            tick_w = int(getattr(cfg, "tick_w_max", getattr(cfg, "tick_w", 26)))
-            tick_l = int(getattr(cfg, "tick_l_max", getattr(cfg, "tick_l", 4)))
+            w, L = cfg.tick_w_max, cfg.tick_len_max
+        elif m % 10 == 0:
+            w, L = cfg.tick_w_10m, cfg.tick_len_10m
+        elif m % 5 == 0:
+            w, L = cfg.tick_w_5m, cfg.tick_len_5m
         else:
-            tick_w = int(getattr(cfg, "tick_w", 26))
-            tick_l = int(getattr(cfg, "tick_l", 4))
+            w, L = cfg.tick_w_1m, cfg.tick_len_1m
 
-        x0_tick = int(cfg.scale_x) + int(getattr(cfg, "scale_x_offset", 0))
-        x1_tick = x0_tick + tick_w
+        center_x = cfg.scale_x + cfg.scale_x_offset
+        x1 = center_x - L // 2
+        x2 = center_x + L // 2
+        d.line([(x1, y), (x2, y)], fill=cfg.tick_color, width=w)
 
-        # Line
-        d.rectangle([x0_tick, y - tick_l, x1_tick, y + tick_l], fill=cfg.tick_color)
-
-        # Numbers (every num_step)
-        num_step = int(getattr(cfg, "num_step", 5))
-        show_num = (m % num_step == 0)
-
-        if show_num:
-            txt = str(int(m))
-            num_x = x1_tick + int(getattr(cfg, "num_gap_x", 10))
-            num_y_center = y
+        if (m % 10 == 0) or is_max:
+            txt = str(m)
+            num_x = cfg.num_left_margin + cfg.num_offset_x
+            num_y_center = y + cfg.num_offset_y
 
             if m == 0:
                 num_x += int(getattr(cfg, "zero_num_offset_x", 0))
                 num_y_center += int(getattr(cfg, "zero_num_offset_y", 0))
+
             if is_max:
                 num_x += int(getattr(cfg, "max_num_offset_x", 0))
                 num_y_center += int(getattr(cfg, "max_num_offset_y", 0))
@@ -510,92 +417,205 @@ def render_layout_c_depth_module(
                 anchor="lm",
             )
 
-    # --- 2) Crop window aligned so current depth is at indicator ---
-    crop_start = int(round(pad_top + float(current_depth_m) * float(cfg.px_per_m) + int(getattr(cfg, "scale_y_offset", 0)) - indicator_y))
-    crop_end = crop_start + win_h
+    # Move scale so current depth aligns to indicator
+    offset_y = int(round(indicator_y - (pad_top + current_depth_m * cfg.px_per_m)))
 
-    clipped = PILImage.new("RGBA", (module_w, win_h), (0, 0, 0, 0))
-    src_top = max(0, crop_start)
-    src_bot = min(moving_h, crop_end)
-    if src_bot > src_top:
-        part = moving.crop((0, src_top, module_w, src_bot))
-        dst_y = src_top - crop_start
-        clipped.paste(part, (0, int(dst_y)), part)
+    moved = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
+    moved.alpha_composite(moving, (0, offset_y))
+    clipped = moved.crop((0, y0, W, y1))  # RGBA
 
     # Fade edges (on clipped)
-    if cfg.fade_enable and int(getattr(cfg, "fade_margin_px", 0)) > 0 and 0.0 <= float(cfg.fade_edge_transparency) < 1.0:
-        win_h2 = clipped.size[1]
+    if cfg.fade_enable and cfg.fade_margin_px > 0 and 0.0 <= cfg.fade_edge_transparency < 1.0:
+        win_h = clipped.size[1]
         fade = int(cfg.fade_margin_px)
-        edge_alpha = int(round(255 * float(cfg.fade_edge_transparency)))
-        mask = PILImage.new("L", (module_w, win_h2), 255)
-        md2 = ImageDraw.Draw(mask)
+        fade = max(0, min(fade, win_h // 2))
 
-        # Top fade
-        for i in range(min(fade, win_h2)):
-            a = int(edge_alpha + (255 - edge_alpha) * (i / max(1, fade - 1)))
-            md2.rectangle([0, i, module_w, i], fill=a)
+        edge_opacity = 1.0 - float(cfg.fade_edge_transparency)
+        factors = np.ones((win_h,), dtype=np.float32)
 
-        # Bottom fade
-        for i in range(min(fade, win_h2)):
-            y = win_h2 - 1 - i
-            a = int(edge_alpha + (255 - edge_alpha) * (i / max(1, fade - 1)))
-            md2.rectangle([0, y, module_w, y], fill=a)
+        if fade > 0:
+            top = np.linspace(edge_opacity, 1.0, fade, dtype=np.float32)
+            factors[:fade] = top
+            bot = np.linspace(1.0, edge_opacity, fade, dtype=np.float32)
+            factors[win_h - fade:] = bot
 
-        clipped.putalpha(mask)
+        a = np.array(clipped.getchannel("A"), dtype=np.float32)
+        a *= factors[:, None]
+        a = np.clip(a, 0, 255).astype(np.uint8)
+        clipped.putalpha(Image.fromarray(a, mode="L"))
 
-    # --- 3) Compose module canvas (scale + value + arrow + unit) ---
-    layer = PILImage.new("RGBA", (module_w, win_h), (0, 0, 0, 0))
-    layer.alpha_composite(clipped, (0, 0))
+    # --- Build a clean module layer (scale window + arrow + value + unit) ---
+    layer = PILImage.new("RGBA", out.size, (0, 0, 0, 0))
+    layer.alpha_composite(clipped, (0, y0))
+
     ld = ImageDraw.Draw(layer)
 
-    # Value text + arrow (centered around indicator)
-    depth_dec = int(getattr(cfg, "depth_decimals", 0))
-    depth_txt = f"{float(current_depth_m):.{depth_dec}f}"
-    value_x = int(getattr(cfg, "value_x", 205))
-    value_y = int(indicator_y + int(getattr(cfg, "value_y_offset", -36)))
+    # Value text + arrow
+    depth_txt = f"{current_depth_m:.1f}"
+    vb = ld.textbbox((0, 0), depth_txt, font=value_font)
+    v_w = vb[2] - vb[0]
+    v_h = vb[3] - vb[1]
 
-    # Arrow beside value (optional, uses cfg.arrow_* settings)
-    arrow_w = int(getattr(cfg, "arrow_w", 24))
-    arrow_h = int(getattr(cfg, "arrow_h", 20))
-    arrow_gap = int(getattr(cfg, "arrow_to_value_gap", 17))
-    arrow_y = int(indicator_y + int(getattr(cfg, "arrow_y_offset", 35)))
+    value_center_y = indicator_y + cfg.value_y_offset
+    arrow_cy = value_center_y + cfg.arrow_y_offset
+    arrow_right_x = cfg.value_x - cfg.arrow_to_value_gap
 
-    # Draw arrow (down by default; direction can be overridden by cfg if you later choose)
-    ax = value_x - arrow_gap - arrow_w
-    ay = arrow_y
-    tri = [(ax, ay), (ax + arrow_w, ay), (ax + arrow_w // 2, ay + arrow_h)]
-    ld.polygon(tri, fill=getattr(cfg, "arrow_color", (220, 220, 220, 255)))
-
-    # Draw value
-    ld.text((value_x, value_y), depth_txt, font=value_font, fill=cfg.depth_value_color, anchor="lm")
+    tri = [
+        (arrow_right_x, arrow_cy - cfg.arrow_h // 2),
+        (arrow_right_x, arrow_cy + cfg.arrow_h // 2),
+        (arrow_right_x - cfg.arrow_w, arrow_cy),
+    ]
+    ld.polygon(tri, fill=cfg.arrow_color)
+    ld.text(
+        (int(cfg.value_x), int(value_center_y - v_h // 2)),
+        depth_txt,
+        font=value_font,
+        fill=cfg.depth_value_color,
+    )
 
     # Unit
-    if bool(getattr(cfg, "unit_follow_value", True)):
-        vb2 = _try_render_textbbox(ld, depth_txt, value_font)
-        value_w2 = vb2[2] - vb2[0]
-        unit_x = value_x + value_w2 + int(getattr(cfg, "unit_gap_px", 8)) + int(getattr(cfg, "unit_offset_x", 0))
-    else:
-        unit_x = int(getattr(cfg, "unit_x_fixed", 360)) + int(getattr(cfg, "unit_offset_x", 0))
-    unit_y = int(indicator_y + int(getattr(cfg, "unit_offset_y", 20)))
-    ld.text((unit_x, unit_y), "m", font=unit_font, fill=cfg.depth_value_color, anchor="lm")
+    unit_txt = "m"
+    ub = ld.textbbox((0, 0), unit_txt, font=unit_font)
+    u_h = ub[3] - ub[1]
 
-    # --- 4) Shadow only on module canvas and composite back ---
-    if LAYOUT_C_SHADOW_ENABLE:
-        shadowed, pad_x, pad_y = _apply_shadow_layer_local(
-            layer,
-            offset=(LAYOUT_C_SHADOW_OX, LAYOUT_C_SHADOW_OY),
-            blur_radius=LAYOUT_C_SHADOW_BLUR,
-            shadow_color=LAYOUT_C_SHADOW_COLOR,
-        )
-        out = _alpha_composite_at(out, shadowed, 0 - pad_x, y0 - pad_y)
+    if getattr(cfg, "unit_follow_value", True):
+        unit_x = cfg.value_x + v_w + cfg.unit_gap_px
     else:
-        out = _alpha_composite_at(out, layer, 0, y0)
+        if getattr(cfg, "unit_x_fixed", 0) > 0:
+            unit_x = cfg.unit_x_fixed
+        else:
+            v_max_bbox = ld.textbbox((0, 0), "88.8", font=value_font)
+            v_max_w = v_max_bbox[2] - v_max_bbox[0]
+            unit_x = cfg.value_x + v_max_w + cfg.unit_gap_px
 
+    unit_x = int(unit_x + cfg.unit_offset_x)
+    unit_y = int((value_center_y - u_h // 2) + cfg.unit_offset_y)
+
+    ld.text((unit_x, unit_y), "m", font=unit_font, fill=cfg.depth_value_color)
+
+    # Shadow on the module layer
+    layer = _apply_shadow_layer(
+        layer,
+        offset=(5, 6),
+        blur_radius=8,
+        shadow_color=(0, 0, 0, 130),
+    )
+
+    # Composite back
+    out.alpha_composite(layer)
     return out
+
+# ============================================================
+# Layout C - Rate Module
+# ============================================================
+
+@dataclass
+class LayoutCRateConfig:
+    enabled: bool = True  # original = True
+
+    global_x: int = 720
+    global_y: int = 60
+
+    label_font_size: int = 52
+    value_font_size: int = 118
+    unit_font_size: int = 58
+
+    decimals: int = 2
+
+    label_color: tuple = (115, 255, 157, 255)   # Descent label
+    value_color: tuple = (255, 255, 255, 255)   # original = (170, 210, 230, 255)
+    unit_color: tuple = (255, 255, 255, 255)
+    arrow_color: tuple = (255, 255, 255, 255)
+
+    label_ox: int = 70
+    label_oy: int = 0
+    arrow_ox: int = 20
+    arrow_oy: int = 0
+    value_ox: int = 30
+    value_oy: int = 65
+    unit_ox: int = 10
+    unit_oy: int = 120
+
+    unit_follow_value: bool = True
+    unit_gap_px: int = 10
+
+    arrow_w: int = 26
+    arrow_h: int = 28
+
+
+
+@dataclass
+class LayoutCHeartRateConfig:
+    enabled: bool = True
+
+
+    # Global anchor (top-left)
+    global_x: int = 63
+    global_y: int = 150
+
+    # Icon
+    icon_size: int = 100
+
+    # Value text
+    value_font_size: int = 120
+    value_color: tuple = (255, 255, 255, 255)
+
+    # Offsets (relative to global)
+    icon_ox: int = 0
+    icon_oy: int = 0
+    value_ox: int = 110
+    value_oy: int = 10
+
+    # Animation
+    pulse_amp: float = 0.08
+
+
+
+
+@dataclass
+class LayoutCTimeConfig:
+    enabled: bool = True
+
+    # Global anchor (top-left of time text)
+    global_x: int = 80
+    global_y: int = 900
+
+    # Text style
+    font_size: int = 80
+    color: tuple = (255, 255, 255, 255)
+
+    # Colon uses base font due to Nereus lacking ":"
+    colon_font_size: Optional[int] = None  # None => same as font_size
+
+    # Optional fine-tune offsets
+    ox: int = 0
+    oy: int = 0
+    part_gap_px: int = 0  # extra gap between parts (mm ":" ss)
+
+# ==========================================================
+# Layout C - Centralized manual tuning block
+#   Adjust Layout C (Depth / Rate / Heart Rate / Shadow) here
+# ==========================================================
+
+@dataclass
+class LayoutCShadowConfig:
+    enabled: bool = True
+    offset: tuple = (4, 4)          # (dx, dy) pixels
+    blur_radius: int = 6            # Gaussian blur radius
+    color: tuple = (0, 0, 0, 120)   # RGBA
+
+@dataclass
+class LayoutCAllConfig:
+    depth: "LayoutCDepthConfig"
+    rate: "LayoutCRateConfig"
+    hr: "LayoutCHeartRateConfig"
+    time: "LayoutCTimeConfig"
+    shadow: LayoutCShadowConfig
+
 def get_layout_c_config() -> LayoutCAllConfig:
     """Single source of truth for Layout C defaults."""
     shadow_cfg = LayoutCShadowConfig(
-        enabled=True, # original = True
+        enabled=False, # original = True
         offset=(4, 4),
         blur_radius=6,
         color=(0, 0, 0, 120),
@@ -663,16 +683,6 @@ LAYOUT_C_SHADOW_ENABLED = bool(_layout_c_shadow_defaults.enabled)
 LAYOUT_C_SHADOW_OFFSET = tuple(_layout_c_shadow_defaults.offset)
 LAYOUT_C_SHADOW_BLUR = int(_layout_c_shadow_defaults.blur_radius)
 LAYOUT_C_SHADOW_COLOR = tuple(_layout_c_shadow_defaults.color)
-# Backwards-compatible aliases (some editors/linters expect these names)
-LAYOUT_C_SHADOW_ENABLE = LAYOUT_C_SHADOW_ENABLED
-LAYOUT_C_SHADOW_OX = int(LAYOUT_C_SHADOW_OFFSET[0])
-LAYOUT_C_SHADOW_OY = int(LAYOUT_C_SHADOW_OFFSET[1])
-
-# Font path aliases / fallbacks
-DEFAULT_FONT_PATH = str(FONT_PATH)
-LAYOUT_C_HR_VALUE_FONT_PATH = str(LAYOUT_C_VALUE_FONT_PATH if 'LAYOUT_C_VALUE_FONT_PATH' in globals() and Path(LAYOUT_C_VALUE_FONT_PATH).exists() else FONT_PATH)
-
-
 
 
 def _load_font_path(path: Path, size: int) -> ImageFont.FreeTypeFont:
@@ -688,75 +698,35 @@ def _load_font_path(path: Path, size: int) -> ImageFont.FreeTypeFont:
 # ==========================================================
 from PIL import ImageFilter
 
-
-def _apply_shadow_layer_local(
+def _apply_shadow_layer(
     img: PILImage.Image,
     offset: tuple = (4, 4),
     blur_radius: int = 6,
     shadow_color=(0, 0, 0, 120),
-) -> tuple[PILImage.Image, int, int]:
+) -> PILImage.Image:
     """
-    Apply a drop shadow to the non-transparent area of `img` on a LOCAL (small) canvas.
-
-    Returns:
-      (shadowed_img, pad_x, pad_y)
-    Where:
-      - shadowed_img is larger than `img` due to padding for blur and offset
-      - pad_x/pad_y indicate where the original `img`'s top-left is located inside shadowed_img
-        so that callers can paste shadowed_img at (global_x - pad_x, global_y - pad_y) to align.
+    Apply a drop shadow to the non-transparent area of img.
     """
-    img = img.convert("RGBA")
-    w, h = img.size
-    ox, oy = int(offset[0]), int(offset[1])
-    br = max(0, int(blur_radius))
-
-    # Padding to avoid blur clipping.
-    pad = max(2, br * 3 + max(abs(ox), abs(oy)) + 2)
-    W = w + pad * 2
-    H = h + pad * 2
-
-    # Shadow mask from alpha
+    shadow = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
     alpha = img.split()[-1]
-    shadow_mask = PILImage.new("L", (W, H), 0)
-    shadow_mask.paste(alpha, (pad, pad))
 
-    # Colored shadow layer
-    shadow_rgba = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
-    shadow_rgba_draw = ImageDraw.Draw(shadow_rgba)
-    shadow_rgba_draw.bitmap((0, 0), shadow_mask, fill=shadow_color)
+    # paint shadow using alpha as mask
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.bitmap((0, 0), alpha, fill=shadow_color)
 
-    if br > 0:
-        shadow_rgba = shadow_rgba.filter(ImageFilter.GaussianBlur(br))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
 
-    # Composite shadow (with offset) + original
-    out = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
-    out.alpha_composite(shadow_rgba, (ox, oy))
+    base = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
+    base.paste(shadow, offset, shadow)
+    base.paste(img, (0, 0), img)
+    return base
 
-    tmp = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
-    tmp.paste(img, (pad, pad), img)
-    out.alpha_composite(tmp, (0, 0))
-
-    return out, pad, pad
-
-
-def _alpha_composite_at(dst: PILImage.Image, src: PILImage.Image, x: int, y: int) -> PILImage.Image:
-    """
-    Alpha composite `src` onto `dst` at (x, y). Safe for out-of-bounds; clips automatically.
-    """
-    out = dst
-    try:
-        out.alpha_composite(src, (int(x), int(y)))
-    except TypeError:
-        # Older Pillow fallback: manual paste with mask
-        out.paste(src, (int(x), int(y)), src)
-    return out
 def _try_render_textbbox(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont):
     try:
         return draw.textbbox((0, 0), text, font=font)
     except Exception:
         w, h = font.getsize(text)
         return (0, 0, w, h)
-
 
 def render_layout_c_rate_module(
     base_img: PILImage.Image,
@@ -766,16 +736,19 @@ def render_layout_c_rate_module(
     is_descent_override: Optional[bool] = None,
 ) -> PILImage.Image:
     """
-    Layout C Rate module (LOCAL shadow rendering):
-      - Render onto a small local canvas (module bbox) instead of a full-frame layer.
-      - Apply shadow on the small canvas only (major speed-up).
+    Layout C Rate module:
+      - Label: Klavika (Descent Rate / Ascent Rate)
+      - Value: Nereus (same as depth numeric)
+      - Unit: project default font (RobotoCondensedBold) so "/" renders and size is controllable
+      - Direction: arrow + label (value displayed as absolute)
     """
     if not cfg.enabled:
         return base_img
 
-    out = base_img.copy().convert("RGBA")
+    # --- Draw on a dedicated transparent layer so shadow is clean ---
+    layer = PILImage.new("RGBA", base_img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
 
-    # Determine direction
     if is_descent_override is not None:
         is_descent = bool(is_descent_override)
     else:
@@ -790,115 +763,71 @@ def render_layout_c_rate_module(
 
     label_font = _load_font_path(LAYOUT_C_RATE_FONT_PATH, cfg.label_font_size)
     value_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, cfg.value_font_size)
-    unit_font = _load_font_path(DEFAULT_FONT_PATH, cfg.unit_font_size)
+    unit_font = load_font(cfg.unit_font_size)  # Roboto => "/" OK and size controllable
 
-    # --- Measure ---
-    meas = PILImage.new("RGBA", (10, 10), (0, 0, 0, 0))
-    md = ImageDraw.Draw(meas)
+    gx = int(cfg.global_x)
+    gy = int(cfg.global_y)
 
-    lb = _try_render_textbbox(md, label_txt, label_font)
-    label_w, label_h = lb[2] - lb[0], lb[3] - lb[1]
+    # Arrow
+    ax = gx + int(cfg.arrow_ox)
+    ay = gy + int(cfg.arrow_oy)
+    aw = int(cfg.arrow_w)
+    ah = int(cfg.arrow_h)
 
-    vb = _try_render_textbbox(md, value_txt, value_font)
-    value_w, value_h = vb[2] - vb[0], vb[3] - vb[1]
-
-    ub = _try_render_textbbox(md, unit_txt, unit_font)
-    unit_w, unit_h = ub[2] - ub[0], ub[3] - ub[1]
-
-    aw, ah = int(cfg.arrow_w), int(cfg.arrow_h)
-
-    # Compute unit X if it follows value
-    if bool(getattr(cfg, "unit_follow_value", True)):
-        unit_x = int(cfg.value_ox) + value_w + int(getattr(cfg, "unit_gap_px", 10))
-    else:
-        unit_x = int(getattr(cfg, "unit_x_fixed", int(cfg.unit_ox)))
-
-    # Local canvas extents
-    min_x = min(int(cfg.arrow_ox), int(cfg.label_ox), int(cfg.value_ox), int(cfg.unit_ox), unit_x, 0)
-    min_y = min(int(cfg.arrow_oy), int(cfg.label_oy), int(cfg.value_oy), int(cfg.unit_oy), 0)
-
-    max_x = max(
-        int(cfg.arrow_ox) + aw,
-        int(cfg.label_ox) + label_w,
-        int(cfg.value_ox) + value_w,
-        unit_x + unit_w,
-    )
-    max_y = max(
-        int(cfg.arrow_oy) + ah,
-        int(cfg.label_oy) + label_h,
-        int(cfg.value_oy) + value_h,
-        int(cfg.unit_oy) + unit_h,
-    )
-
-    pad_inner = 6
-    w = int(max_x - min_x + pad_inner * 2)
-    h = int(max_y - min_y + pad_inner * 2)
-
-    # Local origin shift so all coordinates are positive
-    sx = -int(min_x) + pad_inner
-    sy = -int(min_y) + pad_inner
-
-    layer = PILImage.new("RGBA", (w, h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
-
-    # Arrow triangle
-    ax = sx + int(cfg.arrow_ox)
-    ay = sy + int(cfg.arrow_oy)
     if is_descent:
         tri = [(ax, ay), (ax + aw, ay), (ax + aw // 2, ay + ah)]          # down
     else:
-        tri = [(ax + aw // 2, ay), (ax, ay + ah), (ax + aw, ay + ah)]     # up
+        tri = [(ax + aw // 2, ay), (ax, ay + ah), (ax + aw, ay + ah)]    # up
+
     draw.polygon(tri, fill=cfg.arrow_color)
 
     # Label
-    draw.text(
-        (sx + int(cfg.label_ox), sy + int(cfg.label_oy)),
-        label_txt,
-        font=label_font,
-        fill=label_color,
-        anchor="lm",
-    )
+    lx = gx + int(cfg.label_ox)
+    ly = gy + int(cfg.label_oy)
+    draw.text((int(lx), int(ly)), label_txt, font=label_font, fill=label_color)
 
     # Value
-    draw.text(
-        (sx + int(cfg.value_ox), sy + int(cfg.value_oy)),
-        value_txt,
-        font=value_font,
-        fill=cfg.value_color,
-        anchor="lm",
-    )
+    vx = gx + int(cfg.value_ox)
+    vy = gy + int(cfg.value_oy)
+    draw.text((int(vx), int(vy)), value_txt, font=value_font, fill=cfg.value_color)
 
     # Unit
-    draw.text(
-        (sx + int(unit_x), sy + int(cfg.unit_oy)),
-        unit_txt,
-        font=unit_font,
-        fill=cfg.unit_color,
-        anchor="lm",
-    )
+    vb = _try_render_textbbox(draw, value_txt, value_font)
+    value_w = vb[2] - vb[0]
 
-    # Shadow (local only)
-    if LAYOUT_C_SHADOW_ENABLE and bool(getattr(cfg, "shadow_enable", True)):
-        shadowed, pad_x, pad_y = _apply_shadow_layer_local(
+    if bool(cfg.unit_follow_value):
+        ux = vx + value_w + int(cfg.unit_gap_px) + int(cfg.unit_ox)
+    else:
+        ux = vx + int(cfg.unit_ox)
+
+    uy = gy + int(cfg.unit_oy)
+    draw.text((int(ux), int(uy)), unit_txt, font=unit_font, fill=cfg.unit_color)
+
+    # Shadow on the module layer (arrow + label + value + unit)
+    if LAYOUT_C_SHADOW_ENABLED:
+        layer = _apply_shadow_layer(
             layer,
-            offset=(LAYOUT_C_SHADOW_OX, LAYOUT_C_SHADOW_OY),
+            offset=LAYOUT_C_SHADOW_OFFSET,
             blur_radius=LAYOUT_C_SHADOW_BLUR,
             shadow_color=LAYOUT_C_SHADOW_COLOR,
         )
-        gx = int(cfg.global_x) - pad_x
-        gy = int(cfg.global_y) - pad_y
-        out = _alpha_composite_at(out, shadowed, gx, gy)
-    else:
-        out = _alpha_composite_at(out, layer, int(cfg.global_x), int(cfg.global_y))
 
+    # Composite back onto base image
+    out = base_img.copy().convert("RGBA")
+    out.alpha_composite(layer)
     return out
+
+
+# ============================================================
+# Layout C Heart Rate module
+# ============================================================
+
 def _resize_icon(base_icon: PILImage.Image, scale: float, size: int) -> PILImage.Image:
     s = max(1, int(round(float(size) * float(scale))))
     try:
         return base_icon.resize((s, s), resample=PILImage.BICUBIC)
     except Exception:
         return base_icon.resize((s, s))
-
 
 
 def render_layout_c_heart_rate_module(
@@ -911,89 +840,71 @@ def render_layout_c_heart_rate_module(
     show_value: bool = True,
     show_icon: bool = True,
 ) -> PILImage.Image:
-    """
-    Layout C Heart Rate module (LOCAL shadow rendering).
-    Renders onto a small canvas and composites at cfg.global_x/cfg.global_y.
-    """
     if not cfg.enabled:
         return base_img
     if not show_icon:
         return base_img
 
-    out = base_img.copy().convert("RGBA")
-
     icon_path = (Path(assets_dir) / LAYOUT_C_HR_ICON_REL)
     if not icon_path.exists():
-        return out
+        return base_img
+    try:
+        icon_base = PILImage.open(str(icon_path)).convert("RGBA")
+    except Exception:
+        return base_img
 
-    icon_base = PILImage.open(str(icon_path)).convert("RGBA")
+    # --- Draw HR module onto its own transparent layer (so shadow is clean) ---
+    layer = PILImage.new("RGBA", base_img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
 
     gx = int(cfg.global_x)
     gy = int(cfg.global_y)
     icon_size = int(cfg.icon_size)
 
-    # Fonts
-    value_font = _load_font_path(LAYOUT_C_HR_VALUE_FONT_PATH, int(cfg.value_font_size))
-
-    # Measure value text
-    meas = PILImage.new("RGBA", (10, 10), (0, 0, 0, 0))
-    md = ImageDraw.Draw(meas)
-    vb = _try_render_textbbox(md, str(hr_text), value_font)
-    value_w, value_h = vb[2] - vb[0], vb[3] - vb[1]
-
-    # Local extents
-    min_x = min(int(cfg.icon_ox), int(cfg.value_ox), 0)
-    min_y = min(int(cfg.icon_oy), int(cfg.value_oy), 0)
-
-    max_x = max(int(cfg.icon_ox) + icon_size, int(cfg.value_ox) + value_w)
-    max_y = max(int(cfg.icon_oy) + icon_size, int(cfg.value_oy) + value_h)
-
-    pad_inner = 6
-    w = int(max_x - min_x + pad_inner * 2)
-    h = int(max_y - min_y + pad_inner * 2)
-    sx = -int(min_x) + pad_inner
-    sy = -int(min_y) + pad_inner
-
-    layer = PILImage.new("RGBA", (w, h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
-
     # Icon (animated scale)
     icon_scaled = _resize_icon(icon_base, float(pulse_scale), icon_size)
     ox = (icon_size - icon_scaled.size[0]) // 2
     oy = (icon_size - icon_scaled.size[1]) // 2
-    ix = sx + int(cfg.icon_ox) + ox
-    iy = sy + int(cfg.icon_oy) + oy
+    ix = gx + int(cfg.icon_ox) + ox
+    iy = gy + int(cfg.icon_oy) + oy
     layer.paste(icon_scaled, (int(ix), int(iy)), icon_scaled)
 
     # Value text
     if show_value:
-        draw.text(
-            (sx + int(cfg.value_ox), sy + int(cfg.value_oy)),
-            str(hr_text),
-            font=value_font,
-            fill=cfg.value_color,
-            anchor="lm",
-        )
+        # use base font for "--", Nereus for bpm
+        if str(hr_text).strip() == "--":
+            value_font = _load_font_path(FONT_PATH, cfg.value_font_size)
+        else:
+            value_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, cfg.value_font_size)
 
-    # Shadow (local only)
-    if LAYOUT_C_SHADOW_ENABLE:
-        shadowed, pad_x, pad_y = _apply_shadow_layer_local(
+        vx = gx + int(cfg.value_ox)
+        vy = gy + int(cfg.value_oy)
+        draw.text((int(vx), int(vy)), str(hr_text), font=value_font, fill=cfg.value_color)
+
+    # Shadow on the module layer (icon + text)
+    if LAYOUT_C_SHADOW_ENABLED:
+        layer = _apply_shadow_layer(
             layer,
-            offset=(LAYOUT_C_SHADOW_OX, LAYOUT_C_SHADOW_OY),
+            offset=LAYOUT_C_SHADOW_OFFSET,
             blur_radius=LAYOUT_C_SHADOW_BLUR,
             shadow_color=LAYOUT_C_SHADOW_COLOR,
         )
-        out = _alpha_composite_at(out, shadowed, gx - pad_x, gy - pad_y)
-    else:
-        out = _alpha_composite_at(out, layer, gx, gy)
 
+    # Composite back onto base image
+    out = base_img.copy().convert("RGBA")
+    out.alpha_composite(layer)
     return out
+
+
+
+
+
+
 def _format_mmss(seconds: float) -> str:
     s = max(0, int(math.floor(float(seconds) + 1e-6)))
     mm = s // 60
     ss = s % 60
     return f"{mm:02d}:{ss:02d}"
-
 
 
 def render_layout_c_time_module(
@@ -1002,68 +913,61 @@ def render_layout_c_time_module(
     time_s: float,
     cfg: LayoutCTimeConfig,
 ) -> PILImage.Image:
-    """
-    Render Layout C dive time (mm:ss) with LOCAL shadow rendering.
-    """
+    """Render Layout C dive time (mm:ss). Uses Nereus for digits; ':' uses base font."""
     if not cfg.enabled:
         return base_img
-
-    out = base_img.copy().convert("RGBA")
 
     text_mmss = _format_mmss(time_s)
     mm_txt, ss_txt = text_mmss.split(":")
     colon_txt = ":"
 
+    # Fonts
     nereus_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, int(cfg.font_size))
     colon_size = int(cfg.colon_font_size) if cfg.colon_font_size else int(cfg.font_size)
     colon_font = _load_font_path(FONT_PATH, colon_size)  # base font so ":" renders
 
-    # Measure
-    meas = PILImage.new("RGBA", (10, 10), (0, 0, 0, 0))
-    md = ImageDraw.Draw(meas)
-    b_mm = _try_render_textbbox(md, mm_txt, nereus_font)
-    b_col = _try_render_textbbox(md, colon_txt, colon_font)
-    b_ss = _try_render_textbbox(md, ss_txt, nereus_font)
-
-    w_mm, h_mm = b_mm[2]-b_mm[0], b_mm[3]-b_mm[1]
-    w_col, h_col = b_col[2]-b_col[0], b_col[3]-b_col[1]
-    w_ss, h_ss = b_ss[2]-b_ss[0], b_ss[3]-b_ss[1]
-
-    gap = int(getattr(cfg, "part_gap_px", 6))
-    total_w = w_mm + gap + w_col + gap + w_ss
-    total_h = max(h_mm, h_col, h_ss)
-
-    pad_inner = 6
-    layer = PILImage.new("RGBA", (total_w + pad_inner*2, total_h + pad_inner*2), (0, 0, 0, 0))
+    # Dedicated layer for clean shadow
+    layer = PILImage.new("RGBA", base_img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
 
-    x = pad_inner
-    y = pad_inner
+    x0 = int(cfg.global_x) + int(cfg.ox)
+    y0 = int(cfg.global_y) + int(cfg.oy)
+
+    # Measure parts
+    b_mm = _try_render_textbbox(draw, mm_txt, nereus_font)
+    w_mm = b_mm[2] - b_mm[0]
+
+    b_col = _try_render_textbbox(draw, colon_txt, colon_font)
+    w_col = b_col[2] - b_col[0]
 
     # Draw mm
-    draw.text((x, y + (total_h - h_mm)//2), mm_txt, font=nereus_font, fill=cfg.color, anchor="lt")
-    x += w_mm + gap
+    draw.text((x0, y0), mm_txt, font=nereus_font, fill=cfg.color)
+
     # Draw colon
-    draw.text((x, y + (total_h - h_col)//2), colon_txt, font=colon_font, fill=cfg.color, anchor="lt")
-    x += w_col + gap
+    x1 = x0 + w_mm + int(cfg.part_gap_px)
+    draw.text((x1, y0), colon_txt, font=colon_font, fill=cfg.color)
+
     # Draw ss
-    draw.text((x, y + (total_h - h_ss)//2), ss_txt, font=nereus_font, fill=cfg.color, anchor="lt")
+    x2 = x1 + w_col + int(cfg.part_gap_px)
+    draw.text((x2, y0), ss_txt, font=nereus_font, fill=cfg.color)
 
-    gx = int(cfg.global_x) + int(cfg.ox)
-    gy = int(cfg.global_y) + int(cfg.oy)
-
-    if LAYOUT_C_SHADOW_ENABLE:
-        shadowed, pad_x, pad_y = _apply_shadow_layer_local(
+    # Shadow (same global params as other Layout C modules)
+    if bool(LAYOUT_C_SHADOW_ENABLED):
+        layer = _apply_shadow_layer(
             layer,
-            offset=(LAYOUT_C_SHADOW_OX, LAYOUT_C_SHADOW_OY),
-            blur_radius=LAYOUT_C_SHADOW_BLUR,
+            offset=LAYOUT_C_SHADOW_OFFSET,
+            blur_radius=int(LAYOUT_C_SHADOW_BLUR),
             shadow_color=LAYOUT_C_SHADOW_COLOR,
         )
-        out = _alpha_composite_at(out, shadowed, gx - pad_x, gy - pad_y)
-    else:
-        out = _alpha_composite_at(out, layer, gx, gy)
 
+    out = base_img.copy().convert("RGBA")
+    out.alpha_composite(layer)
     return out
+
+
+# Layout A: bottom bar
+# ============================================================
+
 def draw_layout_a_bottom_bar(
     overlay: PILImage.Image,
     assets_dir: Path,
@@ -1108,7 +1012,7 @@ def draw_layout_a_bottom_bar(
         polys.append(p)
         cur_x += ww + gap
 
-    if bool(cfg.get("shadow_enable", False)):
+    if bool(cfg.get("shadow_enable", True)): # original = True
         shadow_dx = int(cfg.get("shadow_dx", 0))
         shadow_dy = int(cfg.get("shadow_dy", 6))
         shadow_blur = int(cfg.get("shadow_blur", 8))
@@ -1771,7 +1675,7 @@ def render_video(
 
     # Apply Layout C shadow (global for all Layout C modules)
     global LAYOUT_C_SHADOW_ENABLED, LAYOUT_C_SHADOW_OFFSET, LAYOUT_C_SHADOW_BLUR, LAYOUT_C_SHADOW_COLOR
-    LAYOUT_C_SHADOW_ENABLED = bool(getattr(shadow_cfg, "enabled", True)) # original = True
+    LAYOUT_C_SHADOW_ENABLED = bool(getattr(shadow_cfg, "enabled", False)) # original = True
     LAYOUT_C_SHADOW_OFFSET = tuple(getattr(shadow_cfg, "offset", (4, 4)))
     LAYOUT_C_SHADOW_BLUR = int(getattr(shadow_cfg, "blur_radius", 6))
     LAYOUT_C_SHADOW_COLOR = tuple(getattr(shadow_cfg, "color", (0, 0, 0, 120)))
@@ -1822,15 +1726,6 @@ def render_video(
         except Exception:
             return None
 
-    # ==========================================================
-    # Layout C overlay render decoupling
-    #   - Video output FPS stays unchanged.
-    #   - Overlay modules for Layout C are rendered at a fixed FPS and reused between frames.
-    # ==========================================================
-    LAYOUT_C_OVERLAY_FPS = 10  # overlay update rate for Layout C (Hz)
-    _layout_c_cache = {"tq": None, "overlay": None, "size": None}
-
-
     def make_frame(t):
         if duration > 0:
             frac = max(0.0, min(1.0, t / duration))
@@ -1843,33 +1738,40 @@ def render_video(
         img = PILImage.fromarray(frame).convert("RGBA")
         img_w, img_h = img.size
 
-        # Layout C overlay caching (render overlay at a fixed FPS, reuse between video frames)
-        if layout == "C":
-            step = 1.0 / float(LAYOUT_C_OVERLAY_FPS)
+        # ------------------------------------------------------------
+        # Overlay throttling: update overlays at a fixed fps per layout
+        # ------------------------------------------------------------
+        layout_u = str(layout).upper()
+        overlay_fps = None
+        if layout_u in ("A", "B"):
+            overlay_fps = float(LAYOUT_AB_OVERLAY_FPS)
+        elif layout_u == "C":
+            overlay_fps = float(LAYOUT_C_OVERLAY_FPS)
+
+        tq = float(t)
+        if overlay_fps is not None and overlay_fps > 0:
+            step = 1.0 / overlay_fps
             tq = math.floor(float(t) / step) * step
-            # Avoid floating-point drift in cache keys
-            tq = round(tq, 3)
-            if _layout_c_cache["tq"] == tq and _layout_c_cache["overlay"] is not None and _layout_c_cache["size"] == img.size:
-                composed = PILImage.alpha_composite(img, _layout_c_cache["overlay"]).convert("RGB")
-                return np.array(composed)
 
-            t_for_calc = tq
-        else:
-            t_for_calc = t
+        cache = _OVERLAY_CACHE.get(layout_u)
+        if cache is not None and cache.get("tq") == tq and cache.get("size") == img.size and cache.get("overlay") is not None:
+            overlay = cache["overlay"]
+            composed = PILImage.alpha_composite(img, overlay).convert("RGB")
+            return np.array(composed)
 
+        # Cache miss: render overlay at quantized time tq
         overlay = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
+        t_use = tq
 
-        # Global time (used for module texts / gating)
-        t_global = t_for_calc + effective_offset
-
-        depth_val = depth_at(t_for_calc)
+        t_global = t_use + effective_offset
+        depth_val = depth_at(t_use)
 
         # Layout B (abs, from df_rate)
-        rate_val_abs_raw = rate_at(t_for_calc)
+        rate_val_abs_raw = rate_at(t_use)
 
         # Layout C (signed, Layout B-aligned: magnitude from df_rate + sign from depth trend)
-        rate_val_signed_raw = rate_c_signed_like_layout_b(t_for_calc)
+        rate_val_signed_raw = rate_c_signed_like_layout_b(t_use)
 
         # Heart rate (Layout C only)
         hr_text = "--"
@@ -1937,7 +1839,7 @@ def render_video(
         rate_val_signed_c = 0.0 if (not in_dive or near_surface) else float(rate_val_signed_raw)
 
         # Direction (for Layout C arrow/label). If not in dive, default to descent label.
-        direction_is_descent = bool(is_descent_at(t)) if in_dive else True
+        direction_is_descent = bool(is_descent_at(t_use)) if in_dive else True
 
         elapsed = elapsed_dive_time(t)
         time_text = format_dive_time(elapsed) if elapsed is not None else ""
@@ -2022,7 +1924,7 @@ def render_video(
 
             overlay = render_layout_c_time_module(
                 overlay,
-                time_s=float(max(0.0, t_global)),
+                time_s=float(elapsed_dive_time(t_use) or 0.0),
                 cfg=layout_c_time_cfg,
             )
 
@@ -2068,11 +1970,9 @@ def render_video(
                 time_text=time_text,
             )
 
-        # Update Layout C overlay cache on cache-miss renders
-        if layout == "C":
-            _layout_c_cache["tq"] = t_for_calc
-            _layout_c_cache["overlay"] = overlay
-            _layout_c_cache["size"] = img.size
+        # Update overlay cache (A/B/C only)
+        if layout_u in ("A", "B", "C"):
+            _OVERLAY_CACHE[layout_u] = {"tq": tq, "size": img.size, "overlay": overlay}
 
         composed = PILImage.alpha_composite(img, overlay).convert("RGB")
         return np.array(composed)
