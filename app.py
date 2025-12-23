@@ -28,6 +28,84 @@ BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
 
 
+# ==========================================================
+# Depth smoothing (fixed defaults; no UI controls)
+# - 1) Per-second median aggregation (robust for ATMOS multi-samples per second)
+# - 2) Forward-backward EMA smoothing (near zero-phase)
+# ==========================================================
+_DIVE_START_DEPTH_M = 0.1   # original = 0.01
+_DIVE_END_DEPTH_M = 0.05
+_DEFAULT_SMOOTH_TAU_S = 0.05  # user-validated default (smaller = less smoothing) original = 0.3
+
+def _aggregate_depth_median_per_second(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse to 1 Hz using per-second median depth.
+
+    Keeps: time_s, depth_m. Other columns are dropped intentionally to avoid
+    mixing incompatible sampling rates.
+    """
+    if df is None or df.empty:
+        return df
+
+    d = df.copy()
+    d = d.sort_values("time_s").reset_index(drop=True)
+    # Per-second bucket (floor) – robust and deterministic
+    sec = np.floor(d["time_s"].astype(float) + 1e-9).astype(int)
+    d["_sec"] = sec
+
+    out = (
+        d.groupby("_sec", as_index=False)
+         .agg(time_s=("time_s", "min"), depth_m=("depth_m", "median"))
+         .sort_values("time_s")
+         .reset_index(drop=True)
+    )
+    out["time_s"] = out["time_s"].astype(float)
+    out["depth_m"] = out["depth_m"].astype(float)
+    return out
+
+def _ema_1d(x: np.ndarray, alpha: float) -> np.ndarray:
+    y = np.empty_like(x, dtype=float)
+    y[0] = float(x[0])
+    for i in range(1, len(x)):
+        y[i] = alpha * float(x[i]) + (1.0 - alpha) * float(y[i - 1])
+    return y
+
+def _smooth_depth_forward_backward_ema(df_1hz: pd.DataFrame, tau_s: float) -> pd.DataFrame:
+    """Forward-backward EMA to reduce phase delay (offline-friendly)."""
+    if df_1hz is None or df_1hz.empty:
+        return df_1hz
+
+    d = df_1hz.copy().sort_values("time_s").reset_index(drop=True)
+    x = d["depth_m"].to_numpy(dtype=float)
+
+    if len(x) < 3:
+        return d
+
+    # Assume ~1 Hz after aggregation
+    dt = 1.0
+    tau = max(1e-6, float(tau_s))
+    alpha = dt / (tau + dt)
+
+    y_fwd = _ema_1d(x, alpha)
+    y_bwd = _ema_1d(y_fwd[::-1], alpha)[::-1]
+
+    d["depth_m"] = y_bwd
+
+    # Hard-pin endpoints to 0 to stabilize surface alignment behavior
+    d.loc[d.index[0], "depth_m"] = 0.0
+    d.loc[d.index[-1], "depth_m"] = 0.0
+    return d
+
+def _apply_depth_smoothing_pipeline(dive_df_raw: pd.DataFrame) -> pd.DataFrame:
+    """Canonical depth series used everywhere (plot + time detection + render)."""
+    if dive_df_raw is None or dive_df_raw.empty:
+        return dive_df_raw
+
+    d1 = _aggregate_depth_median_per_second(dive_df_raw)
+    d2 = _smooth_depth_forward_backward_ema(d1, tau_s=_DEFAULT_SMOOTH_TAU_S)
+    return d2
+
+
+
 st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
 
 # Overlay job state (idle/rendering/done/error)
@@ -259,7 +337,11 @@ with st.container():
                 if "ov_smooth_level" not in st.session_state:
                     st.session_state["ov_smooth_level"] = 1
                 smooth_level = int(st.session_state["ov_smooth_level"])
-                df_rate = prepare_dive_curve(dive_df, smooth_window=smooth_level)
+                # Use canonical (aggregated + smoothed) depth curve everywhere
+                dive_df = _apply_depth_smoothing_pipeline(dive_df)
+
+                # Avoid double-smoothing inside prepare_dive_curve; keep it minimal
+                df_rate = prepare_dive_curve(dive_df, smooth_window=1)
 
                 # ====== 偵測 Dive Time（不再用 st.info 顯示，而是放到數據區） ======
                 dive_time_s = None
@@ -268,11 +350,11 @@ with st.container():
 
                 if df_rate is not None:
                     df_sorted = dive_df.sort_values("time_s").reset_index(drop=True)
-                    start_rows = df_sorted[df_sorted["depth_m"] >= 0.7]
+                    start_rows = df_sorted[df_sorted["depth_m"] >= _DIVE_START_DEPTH_M]
                     if not start_rows.empty:
                         t_start = float(start_rows["time_s"].iloc[0])
                         after = df_sorted[df_sorted["time_s"] >= t_start]
-                        end_candidates = after[after["depth_m"] <= 0.05]
+                        end_candidates = after[after["depth_m"] <= _DIVE_END_DEPTH_M]
 
                         if not end_candidates.empty:
                             t_end = float(end_candidates["time_s"].iloc[-1])
@@ -585,7 +667,7 @@ with st.container():
                 # ==========================================================
                 if t_ref_raw is not None:
                     t_ref_for_align = float(t_ref_raw)
-                    time_offset = t_ref_for_align - v_ref - 1.0
+                    time_offset = t_ref_for_align - v_ref - 1.0   # original = - 0.0
                     st.caption(f"目前計算出的偏移：{time_offset:+.2f} 秒（會套用到渲染）")
                 else:
                     time_offset = 0.0
@@ -945,8 +1027,10 @@ with st.container():
         # -------------------------
         # 6. 準備重採樣後的 df
         # -------------------------
-        df_a = prepare_dive_curve(dive_a, smooth_window=smooth_level) if dive_a is not None else None
-        df_b = prepare_dive_curve(dive_b, smooth_window=smooth_level) if dive_b is not None else None
+        dive_a = _apply_depth_smoothing_pipeline(dive_a) if dive_a is not None else None
+        df_a = prepare_dive_curve(dive_a, smooth_window=1) if dive_a is not None else None
+        dive_b = _apply_depth_smoothing_pipeline(dive_b) if dive_b is not None else None
+        df_b = prepare_dive_curve(dive_b, smooth_window=1) if dive_b is not None else None
     
         if (df_a is None) or (df_b is None):
             st.info(tr("compare_no_data"))
@@ -1003,13 +1087,13 @@ with st.container():
 
                 raw = dive_df_raw.sort_values("time_s").reset_index(drop=True)
 
-                start_rows = raw[raw["depth_m"] >= 0.7]
+                start_rows = raw[raw["depth_m"] >= _DIVE_START_DEPTH_M]
                 if start_rows.empty:
                     return None
 
                 t_start = float(start_rows["time_s"].iloc[0])
                 after = raw[raw["time_s"] >= t_start]
-                end_candidates = after[after["depth_m"] <= 0.05]
+                end_candidates = after[after["depth_m"] <= _DIVE_END_DEPTH_M]
 
                 if not end_candidates.empty:
                     t_end = float(end_candidates["time_s"].iloc[-1])
