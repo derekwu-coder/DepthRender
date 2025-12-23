@@ -53,7 +53,7 @@ TRANSLATIONS = {
         "align_mode_label": "對齊方式",
         "align_mode_start": "對齊下潛時間 (開始躬身)",
         "align_mode_bottom": "對齊最深時間 (轉身/摘到tag)",
-        "align_mode_end": "對齊出水時間 (手錶出水)",
+        "align_mode_end": "對齊出水時間 (手錶出水) — 建議使用" ,
 
         "align_video_time_label": "影片時間（mm:ss.ss，例如 01:10.05）",
         "align_video_time_help": "請輸入分鐘:秒.小數，秒與小數最多 2 位，例如 00:03.18",
@@ -215,7 +215,7 @@ TRANSLATIONS = {
         "align_mode_label": "Alignment mode",
         "align_mode_start": "Align descent time (start of duck dive)",
         "align_mode_bottom": "Align bottom time (turn / tag grab)",
-        "align_mode_end": "Align surfacing time (watch exits water)",
+        "align_mode_end": "Align surfacing time (watch exits water) — Suggested",
 
         "align_video_time_label": "Video time (mm:ss.ss, e.g. 01:10.05)",
         "align_video_time_help": "Use mm:ss or mm:ss.ss, up to 2 decimals (e.g. 00:03.18)",
