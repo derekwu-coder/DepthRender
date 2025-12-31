@@ -6,7 +6,7 @@ import pandas as pd
 from moviepy.editor import VideoFileClip
 from moviepy.video.VideoClip import VideoClip
 from pathlib import Path
-from PIL import Image as PILImage, ImageDraw, ImageFont, Image, ImageFilter
+from PIL import Image as PILImage, ImageDraw, ImageFont, Image, ImageFilter, ImageChops
 from dataclasses import dataclass
 import time
 
@@ -15,6 +15,7 @@ import time
 # ============================================================
 LAYOUT_AB_OVERLAY_FPS = 15   # Layout A & B overlay update fps
 LAYOUT_C_OVERLAY_FPS  = 10   # Layout C overlay update fps
+LAYOUT_D_OVERLAY_FPS  = 15   # Layout D overlay update fps
 
 # Internal overlay cache (per layout): {"tq": float, "size": (w,h), "overlay": PIL.Image}
 _OVERLAY_CACHE = {}
@@ -975,6 +976,611 @@ def render_layout_c_time_module(
 # Layout A: bottom bar
 # ============================================================
 
+
+# ===================
+# Layout D (Depth Module only - v0)
+# ===================
+
+@dataclass
+class LayoutDDepthConfig:
+    enabled: bool = True
+
+    # Position (top-left) of the 250x250 module on the output frame
+    x: int = 60
+    y: int = 240
+    global_x: int = -20
+    global_y: int = -90    # original = 0
+
+    # Backplate / chart size
+    plate_w: int = 250
+    plate_h: int = 220
+    chart_w: int = 250
+    chart_h: int = 190  # curve area height (top-aligned to plate)
+    radius: int = 15
+
+    # Static visuals (merged plate + curve) - user asked to render once
+    plate_color_hex: str = "#BFBFBF"  # original = #D9D9D9
+    plate_alpha: int = 70  # 20% opacity
+
+    curve_color: tuple = (255, 255, 255, 188)  # 50% opacity (merged object request)
+    curve_width: int = 6
+
+    fill_color_hex: str = "#00FFFF"  #original = #4E95D9
+    fill_alpha: int = 158  # 50% opacity (merged object request)
+    # Gradient fill (top more transparent)
+    fill_gradient_enabled: bool = True
+    fill_alpha_bottom: int = 255   # bottom alpha (more opaque)
+    fill_alpha_top: int = 10       # top alpha (more transparent)
+    fill_gradient_gamma: float = 1.6
+
+    gap_px: int = 13  # blank gap between fill and curve, along curve (implemented as y-shift)
+
+    # Progressive curve reveal (show only left of indicator)
+    progressive_curve_enabled: bool = True
+    progressive_reveal_extra_px: int = 0  # +px to reveal slightly ahead of indicator
+    # Indicator
+    dot_diameter: int = 18
+    dot_color: tuple = (255, 255, 255, 255)
+    vline_width: int = 2
+    vline_color: tuple = (255, 255, 255, 255)
+
+    # Depth text
+    value_font_size: int = 70
+    unit_font_size: int = 50
+    decimals: int = 1
+    text_color: tuple = (255, 255, 255, 255)
+
+    # Text anchor (within plate)
+    text_x: int = 130
+    text_y: int = 20
+    unit_gap_px: int = 4  # gap between value and unit (if not using bbox alignment)
+
+    # Keep unit bottom aligned to value bottom
+    unit_bottom_align: bool = True
+
+
+    # Text alignment for value+unit block within plate
+    # - 'left': text_x is left edge
+    # - 'center': text_x is center anchor
+    text_align: str = "center"
+
+def _hex_to_rgba(hex_str: str, alpha: int) -> tuple:
+    s = str(hex_str).strip().lstrip("#")
+    if len(s) == 3:
+        s = "".join([c * 2 for c in s])
+    r = int(s[0:2], 16)
+    g = int(s[2:4], 16)
+    b = int(s[4:6], 16)
+    return (r, g, b, int(alpha))
+
+
+def _clip_int(v: float, lo: int, hi: int) -> int:
+    try:
+        return int(max(lo, min(hi, int(round(v)))))
+    except Exception:
+        return lo
+
+
+@dataclass
+class LayoutDTimeConfig:
+    enabled: bool = True
+
+    # Anchor: relative to the depth module plate (default = directly below the plate)
+    x_offset: int = 0
+    y_offset: int = 0
+    below_gap_px: int = 16  # vertical gap below depth plate
+
+    # Color (RGBA)
+    color: tuple = (255, 255, 255, 255)
+
+    # ------------------------------------------------------------
+    # Split elements: label / colon / minutes / apostrophe / seconds
+    # All positions are offsets from the time module origin:
+    #   origin = (depth_plate_x + x_offset, depth_plate_y + plate_h + below_gap_px + y_offset)
+    # ------------------------------------------------------------
+
+    # 1) Label: "Dive Time"
+    label_text: str = "Dive Time"
+    label_font_size: int = 36
+    label_ox: int = 0
+    label_oy: int = 0
+
+    stacked: bool = True
+    time_row_oy: int = 20          # vertical offset of time row relative to label row (px)
+    time_row_align_with_label: bool = True  # True: time row starts at label_x; False: starts at module origin x0
+
+
+    # 2) Colon (between label and time), e.g. " : "
+    colon_text: str = ""   # original = ":"
+    colon_font_size: int = 30
+    colon_ox: int = 0  # original = 0
+    colon_oy: int = 0  # original = 0
+
+    # 3) Minutes (MM)
+    mm_font_size: int = 65
+    mm_ox: int = 0  # original = 0
+    mm_oy: int = 0  # original = 0
+
+    # 4) Apostrophe (between MM and SS), e.g. " ' "
+    apostrophe_text: str = "'"
+    apostrophe_font_size: int = 36
+    apostrophe_ox: int = 0  # original = 0
+    apostrophe_oy: int = 10  # original = 0
+
+    # 5) Seconds (SS)
+    ss_font_size: int = 65
+    ss_ox: int = 0
+    ss_oy: int = 0
+
+    # Optional fine spacing when you want auto-flow (used only if the *_ox fields are all 0)
+    auto_flow_gap_px: int = 6
+
+
+def _format_dive_time_mmss_tenths(t_s: float) -> tuple:
+    """Return (mm, ss, d) with rounding to nearest 0.1s."""
+    try:
+        tt = float(t_s)
+    except Exception:
+        tt = 0.0
+    if not np.isfinite(tt):
+        tt = 0.0
+    tt = max(0.0, tt)
+    tenths_total = int(round(tt * 10.0))
+    mm = tenths_total // 600
+    ss = (tenths_total // 10) % 60
+    d = tenths_total % 10
+    return mm, ss, d
+
+
+def render_layout_d_time_module(
+    base_img: Image.Image,
+    t_global_s: float,
+    depth_cfg: "LayoutDDepthConfig",
+    cfg: "LayoutDTimeConfig",
+    nereus_font_path: Optional[Path],
+    base_font_path: Optional[Path],
+) -> Image.Image:
+    """Draw Layout D time module (split elements).
+
+    Elements (independently configurable):
+      1) Label: "Dive Time"
+      2) Colon: ": "
+      3) Minutes: MM
+      4) Apostrophe: "'"
+      5) Seconds: SS
+
+    Font rule:
+      - English letters & digits: Nereus Bold
+      - Punctuation (':', "'") uses base font (fallback).
+    """
+    if not getattr(cfg, "enabled", True):
+        return base_img
+
+    out = base_img.copy().convert("RGBA")
+    draw = ImageDraw.Draw(out)
+
+    # Base origin: directly below the depth plate
+    ox = int(depth_cfg.x + depth_cfg.global_x)
+    oy = int(depth_cfg.y + depth_cfg.global_y)
+    x0 = ox + int(getattr(cfg, "x_offset", 0))
+    y0 = oy + int(getattr(depth_cfg, "plate_h", 0)) + int(getattr(cfg, "below_gap_px", 0)) + int(getattr(cfg, "y_offset", 0))
+
+    # Time: mm:ss (no tenths) -> we will draw MM and SS separately
+    try:
+        tt = float(t_global_s)
+    except Exception:
+        tt = 0.0
+    if not np.isfinite(tt):
+        tt = 0.0
+    tt = max(0.0, tt)
+    mm = int(tt // 60)
+    ss = int(tt % 60)
+    mm_txt = f"{mm:02d}"
+    ss_txt = f"{ss:02d}"
+
+    color = getattr(cfg, "color", (255, 255, 255, 255))
+
+    # Load fonts (independent sizes)
+    def _safe_font(path: Optional[Path], size: int):
+        try:
+            if path and Path(path).exists():
+                return ImageFont.truetype(str(path), int(size))
+        except Exception:
+            pass
+        return ImageFont.load_default()
+
+    nereus_label = _safe_font(nereus_font_path, int(getattr(cfg, "label_font_size", 50)))
+    base_colon   = _safe_font(base_font_path, int(getattr(cfg, "colon_font_size", 40)))
+    nereus_mm    = _safe_font(nereus_font_path, int(getattr(cfg, "mm_font_size", 50)))
+    base_apos    = _safe_font(base_font_path, int(getattr(cfg, "apostrophe_font_size", 40)))
+    nereus_ss    = _safe_font(nereus_font_path, int(getattr(cfg, "ss_font_size", 50)))
+
+    # Text strings
+    label_txt = str(getattr(cfg, "label_text", "Dive Time"))
+    colon_txt = str(getattr(cfg, "colon_text", ": "))
+    apos_txt  = str(getattr(cfg, "apostrophe_text", "'"))
+
+    # If user has not set explicit positions (all ox = 0), we auto-flow left-to-right.
+    auto_flow = (
+        int(getattr(cfg, "colon_ox", 0)) == 0 and int(getattr(cfg, "mm_ox", 0)) == 0 and
+        int(getattr(cfg, "apostrophe_ox", 0)) == 0 and int(getattr(cfg, "ss_ox", 0)) == 0
+    )
+    gap = int(getattr(cfg, "auto_flow_gap_px", 6))
+
+    stacked = bool(getattr(cfg, "stacked", False))
+    time_row_oy = int(getattr(cfg, "time_row_oy", 0))
+    align_with_label = bool(getattr(cfg, "time_row_align_with_label", True))
+
+    # Auto-flow is for the TIME row only (colon/mm/apos/ss)
+    auto_flow_time = (
+        int(getattr(cfg, "colon_ox", 0)) == 0 and int(getattr(cfg, "mm_ox", 0)) == 0 and
+        int(getattr(cfg, "apostrophe_ox", 0)) == 0 and int(getattr(cfg, "ss_ox", 0)) == 0
+    )
+    gap = int(getattr(cfg, "auto_flow_gap_px", 6))
+
+    # --- Row 1: Label (always drawn at label_ox/label_oy) ---
+    label_x = x0 + int(getattr(cfg, "label_ox", 0))
+    label_y = y0 + int(getattr(cfg, "label_oy", 0))
+    draw.text((label_x, label_y), label_txt, font=nereus_label, fill=color)
+
+    if stacked:
+        # --- Row 2: Time row origin ---
+        # Option A: align time row start with label_x (common in UI typography)
+        # Option B: start from module origin x0
+        time_x0 = label_x if align_with_label else x0
+        time_y0 = label_y + time_row_oy
+
+        if auto_flow_time:
+            # Auto-flow within time row: colon -> mm -> apostrophe -> ss
+            cx = time_x0 + int(getattr(cfg, "colon_ox", 0))  # still 0 in auto-flow mode
+            cy = time_y0 + int(getattr(cfg, "colon_oy", 0))
+            draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+            cw = draw.textbbox((0, 0), colon_txt, font=base_colon)[2]
+
+            mx = cx + cw + gap
+            my = time_y0 + int(getattr(cfg, "mm_oy", 0))
+            draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+            mw = draw.textbbox((0, 0), mm_txt, font=nereus_mm)[2]
+
+            ax = mx + mw + gap
+            ay = time_y0 + int(getattr(cfg, "apostrophe_oy", 0))
+            draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+            aw = draw.textbbox((0, 0), apos_txt, font=base_apos)[2]
+
+            sx = ax + aw + gap
+            sy = time_y0 + int(getattr(cfg, "ss_oy", 0))
+            draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+        else:
+            # Explicit positioning within time row (offsets relative to time row origin)
+            cx = time_x0 + int(getattr(cfg, "colon_ox", 0))
+            cy = time_y0 + int(getattr(cfg, "colon_oy", 0))
+            draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+
+            mx = time_x0 + int(getattr(cfg, "mm_ox", 0))
+            my = time_y0 + int(getattr(cfg, "mm_oy", 0))
+            draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+
+            ax = time_x0 + int(getattr(cfg, "apostrophe_ox", 0))
+            ay = time_y0 + int(getattr(cfg, "apostrophe_oy", 0))
+            draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+
+            sx = time_x0 + int(getattr(cfg, "ss_ox", 0))
+            sy = time_y0 + int(getattr(cfg, "ss_oy", 0))
+            draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+
+    else:
+        # --- Original single-row behavior (legacy) ---
+        # Keep your original flow: label -> colon -> mm -> apostrophe -> ss
+        # This preserves backward compatibility if you ever set stacked=False.
+
+        if auto_flow_time:
+            lx = x0 + int(getattr(cfg, "label_ox", 0))
+            ly = y0 + int(getattr(cfg, "label_oy", 0))
+            # (label already drawn above, but we redraw here for parity)
+            draw.text((lx, ly), label_txt, font=nereus_label, fill=color)
+            lw = draw.textbbox((0, 0), label_txt, font=nereus_label)[2]
+
+            cx = lx + lw + gap
+            cy = y0 + int(getattr(cfg, "colon_oy", 0))
+            draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+            cw = draw.textbbox((0, 0), colon_txt, font=base_colon)[2]
+
+            mx = cx + cw + gap
+            my = y0 + int(getattr(cfg, "mm_oy", 0))
+            draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+            mw = draw.textbbox((0, 0), mm_txt, font=nereus_mm)[2]
+
+            ax = mx + mw + gap
+            ay = y0 + int(getattr(cfg, "apostrophe_oy", 0))
+            draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+            aw = draw.textbbox((0, 0), apos_txt, font=base_apos)[2]
+
+            sx = ax + aw + gap
+            sy = y0 + int(getattr(cfg, "ss_oy", 0))
+            draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+        else:
+            # Explicit positioning on one row (original)
+            cx = x0 + int(getattr(cfg, "colon_ox", 0))
+            cy = y0 + int(getattr(cfg, "colon_oy", 0))
+            draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+
+            mx = x0 + int(getattr(cfg, "mm_ox", 0))
+            my = y0 + int(getattr(cfg, "mm_oy", 0))
+            draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+
+            ax = x0 + int(getattr(cfg, "apostrophe_ox", 0))
+            ay = y0 + int(getattr(cfg, "apostrophe_oy", 0))
+            draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+
+            sx = x0 + int(getattr(cfg, "ss_ox", 0))
+            sy = y0 + int(getattr(cfg, "ss_oy", 0))
+            draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+
+        # Explicit positioning: each element uses its own offset from module origin.
+        lx = x0 + int(getattr(cfg, "label_ox", 0))
+        ly = y0 + int(getattr(cfg, "label_oy", 0))
+        draw.text((lx, ly), label_txt, font=nereus_label, fill=color)
+
+        cx = x0 + int(getattr(cfg, "colon_ox", 0))
+        cy = y0 + int(getattr(cfg, "colon_oy", 0))
+        draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+
+        mx = x0 + int(getattr(cfg, "mm_ox", 0))
+        my = y0 + int(getattr(cfg, "mm_oy", 0))
+        draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+
+        ax = x0 + int(getattr(cfg, "apostrophe_ox", 0))
+        ay = y0 + int(getattr(cfg, "apostrophe_oy", 0))
+        draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+
+        sx = x0 + int(getattr(cfg, "ss_ox", 0))
+        sy = y0 + int(getattr(cfg, "ss_oy", 0))
+        draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+
+    return out
+
+
+def build_layout_d_depth_static(
+    times_s: np.ndarray,
+    depths_m: np.ndarray,
+    cfg: LayoutDDepthConfig,
+    max_depth_m: float,
+)-> tuple[Image.Image, Image.Image, float]:
+    """
+    Build a single RGBA image for the static part of Layout D depth module:
+      - rounded backplate
+      - curve fill ABOVE the curve (with a gap)
+      - curve polyline
+    Returns:
+      (plate_img_rgba, curve_fill_img_rgba, t_max)
+    """
+    Wp, Hp = int(cfg.plate_w), int(cfg.plate_h)
+    Wc, Hc = int(cfg.chart_w), int(cfg.chart_h)
+
+    # Defensive
+    if times_s is None or len(times_s) == 0:
+        t_max = 1.0
+    else:
+        t_max = float(np.nanmax(times_s))
+        if not np.isfinite(t_max) or t_max <= 1e-6:
+            t_max = 1.0
+
+    md = float(max_depth_m) if (max_depth_m is not None and np.isfinite(max_depth_m) and max_depth_m > 1e-6) else 1.0
+
+    # Base image
+    plate_img = Image.new("RGBA", (Wp, Hp), (0, 0, 0, 0))
+    d = ImageDraw.Draw(plate_img)
+
+    # Rounded backplate
+    plate_rgba = _hex_to_rgba(cfg.plate_color_hex, cfg.plate_alpha)
+    d.rounded_rectangle([0, 0, Wp, Hp], radius=int(cfg.radius), fill=plate_rgba)
+    # Init curve+fill layer placeholder
+    curve_fill_img = Image.new("RGBA", (Wp, Hp), (0, 0, 0, 0))
+
+
+    # Build curve points (top-aligned in plate)
+    pts = []
+    for t, dep in zip(times_s, depths_m):
+        if not (np.isfinite(t) and np.isfinite(dep)):
+            continue
+        x = (float(t) / t_max) * (Wc - 1)
+        y = (float(dep) / md) * (Hc - 1)
+        pts.append((x, y))
+    if len(pts) < 2:
+        curve_fill_img = Image.new("RGBA", (Wp, Hp), (0, 0, 0, 0))
+        return plate_img, curve_fill_img, t_max
+
+    # Clamp & quantize
+    pts_i = [( _clip_int(x, 0, Wc - 1), _clip_int(y, 0, Hc - 1) ) for x, y in pts]
+
+    # Fill polygon ABOVE the curve, using a shifted curve to create a blank gap
+    gap = int(cfg.gap_px)
+    pts_shift = [(x, max(0, y - gap)) for x, y in pts_i]
+
+    # --- Fill polygon ABOVE the curve on a separate layer (gradient supported) ---
+    fill_img = Image.new("RGBA", (Wp, Hp), (0, 0, 0, 0))
+    df = ImageDraw.Draw(fill_img)
+
+    # Draw fill with full alpha; we will apply gradient/uniform alpha afterwards.
+    fill_rgb_full = _hex_to_rgba(cfg.fill_color_hex, 255)
+
+    # Polygon: top-left -> top-right -> follow shifted curve reversed -> back
+    poly = [(0, 0), (Wc - 1, 0)] + list(reversed(pts_shift)) + [(0, 0)]
+    df.polygon(poly, fill=fill_rgb_full)
+
+    # Apply vertical alpha (top more transparent, bottom more opaque)
+    if getattr(cfg, "fill_gradient_enabled", True):
+        grad = Image.new("L", (1, Hc))
+        a_bot = int(getattr(cfg, "fill_alpha_bottom", int(getattr(cfg, "fill_alpha", 128))))
+        a_top = int(getattr(cfg, "fill_alpha_top", max(0, a_bot // 4)))
+        gamma = float(getattr(cfg, "fill_gradient_gamma", 1.0))
+        for y in range(Hc):
+            t = y / max(1, Hc - 1)  # 0 at top, 1 at bottom
+            a = int(a_top + (a_bot - a_top) * (t ** gamma))
+            grad.putpixel((0, y), max(0, min(255, a)))
+        grad = grad.resize((Wp, Hp))
+
+        r, g, b, a0 = fill_img.split()
+        a = ImageChops.multiply(a0, grad)
+        fill_img = Image.merge("RGBA", (r, g, b, a))
+    else:
+        # Fallback to uniform alpha using cfg.fill_alpha
+        r, g, b, a0 = fill_img.split()
+        uni = Image.new("L", (Wp, Hp), int(getattr(cfg, "fill_alpha", 128)))
+        a = ImageChops.multiply(a0, uni)
+        fill_img = Image.merge("RGBA", (r, g, b, a))
+
+    # Composite fill under the curve
+    # (do not composite fill into plate_img; curve/fill layer is returned separately)
+
+    # Curve line (ensure drawn last, on top of fill)
+    curve_fill_img = Image.new("RGBA", (Wp, Hp), (0, 0, 0, 0))
+    # paste fill and curve onto curve_fill_img
+    curve_fill_img.alpha_composite(fill_img, dest=(0, 0))
+    dc = ImageDraw.Draw(curve_fill_img)
+    dc.line(pts_i, fill=cfg.curve_color, width=int(cfg.curve_width))
+
+    # Clip curve/fill to the same rounded-corner shape as the backplate,
+    # so the chart never protrudes outside the backplate corners.
+    if int(cfg.radius) > 0:
+        mask = Image.new("L", (Wp, Hp), 0)
+        md = ImageDraw.Draw(mask)
+        md.rounded_rectangle([0, 0, Wp - 1, Hp - 1], radius=int(cfg.radius), fill=255)
+        plate_img.putalpha(ImageChops.multiply(plate_img.getchannel("A"), mask))
+        curve_fill_img.putalpha(ImageChops.multiply(curve_fill_img.getchannel("A"), mask))
+
+    return plate_img, curve_fill_img, t_max
+
+def render_layout_d_depth_module(
+    base_img: Image.Image,
+    t_global_s: float,
+    current_depth_m: float,
+    static_img: Image.Image,
+    curve_fill_img: Optional[Image.Image],
+    t_max: float,
+    max_depth_m: float,
+    cfg: LayoutDDepthConfig,
+    font_path: Optional[str] = None,
+) -> Image.Image:
+    """
+    Per-frame overlay for Layout D depth module:
+      - paste pre-rendered backplate; overlay curve+fill separately
+      - draw vertical line + dot at current (t, depth)
+      - draw depth value + unit
+    """
+    if not cfg.enabled:
+        return base_img
+
+    out = base_img.copy().convert("RGBA")
+    draw = ImageDraw.Draw(out)
+
+    # Module origin
+    ox = int(cfg.x + cfg.global_x)
+    oy = int(cfg.y + cfg.global_y)
+
+    # Map t/depth to chart coords
+    Wc, Hc = int(cfg.chart_w), int(cfg.chart_h)
+    md = float(max_depth_m) if (max_depth_m is not None and np.isfinite(max_depth_m) and max_depth_m > 1e-6) else 1.0
+
+    tt = float(t_global_s)
+    if not np.isfinite(tt):
+        tt = 0.0
+    tt = max(0.0, min(float(t_max), tt))
+    x = (tt / float(t_max)) * (Wc - 1)
+
+    dep = float(current_depth_m) if np.isfinite(current_depth_m) else 0.0
+    dep = max(0.0, min(md, dep))
+    y = (dep / md) * (Hc - 1)
+
+    xi = _clip_int(x, 0, Wc - 1)
+    yi = _clip_int(y, 0, Hc - 1)
+
+    # Paste backplate (always fully visible)
+    out.alpha_composite(static_img, dest=(ox, oy))
+
+    # Paste curve+fill (optionally progressive reveal only left of indicator)
+    if curve_fill_img is not None:
+        if getattr(cfg, "progressive_curve_enabled", False):
+            reveal_x = int(xi + int(getattr(cfg, "progressive_reveal_extra_px", 0)))
+            reveal_x = _clip_int(reveal_x, 0, int(cfg.plate_w))
+            mask = Image.new("L", curve_fill_img.size, 0)
+            dm = ImageDraw.Draw(mask)
+            dm.rectangle([0, 0, reveal_x, curve_fill_img.size[1]], fill=255)
+            curve_visible = Image.new("RGBA", curve_fill_img.size, (0, 0, 0, 0))
+            curve_visible.paste(curve_fill_img, (0, 0), mask)
+            out.alpha_composite(curve_visible, dest=(ox, oy))
+        else:
+            out.alpha_composite(curve_fill_img, dest=(ox, oy))
+    # Vertical line (top to bottom of plate)
+    x_abs = ox + xi
+    y_top = oy + 0
+    y_bot = oy + int(cfg.plate_h)
+    draw.line([(x_abs, y_top), (x_abs, y_bot)], fill=cfg.vline_color, width=int(cfg.vline_width))
+
+    # Dot
+    r = int(cfg.dot_diameter // 2)
+    cx = x_abs
+    cy = oy + yi
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=cfg.dot_color)
+
+    # Fonts
+    try:
+        if font_path:
+            value_font = ImageFont.truetype(str(font_path), int(cfg.value_font_size))
+            unit_font = ImageFont.truetype(str(font_path), int(cfg.unit_font_size))
+        else:
+            value_font = ImageFont.load_default()
+            unit_font = ImageFont.load_default()
+    except Exception:
+        value_font = ImageFont.load_default()
+        unit_font = ImageFont.load_default()
+
+    # Depth text
+    fmt = "{:." + str(int(cfg.decimals)) + "f}"
+    val_txt = fmt.format(float(current_depth_m))
+    unit_txt = "m"
+
+    # Position in plate
+    ty = oy + int(cfg.text_y)
+
+# value bbox
+    vb = draw.textbbox((0, 0), val_txt, font=value_font)
+    v_w = vb[2] - vb[0]
+    v_h = vb[3] - vb[1]
+
+    # unit bbox
+    ub = draw.textbbox((0, 0), unit_txt, font=unit_font)
+    u_w = ub[2] - ub[0]
+    u_h = ub[3] - ub[1]
+
+    
+
+    total_w = int(v_w) + int(cfg.unit_gap_px) + int(u_w)
+    if str(getattr(cfg, "text_align", "left")).lower().startswith("cent"):
+        # text_x is the center anchor within the plate
+        tx = (ox + int(cfg.text_x)) - (total_w // 2)
+    else:
+        # text_x is the left edge
+        tx = ox + int(cfg.text_x)
+    draw.text((tx, ty), val_txt, font=value_font, fill=cfg.text_color)
+
+    if cfg.unit_bottom_align:
+        # Align bottoms
+        uy = ty + (v_h - u_h)
+    else:
+        uy = ty
+
+    ux = tx + v_w + int(cfg.unit_gap_px)
+    draw.text((ux, uy), unit_txt, font=unit_font, fill=cfg.text_color)
+
+    return out
+
+
+def get_layout_d_config() -> LayoutDDepthConfig:
+    """Default Layout D depth config (depth module only)."""
+    return LayoutDDepthConfig()
+
+
 def draw_layout_a_bottom_bar(
     overlay: PILImage.Image,
     assets_dir: Path,
@@ -1453,6 +2059,24 @@ def render_video(
     times_d = dive_df["time_s"].to_numpy()
     depths_d = dive_df["depth_m"].to_numpy()
 
+    # =========================
+    # Layout D config (Depth module)
+    # Define cfg BEFORE any Layout D build/render usage.
+    # Optional overrides:
+    #   layout_params["layout_d_depth_cfg"] = {"x": 80, "y": 980, ...}
+    # =========================
+    if layout_params is None:
+        layout_params = {}
+    layout_d_depth_cfg = LayoutDDepthConfig()
+    try:
+        _d_overrides = layout_params.get("layout_d_depth_cfg", {})
+        if isinstance(_d_overrides, dict):
+            for _k, _v in _d_overrides.items():
+                if hasattr(layout_d_depth_cfg, _k):
+                    setattr(layout_d_depth_cfg, _k, _v)
+    except Exception:
+        pass
+
     # Layout B existing (abs rate)
     times_r = df_rate["time_s"].to_numpy()
     rates_r = df_rate["rate_abs_mps_smooth"].to_numpy()
@@ -1466,7 +2090,40 @@ def render_video(
         max_depth_raw = 0.0
         best_time_global = None
 
-    # Layout B scale logic
+    
+    # =========================
+    
+    # =========================
+    # Layout D config (Time module)
+    # Optional overrides:
+    #   layout_params["layout_d_time_cfg"] = {"below_gap_px": 16, "x_offset": 0, ...}
+    # =========================
+    layout_d_time_cfg = LayoutDTimeConfig()
+    try:
+        _t_overrides = layout_params.get("layout_d_time_cfg", {})
+        if isinstance(_t_overrides, dict):
+            for _k, _v in _t_overrides.items():
+                if hasattr(layout_d_time_cfg, _k):
+                    setattr(layout_d_time_cfg, _k, _v)
+    except Exception:
+        pass
+
+# Layout D static build (backplate + curve)
+    # =========================
+    layout_d_static = None
+    layout_d_tmax = None
+    if str(layout).upper() == "D":
+        try:
+            layout_d_plate, layout_d_curve_fill, layout_d_tmax = build_layout_d_depth_static(
+                times_s=times_d,
+                depths_m=depths_d,
+                cfg=layout_d_depth_cfg,
+                max_depth_m=max_depth_raw,
+            )
+        except Exception:
+            layout_d_static, layout_d_tmax = None, None
+
+# Layout B scale logic
     if max_depth_raw <= 0:
         max_depth_for_scale = 30.0
     elif max_depth_raw < 30.0:
@@ -1520,8 +2177,9 @@ def render_video(
 
     def _interp_crossing_time(times: np.ndarray, depths: np.ndarray, threshold: float, *, rising: bool) -> Optional[float]:
         """Return interpolated crossing time for depth==threshold.
-        rising=True: find first crossing from <thr to >=thr (start of descent)
-        rising=False: find last crossing from >thr to <=thr (end of ascent)
+
+        rising=True:  find first crossing from <thr to >=thr (start of descent)
+        rising=False: find last  crossing from >thr to <=thr (end of ascent)
         """
         if times is None or depths is None:
             return None
@@ -1761,6 +2419,8 @@ def render_video(
             overlay_fps = float(LAYOUT_AB_OVERLAY_FPS)
         elif layout_u == "C":
             overlay_fps = float(LAYOUT_C_OVERLAY_FPS)
+        elif layout_u == "D":
+            overlay_fps = float(LAYOUT_D_OVERLAY_FPS)
 
         tq = float(t)
         if overlay_fps is not None and overlay_fps > 0:
@@ -1882,7 +2542,7 @@ def render_video(
             )
 
         # ===== Generic info card (NOT A/B/C) =====
-        if layout not in ("A", "B", "C"):
+        if layout not in ("A", "B", "C", "D"):  # Layout D uses its own modules
             lines = [text_depth, text_rate]
             if time_text:
                 lines.append(time_text)
@@ -1967,7 +2627,40 @@ def render_video(
                     show_icon=True,
                 )
 
-        # ===== Layout B =====
+        
+        # ===== Layout D (Depth module only) =====
+        if (
+            layout == "D"
+            and layout_d_plate is not None
+            and layout_d_curve_fill is not None
+            and layout_d_tmax is not None
+        ):
+
+            overlay = render_layout_d_depth_module(
+                base_img=overlay,
+                t_global_s=float(max(0.0, elapsed if elapsed is not None else 0.0)),
+                current_depth_m=float(depth_disp),
+                static_img=layout_d_plate,
+                curve_fill_img=layout_d_curve_fill,
+                t_max=float(layout_d_tmax),
+                max_depth_m=float(max_depth_raw) if np.isfinite(max_depth_raw) else float(best_depth),
+                cfg=layout_d_depth_cfg,
+                font_path=str(LAYOUT_C_VALUE_FONT_PATH),
+            )
+
+        # ===== Layout D (Time module) =====
+        if layout == "D":
+            overlay = render_layout_d_time_module(
+                base_img=overlay,
+                t_global_s=float(max(0.0, elapsed if elapsed is not None else 0.0)),
+                depth_cfg=layout_d_depth_cfg,
+                cfg=layout_d_time_cfg,
+                nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
+                base_font_path=base_font_path,
+            )
+
+
+# ===== Layout B =====
         if layout == "B":
             show_best_bubble = bool(best_time_global is not None and t_global >= best_time_global)
 
