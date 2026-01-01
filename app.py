@@ -29,8 +29,6 @@ from streamlit.web.server.server import Server
 # app.py – header & static icon setup (SAFE VERSION)
 # ============================================================
 
-import streamlit as st
-from pathlib import Path
 
 # ------------------------------------------------------------
 # Basic paths
@@ -50,31 +48,21 @@ st.set_page_config(
 # ------------------------------------------------------------
 # Inject iOS / PWA icon links into <head>
 # ------------------------------------------------------------
+st.set_page_config(
+    page_title="DepthRender",
+    page_icon="static/favicon.ico",
+    layout="wide",
+)
+
 st.markdown(
     """
-    <script>
-      (function () {
-        function addLink(rel, href, sizes) {
-          const link = document.createElement("link");
-          link.rel = rel;
-          link.href = href;
-          if (sizes) link.sizes = sizes;
-          document.head.appendChild(link);
-        }
-
-        // iOS Home Screen icon
-        addLink("apple-touch-icon", "/app/static/apple-touch-icon.png", "180x180");
-
-        // Browser favicon
-        addLink("icon", "/app/static/favicon.ico");
-
-        // PWA manifest
-        addLink("manifest", "/app/static/site.webmanifest");
-      })();
-    </script>
+    <link rel="apple-touch-icon" sizes="180x180" href="/app/static/apple-touch-icon.png">
+    <link rel="icon" href="/app/static/favicon.ico">
+    <link rel="manifest" href="/app/static/site.webmanifest">
     """,
     unsafe_allow_html=True,
 )
+
 
 # ============================================================
 # (Below this line is your existing app logic)
