@@ -25,19 +25,64 @@ from typing import Dict, List, Optional, Union
 from streamlit.web.server.server import Server
 
 
-# ------------------------------------------------------------
-# Register static icon files for iOS Safari / browser
-# ------------------------------------------------------------
-BASE_DIR = Path(__file__).parent
-ICON_DIR = BASE_DIR / "assets" / "icons"
+# ============================================================
+# app.py – header & static icon setup (SAFE VERSION)
+# ============================================================
 
-Server.get_current()._static_files = {
-    "/apple-touch-icon.png": ICON_DIR / "apple-touch-icon.png",
-    "/favicon.ico": ICON_DIR / "favicon.ico",
-    "/favicon-32x32.png": ICON_DIR / "favicon-32x32.png",
-    "/favicon-16x16.png": ICON_DIR / "favicon-16x16.png",
-    "/site.webmanifest": ICON_DIR / "site.webmanifest",
-}
+import streamlit as st
+from pathlib import Path
+
+# ------------------------------------------------------------
+# Basic paths
+# ------------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
+# ------------------------------------------------------------
+# Page config (browser tab favicon only)
+# ------------------------------------------------------------
+st.set_page_config(
+    page_title="DepthRender",
+    page_icon="static/favicon.ico",   # browser tab icon
+    layout="wide",
+)
+
+# ------------------------------------------------------------
+# Inject iOS / PWA icon links into <head>
+# ------------------------------------------------------------
+st.markdown(
+    """
+    <script>
+      (function () {
+        function addLink(rel, href, sizes) {
+          const link = document.createElement("link");
+          link.rel = rel;
+          link.href = href;
+          if (sizes) link.sizes = sizes;
+          document.head.appendChild(link);
+        }
+
+        // iOS Home Screen icon
+        addLink("apple-touch-icon", "/app/static/apple-touch-icon.png", "180x180");
+
+        // Browser favicon
+        addLink("icon", "/app/static/favicon.ico");
+
+        // PWA manifest
+        addLink("manifest", "/app/static/site.webmanifest");
+      })();
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ============================================================
+# (Below this line is your existing app logic)
+# ============================================================
+
+# Example placeholder (safe to remove)
+st.title("DepthRender")
+
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
@@ -120,8 +165,33 @@ def _apply_depth_smoothing_pipeline(dive_df_raw: pd.DataFrame) -> pd.DataFrame:
     return d2
 
 
+st.set_page_config(
+    page_title="DepthRender",
+    page_icon="static/favicon.ico",   # 這個主要是瀏覽器 tab 的 favicon
+    layout="wide",
+)
 
-st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
+st.markdown(
+    """
+    <script>
+      (function() {
+        const addLink = (rel, href, sizes) => {
+          const link = document.createElement('link');
+          link.rel = rel;
+          link.href = href;
+          if (sizes) link.sizes = sizes;
+          document.head.appendChild(link);
+        };
+
+        addLink('apple-touch-icon', '/app/static/apple-touch-icon.png', '180x180');
+        addLink('icon', '/app/static/favicon.ico');
+        addLink('manifest', '/app/static/site.webmanifest');
+      })();
+    </script>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # Overlay job state (idle/rendering/done/error)
 if "ov_job_state" not in st.session_state:
