@@ -22,7 +22,22 @@ from core.dive_curve import prepare_dive_curve, compute_dive_metrics
 from ui.styles import inject_app_css
 from ui.layout_selector import render_layout_selector
 from typing import Dict, List, Optional, Union
+from streamlit.web.server.server import Server
 
+
+# ------------------------------------------------------------
+# Register static icon files for iOS Safari / browser
+# ------------------------------------------------------------
+BASE_DIR = Path(__file__).parent
+ICON_DIR = BASE_DIR / "assets" / "icons"
+
+Server.get_current()._static_files = {
+    "/apple-touch-icon.png": ICON_DIR / "apple-touch-icon.png",
+    "/favicon.ico": ICON_DIR / "favicon.ico",
+    "/favicon-32x32.png": ICON_DIR / "favicon-32x32.png",
+    "/favicon-16x16.png": ICON_DIR / "favicon-16x16.png",
+    "/site.webmanifest": ICON_DIR / "site.webmanifest",
+}
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
