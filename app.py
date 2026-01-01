@@ -42,7 +42,7 @@ STATIC_DIR = BASE_DIR / "static"
 # Page config (browser tab favicon only)
 # ------------------------------------------------------------
 st.set_page_config(
-    page_title="DepthRender",
+    #page_title="DepthRender",
     page_icon="static/favicon.ico",   # browser tab icon
     layout="wide",
 )
@@ -81,7 +81,7 @@ st.markdown(
 # ============================================================
 
 # Example placeholder (safe to remove)
-st.title("DepthRender")
+#st.title("DepthRender")
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -166,7 +166,7 @@ def _apply_depth_smoothing_pipeline(dive_df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 st.set_page_config(
-    page_title="DepthRender",
+    #page_title="DepthRender",
     page_icon="static/favicon.ico",   # 這個主要是瀏覽器 tab 的 favicon
     layout="wide",
 )
