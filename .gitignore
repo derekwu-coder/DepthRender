@@ -2,3 +2,4 @@
 __pycache__/
 assets/.DS_Store
 core/__pycache__/
+static/Thumbs.db
