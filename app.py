@@ -26,7 +26,7 @@ from typing import Dict, List, Optional, Union
 
 st.set_page_config(
     page_title="DepthRender",
-    page_icon="app/static/favicon-32x32.png",  # 先讓一般瀏覽器 tab icon 盡量正常
+    page_icon="static/favicon-32x32.png",  # 先讓一般瀏覽器 tab icon 盡量正常
     layout="wide",
 )
 
