@@ -23,13 +23,11 @@ from ui.styles import inject_app_css
 from ui.layout_selector import render_layout_selector
 from typing import Dict, List, Optional, Union
 
-
 st.set_page_config(
     page_title="DepthRender",
-    page_icon="static/favicon-32x32.png",  # 先讓一般瀏覽器 tab icon 盡量正常
+    page_icon="static/favicon-32x32.png",
     layout="wide",
 )
-
 
 import streamlit.components.v1 as components
 
@@ -43,15 +41,13 @@ def inject_app_icons():
             { rel: "icon", type: "image/png", sizes: "16x16", href: "/app/static/favicon-16x16.png" },
             { rel: "icon", type: "image/png", sizes: "32x32", href: "/app/static/favicon-32x32.png" },
             { rel: "shortcut icon", href: "/app/static/favicon.ico" },
-            
+
             // iOS Home Screen icons
             { rel: "apple-touch-icon", sizes: "120x120", href: "/app/static/apple-touch-icon-120x120.png" },
             { rel: "apple-touch-icon", sizes: "152x152", href: "/app/static/apple-touch-icon-152x152.png" },
             { rel: "apple-touch-icon", href: "/app/static/apple-touch-icon.png" },
           ];
 
-
-          // Remove any existing matching rel/sizes to avoid duplicates
           const head = document.head;
           links.forEach(cfg => {
             const selector = cfg.sizes
@@ -63,21 +59,6 @@ def inject_app_icons():
             Object.keys(cfg).forEach(k => link.setAttribute(k, cfg[k]));
             head.appendChild(link);
           });
-
-          // Optional: iOS web app meta (helps when launched from home screen)
-          const metas = [
-            { name: "apple-mobile-web-app-capable", content: "yes" },
-            { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-            { name: "apple-mobile-web-app-title", content: "DepthRender" },
-          ];
-          metas.forEach(m => {
-            const selector = `meta[name='${m.name}']`;
-            document.querySelectorAll(selector).forEach(el => el.remove());
-            const meta = document.createElement("meta");
-            meta.setAttribute("name", m.name);
-            meta.setAttribute("content", m.content);
-            head.appendChild(meta);
-          });
         })();
         </script>
         """,
@@ -85,12 +66,12 @@ def inject_app_icons():
         width=0,
     )
 
+# 這行一定要有：讓 head 注入真的執行
+inject_app_icons()
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
 
-
-st.set_page_config(page_title="Dive Overlay Generator", layout="wide")
 
 # Overlay job state (idle/rendering/done/error)
 if "ov_job_state" not in st.session_state:
