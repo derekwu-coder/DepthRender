@@ -29,6 +29,7 @@ st.set_page_config(
     layout="wide",
 )
 
+
 import streamlit.components.v1 as components
 
 def inject_app_icons():
@@ -36,35 +37,58 @@ def inject_app_icons():
         """
         <script>
         (function() {
-          const links = [
-            // Standard favicons
-            { rel: "icon", type: "image/png", sizes: "16x16", href: "/app/static/favicon-16x16.png" },
-            { rel: "icon", type: "image/png", sizes: "32x32", href: "/app/static/favicon-32x32.png" },
-            { rel: "shortcut icon", href: "/app/static/favicon.ico" },
+          try {
+            const parentDoc = window.parent && window.parent.document ? window.parent.document : document;
+            const head = parentDoc.head || parentDoc.getElementsByTagName("head")[0];
 
-            // iOS Home Screen icons
-            { rel: "apple-touch-icon", sizes: "120x120", href: "/app/static/apple-touch-icon-120x120.png" },
-            { rel: "apple-touch-icon", sizes: "152x152", href: "/app/static/apple-touch-icon-152x152.png" },
-            { rel: "apple-touch-icon", href: "/app/static/apple-touch-icon.png" },
-          ];
+            const links = [
+              // Standard favicons
+              { rel: "icon", type: "image/png", sizes: "16x16", href: "/app/static/favicon-16x16.png" },
+              { rel: "icon", type: "image/png", sizes: "32x32", href: "/app/static/favicon-32x32.png" },
+              { rel: "shortcut icon", href: "/app/static/favicon.ico" },
 
-          const head = document.head;
-          links.forEach(cfg => {
-            const selector = cfg.sizes
-              ? `link[rel='${cfg.rel}'][sizes='${cfg.sizes}']`
-              : `link[rel='${cfg.rel}']`;
-            document.querySelectorAll(selector).forEach(el => el.remove());
+              // iOS Home Screen icons (recommend adding 180x180 too)
+              { rel: "apple-touch-icon", sizes: "120x120", href: "/app/static/apple-touch-icon-120x120.png" },
+              { rel: "apple-touch-icon", sizes: "152x152", href: "/app/static/apple-touch-icon-152x152.png" },
+              { rel: "apple-touch-icon", href: "/app/static/apple-touch-icon.png" },
+            ];
 
-            const link = document.createElement("link");
-            Object.keys(cfg).forEach(k => link.setAttribute(k, cfg[k]));
-            head.appendChild(link);
-          });
+            // Remove any existing matching links to avoid duplicates
+            links.forEach(cfg => {
+              const selector = cfg.sizes
+                ? `link[rel='${cfg.rel}'][sizes='${cfg.sizes}']`
+                : `link[rel='${cfg.rel}']`;
+              parentDoc.querySelectorAll(selector).forEach(el => el.remove());
+
+              const link = parentDoc.createElement("link");
+              Object.keys(cfg).forEach(k => link.setAttribute(k, cfg[k]));
+              head.appendChild(link);
+            });
+
+            // Helpful iOS meta (optional)
+            const metas = [
+              { name: "apple-mobile-web-app-capable", content: "yes" },
+              { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+              { name: "apple-mobile-web-app-title", content: "DepthRender" },
+            ];
+            metas.forEach(m => {
+              parentDoc.querySelectorAll(`meta[name='${m.name}']`).forEach(el => el.remove());
+              const meta = parentDoc.createElement("meta");
+              meta.setAttribute("name", m.name);
+              meta.setAttribute("content", m.content);
+              head.appendChild(meta);
+            });
+
+          } catch (e) {
+            // swallow errors silently
+          }
         })();
         </script>
         """,
         height=0,
         width=0,
     )
+
 
 # 這行一定要有：讓 head 注入真的執行
 inject_app_icons()
