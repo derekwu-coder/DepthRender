@@ -39,15 +39,15 @@ def inject_app_icons():
         <script>
         (function() {
           const links = [
-              // Standard favicons
-              { rel: "icon", type: "image/png", sizes: "16x16", href: "/app/static/favicon-16x16.png" },
-              { rel: "icon", type: "image/png", sizes: "32x32", href: "/app/static/favicon-32x32.png" },
-              { rel: "shortcut icon", href: "/app/static/favicon.ico" },
+            // Standard favicons
+            { rel: "icon", type: "image/png", sizes: "16x16", href: "/app/static/favicon-16x16.png" },
+            { rel: "icon", type: "image/png", sizes: "32x32", href: "/app/static/favicon-32x32.png" },
+            { rel: "shortcut icon", href: "/app/static/favicon.ico" },
             
-              // iOS Home Screen icons
-              { rel: "apple-touch-icon", sizes: "120x120", href: "/app/static/apple-touch-icon-120x120.png" },
-              { rel: "apple-touch-icon", sizes: "152x152", href: "/app/static/apple-touch-icon-152x152.png" },
-              { rel: "apple-touch-icon", href: "/app/static/apple-touch-icon.png" },
+            // iOS Home Screen icons
+            { rel: "apple-touch-icon", sizes: "120x120", href: "/app/static/apple-touch-icon-120x120.png" },
+            { rel: "apple-touch-icon", sizes: "152x152", href: "/app/static/apple-touch-icon-152x152.png" },
+            { rel: "apple-touch-icon", href: "/app/static/apple-touch-icon.png" },
           ];
 
 
