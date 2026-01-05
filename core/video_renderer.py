@@ -39,6 +39,9 @@ LAYOUT_C_VALUE_FONT_PATH = BASE_DIR / "assets" / "fonts" / "nereus-bold.ttf"
 
 # Layout C Heart Rate icon (place the PNG at: assets/icons/heart_rate_icon.png)
 LAYOUT_C_HR_ICON_REL = Path("icons") / "heart_rate_icon.png"
+
+# Layout D Temperature icon (place the PNG at: assets/icons/thermo.png)
+LAYOUT_D_TEMP_ICON_REL = Path("icons") / "thermo.png"
 if not LAYOUT_C_VALUE_FONT_PATH.exists():
     print(f"[WARN] Layout C value font NOT found: {LAYOUT_C_VALUE_FONT_PATH}")
 else:
@@ -830,6 +833,21 @@ def render_layout_c_rate_module(
 # Layout C Heart Rate module
 # ============================================================
 
+
+def _remove_dark_bg_to_alpha(img: PILImage.Image, threshold: int = 10) -> PILImage.Image:
+    """Convert near-black pixels to transparent alpha while preserving white parts.
+
+    Used for icons that are white-on-black (e.g., thermo.png). Threshold is on max(R,G,B).
+    """
+    rgba = img.convert("RGBA")
+    arr = np.array(rgba, dtype=np.uint8)
+    rgb = arr[..., :3]
+    alpha = arr[..., 3].copy()
+    mask_dark = (rgb.max(axis=2) <= int(threshold))
+    alpha[mask_dark] = 0
+    arr[..., 3] = alpha
+    return PILImage.fromarray(arr, mode="RGBA")
+
 def _resize_icon(base_icon: PILImage.Image, scale: float, size: int) -> PILImage.Image:
     s = max(1, int(round(float(size) * float(scale))))
     try:
@@ -1115,6 +1133,76 @@ class LayoutDTimeConfig:
     # Optional fine spacing when you want auto-flow (used only if the *_ox fields are all 0)
     auto_flow_gap_px: int = 6
 
+# ===================
+# Layout D (Temperature module)
+# ===================
+
+@dataclass
+class LayoutDTempConfig:
+    enabled: bool = True
+
+    # Positioning
+    # If x/y are -1, the module is anchored to bottom-right using margin_right/margin_bottom.
+    x: int = -1
+    y: int = -1
+    global_x: int = 0
+    global_y: int = 0
+    margin_right: int = 60
+    margin_bottom: int = 80
+
+    # Icon + text
+    icon_size: int = 100  # original = 64
+    gap_px: int = 14
+
+    # Font
+    # Value (temperature number)
+    value_font_size: int = 56  # original = 60
+    decimals: int = 1
+    value_ox: int = -20  # original = 60
+    value_oy: int = -25  # original = 60
+
+    # Unit ("°C")
+    unit_font_size: int = 40  # original = 60
+    unit_gap_px: int = 6
+    unit_ox: int = 0  # original = 0
+    unit_oy: int = -14  # original = 0
+
+    # Degree symbol rendering
+    # If True, draw degree as a small dot (circle) instead of the "°" glyph.
+    deg_as_dot: bool = True
+    deg_dot_r_px: int = 5
+    deg_dot_dx: int = 0
+    deg_dot_dy: int = 6
+    deg_dot_r_px: int = 4        # 半徑（建議 5–7）
+    deg_dot_line_px: int = 1     # 線寬（這就是你現在要調的）
+    deg_dot_dx: int = 0          # X 偏移
+    deg_dot_dy: int = 5        # Y 偏移（通常要往上）
+    # Color (RGBA)
+    color: tuple = (255, 255, 255, 255)
+
+    # Unit: show as "°C" where:
+    # - "°" uses base font (to avoid missing glyph in nereus)
+    # - "C" uses nereus-bold
+    deg_symbol: str = "°"
+    unit_c: str = "C"
+
+    # Optional: if input temperature looks like Kelvin, auto-convert to Celsius.
+    auto_kelvin_to_c: bool = True
+    kelvin_threshold: float = 100.0  # values above this are treated as Kelvin
+
+    # Column name candidates (first match wins)
+    temp_col_candidates: Tuple[str, ...] = (
+        "water_temp_c",
+        "water_temperature_c",
+        "temperature_c",
+        "temp_c",
+        "water_temp",
+        "water_temperature",
+        "temperature",
+        "temp",
+    )
+
+
 
 def _format_dive_time_mmss_tenths(t_s: float) -> tuple:
     """Return (mm, ss, d) with rounding to nearest 0.1s."""
@@ -1338,6 +1426,163 @@ def render_layout_d_time_module(
         draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
 
     return out
+
+
+
+def render_layout_d_temp_module(
+    base_img: PILImage.Image,
+    *,
+    temp_c: Optional[float],
+    cfg: LayoutDTempConfig,
+    assets_dir: Path,
+    nereus_font_path: Path,
+    base_font_path: Path,
+) -> PILImage.Image:
+    if not cfg.enabled:
+        return base_img
+
+    # Load icon (and remove dark background)
+    icon_path = (Path(assets_dir) / LAYOUT_D_TEMP_ICON_REL)
+    # Fallback: allow thermo.png placed directly under assets_dir
+    if not icon_path.exists():
+        alt = Path(assets_dir) / "thermo.png"
+        if alt.exists():
+            icon_path = alt
+        else:
+            return base_img
+
+    try:
+        icon_base = PILImage.open(str(icon_path)).convert("RGBA")
+        icon_base = _remove_dark_bg_to_alpha(icon_base, threshold=10)
+    except Exception:
+        return base_img
+
+    W, H = base_img.size
+    layer = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+
+    # ---- Icon resize (keep original aspect ratio) ----
+    icon_size = int(cfg.icon_size)
+
+    def _resize_icon_keep_aspect(img: PILImage.Image, target: int) -> PILImage.Image:
+        # Scale down/up while preserving aspect ratio, fitting within target x target.
+        try:
+            im = img.copy()
+            im.thumbnail((target, target), resample=getattr(PILImage, "Resampling", PILImage).LANCZOS)
+            return im
+        except Exception:
+            # Fallback: manual ratio compute
+            w, h = img.size
+            if w <= 0 or h <= 0:
+                return img
+            s = float(target) / float(max(w, h))
+            nw = max(1, int(round(w * s)))
+            nh = max(1, int(round(h * s)))
+            try:
+                return img.resize((nw, nh), resample=PILImage.BICUBIC)
+            except Exception:
+                return img.resize((nw, nh))
+
+    icon_img = _resize_icon_keep_aspect(icon_base, icon_size)
+    w_icon, h_icon = icon_img.size
+
+    gap = int(cfg.gap_px)
+
+    # ---- Fonts (value and unit can be controlled independently) ----
+    nereus_value_font = ImageFont.truetype(str(nereus_font_path), int(cfg.value_font_size))
+    nereus_unit_font = ImageFont.truetype(str(nereus_font_path), int(cfg.unit_font_size))
+    base_unit_font = ImageFont.truetype(str(base_font_path), int(cfg.unit_font_size))
+
+    # Temperature formatting
+    if temp_c is None or (isinstance(temp_c, float) and not np.isfinite(temp_c)):
+        temp_str = "--.-"
+    else:
+        tval = float(temp_c)
+        if cfg.auto_kelvin_to_c and tval > float(cfg.kelvin_threshold):
+            tval = tval - 273.15
+        temp_str = f"{tval:.{int(cfg.decimals)}f}"
+
+    # Measure text extents
+    bbox_val = draw.textbbox((0, 0), temp_str, font=nereus_value_font)
+    w_val = int(bbox_val[2] - bbox_val[0])
+    h_val = int(bbox_val[3] - bbox_val[1])
+
+    bbox_c = draw.textbbox((0, 0), cfg.unit_c, font=nereus_unit_font)
+    w_c = int(bbox_c[2] - bbox_c[0])
+    h_c = int(bbox_c[3] - bbox_c[1])
+
+    # Degree symbol: either glyph or small dot (circle)
+    if bool(getattr(cfg, "deg_as_dot", True)):
+        r = int(getattr(cfg, "deg_dot_r_px", 5))
+        w_deg = max(0, 2 * r)
+        h_deg = max(0, 2 * r)
+    else:
+        bbox_deg = draw.textbbox((0, 0), cfg.deg_symbol, font=base_unit_font)
+        w_deg = int(bbox_deg[2] - bbox_deg[0])
+        h_deg = int(bbox_deg[3] - bbox_deg[1])
+
+    unit_gap = int(getattr(cfg, "unit_gap_px", 6))
+
+    # Module size (used only for anchoring). Offsets (value_ox/unit_ox etc.) are not included on purpose.
+    module_w = int(w_icon) + gap + w_val + unit_gap + w_deg + w_c
+    module_h = int(max(h_icon, h_val, h_c, h_deg))
+
+    # Anchor bottom-right if x/y are -1
+    if int(cfg.x) < 0:
+        x0 = int(W - int(cfg.margin_right) - module_w)
+    else:
+        x0 = int(cfg.x)
+
+    if int(cfg.y) < 0:
+        y0 = int(H - int(cfg.margin_bottom) - module_h)
+    else:
+        y0 = int(cfg.y)
+
+    x0 += int(cfg.global_x)
+    y0 += int(cfg.global_y)
+
+    # Icon
+    ix = x0
+    iy = y0 + (module_h - h_icon) // 2
+    layer.paste(icon_img, (int(ix), int(iy)), icon_img)
+
+    # Text baseline (align to vertical center)
+    tx_base = x0 + w_icon + gap
+    ty_base = y0 + (module_h - h_val) // 2
+
+    # Value offsets
+    tx_val = int(tx_base + int(getattr(cfg, "value_ox", 0)))
+    ty_val = int(ty_base + int(getattr(cfg, "value_oy", 0)))
+    draw.text((tx_val, ty_val), temp_str, font=nereus_value_font, fill=cfg.color)
+
+    # Unit start (after value)
+    tx_unit_base = tx_val + w_val + unit_gap
+    ty_unit_base = ty_base  # keep unit aligned to the same baseline by default
+
+    tx_unit = int(tx_unit_base + int(getattr(cfg, "unit_ox", 0)))
+    ty_unit = int(ty_unit_base + int(getattr(cfg, "unit_oy", 0)))
+
+    # Draw degree
+    if bool(getattr(cfg, "deg_as_dot", True)):
+        r = int(getattr(cfg, "deg_dot_r_px", 5))
+        dx = int(getattr(cfg, "deg_dot_dx", 0))
+        dy = int(getattr(cfg, "deg_dot_dy", 6))
+        # Place the dot near the upper-right of the value baseline by default.
+        # (ty_unit + dy) is tunable via cfg.deg_dot_dy.
+        cx0 = tx_unit + dx
+        cy0 = ty_unit + dy
+        draw.ellipse((cx0, cy0, cx0 + 2 * r, cy0 + 2 * r), outline=cfg.color, width=2)
+
+        tx_after_deg = tx_unit + 2 * r
+    else:
+        draw.text((tx_unit, ty_unit), cfg.deg_symbol, font=base_unit_font, fill=cfg.color)
+        tx_after_deg = tx_unit + w_deg
+
+    # Draw "C" (nereus-bold)
+    draw.text((int(tx_after_deg), int(ty_unit)), cfg.unit_c, font=nereus_unit_font, fill=cfg.color)
+
+    return PILImage.alpha_composite(base_img.convert("RGBA"), layer)
+
 
 
 def build_layout_d_depth_static(
@@ -2108,6 +2353,22 @@ def render_video(
     except Exception:
         pass
 
+
+    # =========================
+    # Layout D config (Temperature module)
+    # Optional overrides:
+    #   layout_params["layout_d_temp_cfg"] = {"global_x": -20, "margin_bottom": 90, "icon_size": 70, ...}
+    # =========================
+    layout_d_temp_cfg = LayoutDTempConfig()
+    try:
+        _temp_overrides = layout_params.get("layout_d_temp_cfg", {})
+        if isinstance(_temp_overrides, dict):
+            for _k, _v in _temp_overrides.items():
+                if hasattr(layout_d_temp_cfg, _k):
+                    setattr(layout_d_temp_cfg, _k, _v)
+    except Exception:
+        pass
+
 # Layout D static build (backplate + curve)
     # =========================
     layout_d_static = None
@@ -2144,6 +2405,39 @@ def render_video(
         if t >= times_d[-1]:
             return float(depths_d[-1])
         return float(np.interp(t, times_d, depths_d))
+
+    # =========================
+    # Temperature data (optional): infer column and build interpolation arrays
+    # =========================
+    _temp_col = None
+    for _c in getattr(layout_d_temp_cfg, "temp_col_candidates", ()):
+        if _c in dive_df.columns:
+            _temp_col = _c
+            break
+
+    if _temp_col is not None:
+        temps_d = pd.to_numeric(dive_df[_temp_col], errors="coerce").to_numpy(dtype=float)
+        # Auto Kelvin->C for whole series if needed
+        if getattr(layout_d_temp_cfg, "auto_kelvin_to_c", True):
+            try:
+                _med = float(np.nanmedian(temps_d)) if np.isfinite(np.nanmedian(temps_d)) else np.nan
+                if np.isfinite(_med) and _med > float(getattr(layout_d_temp_cfg, "kelvin_threshold", 100.0)):
+                    temps_d = temps_d - 273.15
+            except Exception:
+                pass
+    else:
+        temps_d = np.array([], dtype=float)
+
+    def temp_at(t_video: float) -> Optional[float]:
+        if temps_d.size == 0 or len(times_d) == 0:
+            return None
+        t = t_video + effective_offset
+        if t <= times_d[0]:
+            return float(temps_d[0]) if np.isfinite(temps_d[0]) else None
+        if t >= times_d[-1]:
+            return float(temps_d[-1]) if np.isfinite(temps_d[-1]) else None
+        return float(np.interp(t, times_d, temps_d))
+
 
     def is_descent_at(t_video: float, half_window_s: float = 0.30) -> bool:
         """
@@ -2655,6 +2949,18 @@ def render_video(
                 t_global_s=float(max(0.0, elapsed if elapsed is not None else 0.0)),
                 depth_cfg=layout_d_depth_cfg,
                 cfg=layout_d_time_cfg,
+                nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
+                base_font_path=base_font_path,
+            )
+
+
+        # ===== Layout D (Temperature module) =====
+        if layout == "D":
+            overlay = render_layout_d_temp_module(
+                base_img=overlay,
+                temp_c=temp_at(float(t_global)),
+                cfg=layout_d_temp_cfg,
+                assets_dir=assets_dir,
                 nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
                 base_font_path=base_font_path,
             )

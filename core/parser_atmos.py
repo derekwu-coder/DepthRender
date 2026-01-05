@@ -30,10 +30,11 @@ def parse_atmos_uddf(file_like) -> pd.DataFrame:
 
     if not samples:
         # 找不到任何 sample，就回傳空表
-        return pd.DataFrame(columns=["time_s", "depth_m"])
+        return pd.DataFrame(columns=["time_s", "depth_m", "water_temp_c"])
 
     times = []
     depths = []
+    temps_c = []  # water temperature in Celsius (may contain None)
 
     # 小工具：把 ISO 時間字串轉成 datetime（如果 UDDF 用絕對時間）
     def parse_iso_time(t_str: str):
@@ -92,12 +93,30 @@ def parse_atmos_uddf(file_like) -> pd.DataFrame:
                     # 先暫存，等全部跑完再統一換成相對秒數
                     time_sec = dt  # 先暫存 datetime，後面再處理
 
+
+        # ---- 找 temperature / watertemperature ----
+        temp_val = None
+        for _tname in ["watertemperature", "water_temperature", "temperature", "temp"]:
+            tnode = s.find(f".//{_tname}")
+            if tnode is not None and tnode.text:
+                try:
+                    temp_val = float(tnode.text)
+                except ValueError:
+                    temp_val = None
+                if temp_val is not None:
+                    break
+
+        # UDDF sometimes stores Kelvin; auto convert if it looks like Kelvin
+        if temp_val is not None and temp_val > 100.0:
+            temp_val = temp_val - 273.15
+
         if depth_val is not None and time_sec is not None:
             depths.append(depth_val)
             times.append(time_sec)
+            temps_c.append(temp_val)
 
     if not times or not depths:
-        return pd.DataFrame(columns=["time_s", "depth_m"])
+        return pd.DataFrame(columns=["time_s", "depth_m", "water_temp_c"])
 
     # 如果 time_sec 是 datetime，就要換成「從第一筆開始的秒數」
     if isinstance(times[0], datetime):
@@ -106,9 +125,15 @@ def parse_atmos_uddf(file_like) -> pd.DataFrame:
     else:
         times_float = times
 
+    # Ensure temps length matches
+    if len(temps_c) != len(times_float):
+        # pad with None
+        temps_c = (temps_c + [None] * len(times_float))[:len(times_float)]
+
     df = pd.DataFrame({
         "time_s": times_float,
         "depth_m": depths,
+        "water_temp_c": temps_c,
     })
 
     # 統一用正值深度

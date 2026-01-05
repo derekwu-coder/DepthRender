@@ -1,5 +1,12 @@
 """
 Shared dive-curve preprocessing (resample to 1 Hz) and metric computation.
+
+Key output columns for downstream renderers:
+- time_s
+- depth_m
+- rate_abs_mps
+- rate_abs_mps_smooth
+- water_temp_c (optional, if input contains any temperature column)
 """
 from __future__ import annotations
 
@@ -8,52 +15,43 @@ from typing import Optional, Dict, Any
 import numpy as np
 import pandas as pd
 
+# Print debug logs only once per run to avoid flooding console
+_DIVE_CURVE_DEBUG_PRINTED = False
 
-def resample_series_to_1hz(time_s, values, t_start, t_end):
-    """
-    Resample an irregular time series onto 1 Hz integer seconds.
 
-    Parameters
-    ----------
-    time_s : array-like
-        time in seconds (float or int)
-    values : array-like
-        samples aligned with time_s
-    t_start, t_end : int
-        target range inclusive/exclusive (recommend: [t_start, t_end])
+def _first_finite(arr: np.ndarray) -> Optional[float]:
+    if arr is None or arr.size == 0:
+        return None
+    m = np.isfinite(arr)
+    if not np.any(m):
+        return None
+    return float(arr[m][0])
 
-    Returns
-    -------
-    pd.DataFrame with columns ["time_s", "value"]
-    """
-    # 1) 建立整數秒時間軸
-    t = np.arange(int(t_start), int(t_end) + 1, 1)
 
-    # 2) 以 np.interp 做線性插值（或你想用前值填補也可以）
-    x = np.asarray(time_s, dtype=float)
-    y = np.asarray(values, dtype=float)
+def _last_finite(arr: np.ndarray) -> Optional[float]:
+    if arr is None or arr.size == 0:
+        return None
+    m = np.isfinite(arr)
+    if not np.any(m):
+        return None
+    return float(arr[m][-1])
 
-    # 避免 nan/空資料
-    if len(x) == 0:
-        return pd.DataFrame({"time_s": t, "value": np.nan})
-
-    v = np.interp(t, x, y)
-
-    return pd.DataFrame({"time_s": t, "value": v})
 
 def prepare_dive_curve(
     dive_df: pd.DataFrame,
     smooth_window: int
 ) -> Optional[pd.DataFrame]:
+    """
+    Input: raw dive_df (must include time_s, depth_m; may include water temperature)
+    Output (1 Hz):
+        time_s: integer-second grid in float
+        depth_m: interpolated depth
+        rate_abs_mps: abs(diff(depth)) clipped
+        rate_abs_mps_smooth: rolling mean
+        water_temp_c: interpolated temperature (optional; if any temp column exists)
+    """
+    global _DIVE_CURVE_DEBUG_PRINTED
 
-    """
-    輸入原始 dive_df（需含 time_s, depth_m）
-    回傳：
-        time_s: 每秒一個點（整數秒）
-        depth_m: 線性插值後深度
-        rate_abs_mps: 每秒深度變化量的絕對值
-        rate_abs_mps_smooth: 平滑後速率
-    """
     if dive_df is None or len(dive_df) == 0:
         return None
 
@@ -61,31 +59,80 @@ def prepare_dive_curve(
     if "time_s" not in df.columns or "depth_m" not in df.columns:
         return None
 
+    # Coerce required cols
+    df["time_s"] = pd.to_numeric(df["time_s"], errors="coerce")
+    df["depth_m"] = pd.to_numeric(df["depth_m"], errors="coerce")
+    df = df.dropna(subset=["time_s", "depth_m"])
+    if df.empty:
+        return None
+
     t_min = float(df["time_s"].min())
     t_max = float(df["time_s"].max())
     t0 = int(np.floor(t_min))
     t1 = int(np.ceil(t_max))
-
     if t1 <= t0:
         return None
 
     uniform_time = np.arange(t0, t1 + 1, 1.0)
 
+    # Depth interp
     depth_interp = np.interp(
         uniform_time,
-        df["time_s"].to_numpy(),
-        df["depth_m"].to_numpy()
+        df["time_s"].to_numpy(dtype=float),
+        df["depth_m"].to_numpy(dtype=float),
     )
 
+    # Rate
     rate_uniform = np.diff(depth_interp, prepend=depth_interp[0])
     rate_abs = np.abs(rate_uniform)
     rate_abs_clipped = np.clip(rate_abs, 0.0, 3.0)
 
     out = pd.DataFrame({
         "time_s": uniform_time.astype(float),
-        "depth_m": depth_interp,
-        "rate_abs_mps": rate_abs_clipped,
+        "depth_m": depth_interp.astype(float),
+        "rate_abs_mps": rate_abs_clipped.astype(float),
     })
+
+    # ---- Temperature propagation (robust) ----
+    # Accept multiple possible column names.
+    temp_candidates = [
+        "water_temp_c",       # preferred
+        "water_temperature_c",
+        "temperature_c",
+        "water_temperature",
+        "water_temperature_k",
+        "temperature",
+        "temp",
+        "watertemperature",
+    ]
+    temp_col = next((c for c in temp_candidates if c in df.columns), None)
+
+    if temp_col is not None:
+        t_src = df["time_s"].to_numpy(dtype=float)
+        v_src = pd.to_numeric(df[temp_col], errors="coerce").to_numpy(dtype=float)
+        m = np.isfinite(t_src) & np.isfinite(v_src)
+
+        if np.any(m):
+            tt = t_src[m]
+            vv = v_src[m]
+
+            # Heuristic: if looks like Kelvin, convert to Celsius
+            # (Parsers SHOULD already convert, but this protects against raw UDDF/K data.)
+            v_first = _first_finite(vv)
+            if v_first is not None and v_first > 100.0:
+                vv = vv - 273.15
+
+            out["water_temp_c"] = np.interp(uniform_time, tt, vv).astype(float)
+        else:
+            out["water_temp_c"] = np.full_like(uniform_time, np.nan, dtype=float)
+
+    # ---- Smoothing ----
+    if smooth_window is None:
+        smooth_window = 1
+    try:
+        smooth_window = int(smooth_window)
+    except Exception:
+        smooth_window = 1
 
     if smooth_window <= 1:
         out["rate_abs_mps_smooth"] = out["rate_abs_mps"]
@@ -96,22 +143,43 @@ def prepare_dive_curve(
             .mean()
         )
 
+    # ---- Debug once ----
+    if not _DIVE_CURVE_DEBUG_PRINTED:
+        _DIVE_CURVE_DEBUG_PRINTED = True
+        try:
+            print("[CORE.DIVE_CURVE] loaded")
+            print("[CORE.DIVE_CURVE] input columns:", list(dive_df.columns))
+            print("[CORE.DIVE_CURVE] temp_col detected:", temp_col)
+            if "water_temp_c" in out.columns:
+                arr = out["water_temp_c"].to_numpy(dtype=float)
+                m2 = np.isfinite(arr)
+                print("[CORE.DIVE_CURVE] out water_temp_c size:", int(arr.size), "finite:", int(m2.sum()))
+                if np.any(m2):
+                    print("[CORE.DIVE_CURVE] out water_temp_c first/last:",
+                          float(arr[m2][0]), float(arr[m2][-1]))
+                    print("[CORE.DIVE_CURVE] out water_temp_c min/max:",
+                          float(np.nanmin(arr)), float(np.nanmax(arr)))
+            else:
+                print("[CORE.DIVE_CURVE] out has NO water_temp_c column")
+        except Exception as e:
+            print("[CORE.DIVE_CURVE] debug exception:", repr(e))
+
     return out
+
 
 def compute_dive_metrics(
     df_rate: pd.DataFrame,
     dive_df_raw: Optional[pd.DataFrame],
     ff_start_depth_m: float,
-) -> dict:
+) -> Dict[str, Any]:
     """
-    根據重採樣後的 df_rate（time_s, depth_m, rate_abs_mps_smooth）
-    與原始 dive_df_raw（time_s, depth_m），計算：
-      - descent_avg: 下潛平均速率（扣除開頭與底部各 1 秒）
-      - ascent_avg: 上升平均速率（扣除一開始 1 秒）
-      - ff_avg: Free Fall 開始後到最低點前 1 秒的平均速率
-    回傳 dict，若無法計算則為 None。
+    Compute dive metrics from rate-smoothed dataframe.
+    Returns:
+      - descent_avg: average descent rate (m/s) before bottom (negative direction ignored; uses abs)
+      - ascent_avg:  average ascent rate (m/s) after bottom (abs)
+      - ff_avg:      avg rate between free-fall start and (bottom - 1s)
     """
-    result = {
+    result: Dict[str, Any] = {
         "descent_avg": None,
         "ascent_avg": None,
         "ff_avg": None,
@@ -126,72 +194,45 @@ def compute_dive_metrics(
     if "rate_abs_mps_smooth" not in df_rate.columns:
         return result
 
-    raw = dive_df_raw.sort_values("time_s").reset_index(drop=True).copy()
-
-    # 1) 找 Dive start / end（跟 Overlay tab 一樣邏輯）
-    start_rows = raw[raw["depth_m"] >= 0.7]
-    if start_rows.empty:
+    df = df_rate.copy()
+    df["time_s"] = pd.to_numeric(df["time_s"], errors="coerce")
+    df["depth_m"] = pd.to_numeric(df["depth_m"], errors="coerce")
+    df["rate_abs_mps_smooth"] = pd.to_numeric(df["rate_abs_mps_smooth"], errors="coerce")
+    df = df.dropna(subset=["time_s", "depth_m", "rate_abs_mps_smooth"])
+    if df.empty:
         return result
 
-    t_start = float(start_rows["time_s"].iloc[0])
-    after = raw[raw["time_s"] >= t_start]
-    end_candidates = after[after["depth_m"] <= 0.05]
-    if not end_candidates.empty:
-        t_end = float(end_candidates["time_s"].iloc[-1])
-    else:
-        t_end = float(after["time_s"].iloc[-1])
-
-    if t_end <= t_start:
+    # Bottom time from raw depth
+    raw = dive_df_raw.copy()
+    raw["time_s"] = pd.to_numeric(raw["time_s"], errors="coerce")
+    raw["depth_m"] = pd.to_numeric(raw["depth_m"], errors="coerce")
+    raw = raw.dropna(subset=["time_s", "depth_m"])
+    if raw.empty:
         return result
 
-    # 2) 找到底點時間 t_bottom（只看 t_start ~ t_end 區間）
-    within_dive = after[after["time_s"] <= t_end]
-    if within_dive.empty:
-        return result
+    idx_bottom = int(raw["depth_m"].idxmax())
+    t_bottom = float(raw.loc[idx_bottom, "time_s"])
 
-    idx_bottom = within_dive["depth_m"].idxmax()
-    t_bottom = float(within_dive.loc[idx_bottom, "time_s"])
+    # descent: from start to bottom
+    seg_desc = df[df["time_s"] <= t_bottom]
+    if not seg_desc.empty:
+        result["descent_avg"] = float(seg_desc["rate_abs_mps_smooth"].mean())
 
-    # 3) 在 df_rate 上切出對應區段
-    df = df_rate.sort_values("time_s").reset_index(drop=True)
+    # ascent: from bottom to end
+    seg_asc = df[df["time_s"] >= t_bottom]
+    if not seg_asc.empty:
+        result["ascent_avg"] = float(seg_asc["rate_abs_mps_smooth"].mean())
 
-    # ---- 下潛平均速率：從 t_start + 1 到 t_bottom - 1 ----
-    desc_start = t_start + 1.0
-    desc_end = t_bottom - 1.0
-    if desc_end > desc_start:
-        mask_desc = (df["time_s"] >= desc_start) & (df["time_s"] <= desc_end)
-        seg_desc = df.loc[mask_desc]
-        if not seg_desc.empty:
-            result["descent_avg"] = float(seg_desc["rate_abs_mps_smooth"].mean())
-
-    # ---- 上升平均速率：從 t_bottom + 1 到 t_end ----
-    asc_start = t_bottom + 1.0
-    asc_end = t_end
-    if asc_end > asc_start:
-        mask_asc = (df["time_s"] >= asc_start) & (df["time_s"] <= asc_end)
-        seg_asc = df.loc[mask_asc]
-        if not seg_asc.empty:
-            result["ascent_avg"] = float(seg_asc["rate_abs_mps_smooth"].mean())
-
-    # ---- Free Fall 段平均速率 ----
-    # 從指定 FF 深度開始，到 t_bottom - 1
-    max_depth = float(within_dive["depth_m"].max())
-    if ff_start_depth_m > 0.0 and ff_start_depth_m < max_depth:
-        # 找 raw 裡面第一次達到 FF 深度的時間（只看下潛區間）
-        ff_zone = within_dive[
-            (within_dive["time_s"] >= t_start) &
-            (within_dive["time_s"] <= t_bottom)
-        ]
-        ff_candidates = ff_zone[ff_zone["depth_m"] >= ff_start_depth_m]
+    # free-fall avg: from first time depth>=ff_start_depth_m to (bottom-1s)
+    within_dive = df.copy()
+    if ff_start_depth_m is not None and float(ff_start_depth_m) > 0:
+        ff_candidates = within_dive[within_dive["depth_m"] >= float(ff_start_depth_m)]
         if not ff_candidates.empty:
             t_ff_start = float(ff_candidates["time_s"].iloc[0])
             ff_end = t_bottom - 1.0
             if ff_end > t_ff_start:
-                mask_ff = (df["time_s"] >= t_ff_start) & (df["time_s"] <= ff_end)
-                seg_ff = df.loc[mask_ff]
+                seg_ff = within_dive[(within_dive["time_s"] >= t_ff_start) & (within_dive["time_s"] <= ff_end)]
                 if not seg_ff.empty:
                     result["ff_avg"] = float(seg_ff["rate_abs_mps_smooth"].mean())
 
     return result
-
-
