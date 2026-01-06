@@ -10,6 +10,38 @@ from PIL import Image as PILImage, ImageDraw, ImageFont, Image, ImageFilter, Ima
 from dataclasses import dataclass
 import time
 
+
+# ---------------------------------------------------------------------------
+# Caches (performance): avoid re-loading fonts / decoding PNG icons per frame
+# ---------------------------------------------------------------------------
+_TEMP_FONT_CACHE = {}  # key: (str(font_path), int(size)) -> ImageFont.FreeTypeFont
+_TEMP_ICON_CACHE = {}  # key: (str(icon_path), int(icon_size)) -> PILImage.Image (RGBA, resized)
+
+# Additional caches
+_ICON_BASE_CACHE = {}  # key: str(icon_path) -> PILImage.Image (RGBA, bg-removed if applied)
+_FLAG_BASE_CACHE = {}  # key: str(flag_path) -> PILImage.Image (RGBA)
+_FLAG_RESIZE_CACHE = {}  # key: (str(flag_path), int(w), int(h)) -> PILImage.Image (RGBA resized)
+
+def _get_font_cached(font_path: Optional[Path], size: int) -> ImageFont.FreeTypeFont:
+    """Return a cached FreeTypeFont for (font_path, size). Falls back to default font."""
+    try:
+        if font_path is None:
+            return ImageFont.load_default()
+        p = Path(font_path)
+        key = (str(p), int(size))
+        f = _TEMP_FONT_CACHE.get(key)
+        if f is not None:
+            return f
+        if p.exists():
+            f = ImageFont.truetype(str(p), int(size))
+        else:
+            f = ImageFont.load_default()
+        _TEMP_FONT_CACHE[key] = f
+        return f
+    except Exception:
+        return ImageFont.load_default()
+
+
 # ============================================================
 # Overlay render throttling (decouple overlay updates from video fps)
 # ============================================================
@@ -63,18 +95,8 @@ ALIGN_DISPLAY_CORRECTION_S = 1.0  # default: -1.0 to compensate ~0.9~1.0 s lag
 
 
 def load_font(size: int) -> ImageFont.FreeTypeFont:
-    """
-    Unified font loader for the project default font (RobotoCondensedBold.ttf).
-    """
-    try:
-        if FONT_PATH.exists():
-            return ImageFont.truetype(str(FONT_PATH), int(size))
-        else:
-            print(f"[FONT LOAD] NOT FOUND, fallback to default. PATH={FONT_PATH}")
-    except Exception as e:
-        print(f"[WARN] Failed to load font {FONT_PATH} (size={size}): {e}")
-    return ImageFont.load_default()
-
+    """Unified font loader for the project default font (RobotoCondensedBold.ttf) with caching."""
+    return _get_font_cached(FONT_PATH, int(size))
 
 def resolve_flags_dir(assets_dir: Path) -> Path:
     """
@@ -360,15 +382,16 @@ def render_layout_c_depth_module(
     moving = PILImage.new("RGBA", (W, moving_h), (0, 0, 0, 0))
     d = ImageDraw.Draw(moving)
 
-    # Fonts
+    # Fonts (cached)
     if font_path:
-        num_font = ImageFont.truetype(str(font_path), cfg.num_font_size)
+        num_font = _get_font_cached(Path(font_path), int(cfg.num_font_size))
         if LAYOUT_C_VALUE_FONT_PATH.exists():
-            value_font = ImageFont.truetype(str(LAYOUT_C_VALUE_FONT_PATH), cfg.depth_value_font_size)
-            unit_font = ImageFont.truetype(str(LAYOUT_C_VALUE_FONT_PATH), cfg.depth_unit_font_size)
+            value_font = _get_font_cached(LAYOUT_C_VALUE_FONT_PATH, int(cfg.depth_value_font_size))
+            unit_font = _get_font_cached(LAYOUT_C_VALUE_FONT_PATH, int(cfg.depth_unit_font_size))
         else:
-            value_font = ImageFont.truetype(str(font_path), cfg.depth_value_font_size)
-            unit_font = ImageFont.truetype(str(font_path), cfg.depth_unit_font_size)
+            fp = Path(font_path)
+            value_font = _get_font_cached(fp, int(cfg.depth_value_font_size))
+            unit_font = _get_font_cached(fp, int(cfg.depth_unit_font_size))
     else:
         num_font = ImageFont.load_default()
         value_font = ImageFont.load_default()
@@ -697,12 +720,7 @@ LAYOUT_C_SHADOW_COLOR = tuple(_layout_c_shadow_defaults.color)
 
 
 def _load_font_path(path: Path, size: int) -> ImageFont.FreeTypeFont:
-    try:
-        if path and Path(path).exists():
-            return ImageFont.truetype(str(path), int(size))
-    except Exception:
-        pass
-    return ImageFont.load_default()
+    return _get_font_cached(Path(path) if path else None, int(size))
 
 # ==========================================================
 # Shadow helper for Layout C modules
@@ -855,6 +873,22 @@ def _resize_icon(base_icon: PILImage.Image, scale: float, size: int) -> PILImage
     except Exception:
         return base_icon.resize((s, s))
 
+def _resize_icon_keep_aspect(base_icon: PILImage.Image, box: int) -> PILImage.Image:
+    """Resize icon to fit within (box x box) while keeping aspect ratio."""
+    box = max(1, int(box))
+    try:
+        im = base_icon.copy()
+        im.thumbnail((box, box), resample=PILImage.LANCZOS)
+        return im
+    except Exception:
+        # Fallback: keep square resize
+        try:
+            return base_icon.resize((box, box), resample=PILImage.BICUBIC)
+        except Exception:
+            return base_icon.resize((box, box))
+
+
+
 
 def render_layout_c_heart_rate_module(
     base_img: PILImage.Image,
@@ -874,10 +908,18 @@ def render_layout_c_heart_rate_module(
     icon_path = (Path(assets_dir) / LAYOUT_C_HR_ICON_REL)
     if not icon_path.exists():
         return base_img
-    try:
-        icon_base = PILImage.open(str(icon_path)).convert("RGBA")
-    except Exception:
-        return base_img
+    # Heart icon (cached decode + optional bg removal)
+    icon_key = str(icon_path)
+    icon_base = _ICON_BASE_CACHE.get(icon_key)
+    if icon_base is None:
+        try:
+            _im = PILImage.open(str(icon_path)).convert("RGBA")
+            # remove any near-black background pixels if present (safe for transparent PNGs)
+            _im = _remove_dark_bg_to_alpha(_im, threshold=10)
+            icon_base = _im
+            _ICON_BASE_CACHE[icon_key] = icon_base
+        except Exception:
+            return base_img
 
     # --- Draw HR module onto its own transparent layer (so shadow is clean) ---
     layer = PILImage.new("RGBA", base_img.size, (0, 0, 0, 0))
@@ -1150,33 +1192,35 @@ class LayoutDTempConfig:
     margin_right: int = 60
     margin_bottom: int = 80
 
+    # Update rate for temperature value (Hz). Overlay can render at higher FPS; this throttles
+    # only the temperature sampling/refresh. Recommended options: 1 / 2 / 5 / 15.
+    temp_update_fps: int = 15
+
     # Icon + text
-    icon_size: int = 100  # original = 64
+    icon_size: int = 100
     gap_px: int = 14
 
     # Font
     # Value (temperature number)
-    value_font_size: int = 56  # original = 60
+    value_font_size: int = 56
     decimals: int = 1
-    value_ox: int = -20  # original = 60
-    value_oy: int = -25  # original = 60
+    value_ox: int = -20
+    value_oy: int = -25
 
     # Unit ("°C")
-    unit_font_size: int = 40  # original = 60
+    unit_font_size: int = 40
     unit_gap_px: int = 6
-    unit_ox: int = 0  # original = 0
-    unit_oy: int = -14  # original = 0
+    unit_ox: int = 0
+    unit_oy: int = -14
 
     # Degree symbol rendering
-    # If True, draw degree as a small dot (circle) instead of the "°" glyph.
+    # If True, draw degree as a small hollow dot (circle) instead of the "°" glyph.
     deg_as_dot: bool = True
-    deg_dot_r_px: int = 5
+    deg_dot_r_px: int = 4
+    deg_dot_line_px: int = 3
     deg_dot_dx: int = 0
-    deg_dot_dy: int = 6
-    deg_dot_r_px: int = 4        # 半徑（建議 5–7）
-    deg_dot_line_px: int = 1     # 線寬（這就是你現在要調的）
-    deg_dot_dx: int = 0          # X 偏移
-    deg_dot_dy: int = 5        # Y 偏移（通常要往上）
+    deg_dot_dy: int = 5
+
     # Color (RGBA)
     color: tuple = (255, 255, 255, 255)
 
@@ -1185,6 +1229,8 @@ class LayoutDTempConfig:
     # - "C" uses nereus-bold
     deg_symbol: str = "°"
     unit_c: str = "C"
+    
+    temp_time_shift_s: float = -12.0  # e.g. 10.0 or 15.0
 
     # Optional: if input temperature looks like Kelvin, auto-convert to Celsius.
     auto_kelvin_to_c: bool = True
@@ -1270,12 +1316,7 @@ def render_layout_d_time_module(
 
     # Load fonts (independent sizes)
     def _safe_font(path: Optional[Path], size: int):
-        try:
-            if path and Path(path).exists():
-                return ImageFont.truetype(str(path), int(size))
-        except Exception:
-            pass
-        return ImageFont.load_default()
+        return _get_font_cached(Path(path) if path else None, int(size))
 
     nereus_label = _safe_font(nereus_font_path, int(getattr(cfg, "label_font_size", 50)))
     base_colon   = _safe_font(base_font_path, int(getattr(cfg, "colon_font_size", 40)))
@@ -1441,9 +1482,8 @@ def render_layout_d_temp_module(
     if not cfg.enabled:
         return base_img
 
-    # Load icon (and remove dark background)
+    # Resolve icon path
     icon_path = (Path(assets_dir) / LAYOUT_D_TEMP_ICON_REL)
-    # Fallback: allow thermo.png placed directly under assets_dir
     if not icon_path.exists():
         alt = Path(assets_dir) / "thermo.png"
         if alt.exists():
@@ -1451,139 +1491,137 @@ def render_layout_d_temp_module(
         else:
             return base_img
 
-    try:
-        icon_base = PILImage.open(str(icon_path)).convert("RGBA")
-        icon_base = _remove_dark_bg_to_alpha(icon_base, threshold=10)
-    except Exception:
-        return base_img
-
-    W, H = base_img.size
-    layer = PILImage.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
-
-    # ---- Icon resize (keep original aspect ratio) ----
-    icon_size = int(cfg.icon_size)
-
-    def _resize_icon_keep_aspect(img: PILImage.Image, target: int) -> PILImage.Image:
-        # Scale down/up while preserving aspect ratio, fitting within target x target.
+    # Icon cache: decode + remove dark bg + resize only once per (path, size)
+    icon_size = int(getattr(cfg, "icon_size", 64))
+    icon_key = (str(icon_path), int(icon_size))
+    icon_img = _TEMP_ICON_CACHE.get(icon_key)
+    if icon_img is None:
         try:
-            im = img.copy()
-            im.thumbnail((target, target), resample=getattr(PILImage, "Resampling", PILImage).LANCZOS)
-            return im
+            icon_base = PILImage.open(str(icon_path)).convert("RGBA")
+            icon_base = _remove_dark_bg_to_alpha(icon_base, threshold=10)
+            # Keep original aspect ratio (avoid squash)
+            icon_img = _resize_icon_keep_aspect(icon_base, icon_size)
+            _TEMP_ICON_CACHE[icon_key] = icon_img
         except Exception:
-            # Fallback: manual ratio compute
-            w, h = img.size
-            if w <= 0 or h <= 0:
-                return img
-            s = float(target) / float(max(w, h))
-            nw = max(1, int(round(w * s)))
-            nh = max(1, int(round(h * s)))
-            try:
-                return img.resize((nw, nh), resample=PILImage.BICUBIC)
-            except Exception:
-                return img.resize((nw, nh))
+            return base_img
 
-    icon_img = _resize_icon_keep_aspect(icon_base, icon_size)
-    w_icon, h_icon = icon_img.size
+    # Fonts (cached)
+    value_font_size = int(getattr(cfg, "value_font_size", 60))
+    unit_font_size = int(getattr(cfg, "unit_font_size", value_font_size))
 
-    gap = int(cfg.gap_px)
+    nereus_value_font = _get_font_cached(Path(nereus_font_path) if nereus_font_path else None, int(value_font_size))
+    nereus_unit_font  = _get_font_cached(Path(nereus_font_path) if nereus_font_path else None, int(unit_font_size))
+    base_unit_font    = _get_font_cached(Path(base_font_path) if base_font_path else None, int(unit_font_size))
 
-    # ---- Fonts (value and unit can be controlled independently) ----
-    nereus_value_font = ImageFont.truetype(str(nereus_font_path), int(cfg.value_font_size))
-    nereus_unit_font = ImageFont.truetype(str(nereus_font_path), int(cfg.unit_font_size))
-    base_unit_font = ImageFont.truetype(str(base_font_path), int(cfg.unit_font_size))
-
-    # Temperature formatting
-    if temp_c is None or (isinstance(temp_c, float) and not np.isfinite(temp_c)):
-        temp_str = "--.-"
+    # Determine temperature value to display
+    if temp_c is None or not np.isfinite(float(temp_c)):
+        # No value: caller should already provide first/last hold; fall back to blank
+        temp_str = ""
     else:
-        tval = float(temp_c)
-        if cfg.auto_kelvin_to_c and tval > float(cfg.kelvin_threshold):
-            tval = tval - 273.15
-        temp_str = f"{tval:.{int(cfg.decimals)}f}"
+        decimals = int(getattr(cfg, "decimals", 1))
+        temp_str = f"{float(temp_c):.{decimals}f}"
 
-    # Measure text extents
-    bbox_val = draw.textbbox((0, 0), temp_str, font=nereus_value_font)
-    w_val = int(bbox_val[2] - bbox_val[0])
-    h_val = int(bbox_val[3] - bbox_val[1])
+    # Text measurement
+    W, H = base_img.size
+    overlay = base_img.copy()
+    draw = ImageDraw.Draw(overlay)
 
-    bbox_c = draw.textbbox((0, 0), cfg.unit_c, font=nereus_unit_font)
+    # Measure value
+    if temp_str:
+        bbox_val = draw.textbbox((0, 0), temp_str, font=nereus_value_font)
+        w_val = int(bbox_val[2] - bbox_val[0])
+        h_val = int(bbox_val[3] - bbox_val[1])
+    else:
+        w_val = 0
+        h_val = 0
+
+    # Measure unit pieces
+    # NOTE: degree may be drawn as dot; we reserve width accordingly.
+    bbox_deg = draw.textbbox((0, 0), getattr(cfg, "deg_symbol", "°"), font=base_unit_font)
+    w_deg_glyph = int(bbox_deg[2] - bbox_deg[0])
+    h_deg = int(bbox_deg[3] - bbox_deg[1])
+
+    bbox_c = draw.textbbox((0, 0), getattr(cfg, "unit_c", "C"), font=nereus_unit_font)
     w_c = int(bbox_c[2] - bbox_c[0])
     h_c = int(bbox_c[3] - bbox_c[1])
 
-    # Degree symbol: either glyph or small dot (circle)
-    if bool(getattr(cfg, "deg_as_dot", True)):
-        r = int(getattr(cfg, "deg_dot_r_px", 5))
-        w_deg = max(0, 2 * r)
-        h_deg = max(0, 2 * r)
-    else:
-        bbox_deg = draw.textbbox((0, 0), cfg.deg_symbol, font=base_unit_font)
-        w_deg = int(bbox_deg[2] - bbox_deg[0])
-        h_deg = int(bbox_deg[3] - bbox_deg[1])
-
+    w_icon, h_icon = icon_img.size
+    gap = int(getattr(cfg, "gap_px", 14))
     unit_gap = int(getattr(cfg, "unit_gap_px", 6))
 
-    # Module size (used only for anchoring). Offsets (value_ox/unit_ox etc.) are not included on purpose.
-    module_w = int(w_icon) + gap + w_val + unit_gap + w_deg + w_c
-    module_h = int(max(h_icon, h_val, h_c, h_deg))
+    # Degree dot width
+    use_dot = bool(getattr(cfg, "deg_as_dot", True))
+    r = int(getattr(cfg, "deg_dot_r_px", 4))
+    w_deg = (2 * r) if use_dot else w_deg_glyph
+
+    # Module size
+    module_w = int(w_icon + gap + max(0, w_val) + (unit_gap if temp_str else 0) + (w_deg + w_c if temp_str else 0))
+    module_h = int(max(h_icon, h_val if h_val else h_icon, h_deg, h_c))
 
     # Anchor bottom-right if x/y are -1
-    if int(cfg.x) < 0:
-        x0 = int(W - int(cfg.margin_right) - module_w)
+    if int(getattr(cfg, "x", -1)) < 0:
+        x0 = int(W - int(getattr(cfg, "margin_right", 60)) - module_w)
     else:
-        x0 = int(cfg.x)
+        x0 = int(getattr(cfg, "x", 0))
 
-    if int(cfg.y) < 0:
-        y0 = int(H - int(cfg.margin_bottom) - module_h)
+    if int(getattr(cfg, "y", -1)) < 0:
+        y0 = int(H - int(getattr(cfg, "margin_bottom", 80)) - module_h)
     else:
-        y0 = int(cfg.y)
+        y0 = int(getattr(cfg, "y", 0))
 
-    x0 += int(cfg.global_x)
-    y0 += int(cfg.global_y)
+    x0 += int(getattr(cfg, "global_x", 0))
+    y0 += int(getattr(cfg, "global_y", 0))
 
-    # Icon
+    # Icon placement (vertically centered in module)
     ix = x0
     iy = y0 + (module_h - h_icon) // 2
-    layer.paste(icon_img, (int(ix), int(iy)), icon_img)
+    overlay.alpha_composite(icon_img, dest=(ix, iy))
 
-    # Text baseline (align to vertical center)
-    tx_base = x0 + w_icon + gap
-    ty_base = y0 + (module_h - h_val) // 2
+    # If no temperature string, still show icon only
+    if not temp_str:
+        return overlay
 
-    # Value offsets
-    tx_val = int(tx_base + int(getattr(cfg, "value_ox", 0)))
-    ty_val = int(ty_base + int(getattr(cfg, "value_oy", 0)))
-    draw.text((tx_val, ty_val), temp_str, font=nereus_value_font, fill=cfg.color)
+    # Text origins
+    value_ox = int(getattr(cfg, "value_ox", 0))
+    value_oy = int(getattr(cfg, "value_oy", 0))
+    unit_ox = int(getattr(cfg, "unit_ox", 0))
+    unit_oy = int(getattr(cfg, "unit_oy", 0))
+
+    tx_val = ix + w_icon + gap + value_ox
+    ty_val = y0 + (module_h - h_val) // 2 + value_oy
+
+    draw.text((tx_val, ty_val), temp_str, font=nereus_value_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
 
     # Unit start (after value)
-    tx_unit_base = tx_val + w_val + unit_gap
-    ty_unit_base = ty_base  # keep unit aligned to the same baseline by default
-
-    tx_unit = int(tx_unit_base + int(getattr(cfg, "unit_ox", 0)))
-    ty_unit = int(ty_unit_base + int(getattr(cfg, "unit_oy", 0)))
+    tx_unit = tx_val + w_val + unit_gap + unit_ox
+    unit_h = max(h_deg, h_c)
+    ty_unit = y0 + (module_h - unit_h) // 2 + unit_oy
 
     # Draw degree
-    if bool(getattr(cfg, "deg_as_dot", True)):
-        r = int(getattr(cfg, "deg_dot_r_px", 5))
+    if use_dot:
+        r = int(getattr(cfg, "deg_dot_r_px", 4))
+        line = int(getattr(cfg, "deg_dot_line_px", 2))
         dx = int(getattr(cfg, "deg_dot_dx", 0))
-        dy = int(getattr(cfg, "deg_dot_dy", 6))
-        # Place the dot near the upper-right of the value baseline by default.
-        # (ty_unit + dy) is tunable via cfg.deg_dot_dy.
+        dy = int(getattr(cfg, "deg_dot_dy", 5))
+        # Guard: avoid line swallowing the hole
+        line = max(1, min(line, max(1, r - 1)))
+
         cx0 = tx_unit + dx
         cy0 = ty_unit + dy
-        draw.ellipse((cx0, cy0, cx0 + 2 * r, cy0 + 2 * r), outline=cfg.color, width=2)
-
+        draw.ellipse(
+            (cx0, cy0, cx0 + 2 * r, cy0 + 2 * r),
+            outline=getattr(cfg, "color", (255, 255, 255, 255)),
+            width=line,
+        )
         tx_after_deg = tx_unit + 2 * r
     else:
-        draw.text((tx_unit, ty_unit), cfg.deg_symbol, font=base_unit_font, fill=cfg.color)
-        tx_after_deg = tx_unit + w_deg
+        draw.text((tx_unit, ty_unit), getattr(cfg, "deg_symbol", "°"), font=base_unit_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
+        tx_after_deg = tx_unit + w_deg_glyph
 
-    # Draw "C" (nereus-bold)
-    draw.text((int(tx_after_deg), int(ty_unit)), cfg.unit_c, font=nereus_unit_font, fill=cfg.color)
+    # Draw 'C'
+    draw.text((tx_after_deg, ty_unit), getattr(cfg, "unit_c", "C"), font=nereus_unit_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
 
-    return PILImage.alpha_composite(base_img.convert("RGBA"), layer)
-
-
+    return overlay
 
 def build_layout_d_depth_static(
     times_s: np.ndarray,
@@ -1768,17 +1806,14 @@ def render_layout_d_depth_module(
     cy = oy + yi
     draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=cfg.dot_color)
 
-    # Fonts
-    try:
-        if font_path:
-            value_font = ImageFont.truetype(str(font_path), int(cfg.value_font_size))
-            unit_font = ImageFont.truetype(str(font_path), int(cfg.unit_font_size))
-        else:
-            value_font = ImageFont.load_default()
-            unit_font = ImageFont.load_default()
-    except Exception:
+    # Fonts (cached)
+    if font_path:
+        fp = Path(font_path)
+        value_font = _get_font_cached(fp, int(cfg.value_font_size))
+        unit_font  = _get_font_cached(fp, int(cfg.unit_font_size))
+    else:
         value_font = ImageFont.load_default()
-        unit_font = ImageFont.load_default()
+        unit_font  = ImageFont.load_default()
 
     # Depth text
     fmt = "{:." + str(int(cfg.decimals)) + "f}"
@@ -1892,12 +1927,10 @@ def draw_layout_a_bottom_bar(
         draw.polygon(p, fill=fill)
 
     def _load_font(size: int):
-        try:
-            return ImageFont.truetype(str(base_font_path), size=int(size))
-        except Exception:
-            return ImageFont.load_default()
+        return _get_font_cached(Path(base_font_path) if base_font_path else None, int(size))
 
-    fs = cfg["font_sizes"]
+    fs = getattr(cfg, "font_sizes", {})
+    
     f_code = _load_font(int(fs.get("code", 34)))
     f_name = _load_font(int(fs.get("name", 34)))
     f_disc = _load_font(int(fs.get("disc", 34)))
@@ -1929,7 +1962,11 @@ def draw_layout_a_bottom_bar(
             target_h = 1
         scale = target_h / float(flag_img.size[1])
         target_w = max(1, int(round(flag_img.size[0] * scale)))
-        flag_resized = flag_img.resize((target_w, target_h), PILImage.LANCZOS)
+        _fkey = (str(flags_dir / f"{code3.lower()}.png"), int(target_w), int(target_h))
+        flag_resized = _FLAG_RESIZE_CACHE.get(_fkey)
+        if flag_resized is None:
+            flag_resized = flag_img.resize((target_w, target_h), PILImage.LANCZOS)
+            _FLAG_RESIZE_CACHE[_fkey] = flag_resized
         fx = x1 + w1 - pad - target_w + int(off_flag[0])
         fy = y + (h - target_h) // 2 + int(off_flag[1])
         overlay.alpha_composite(flag_resized.convert("RGBA"), (fx, fy))
@@ -2005,8 +2042,13 @@ def _load_flag_png(flags_dir: Path, code3: Optional[str]) -> Optional[Image.Imag
     path = flags_dir / f"{code3.lower()}.png"
     if not path.exists():
         return None
+    k = str(path)
+    img = _FLAG_BASE_CACHE.get(k)
+    if img is not None:
+        return img
     try:
         img = Image.open(path).convert("RGBA")
+        _FLAG_BASE_CACHE[k] = img
         return img
     except Exception as e:
         print(f"[FLAG] ERROR loading {path}: {e}")
@@ -2074,7 +2116,11 @@ def draw_competition_panel_bottom_right(
             target_w = int(flag_img.width * scale)
 
             if target_w > 0:
-                flag_resized = flag_img.resize((target_w, target_h), PILImage.ANTIALIAS)
+                _fkey = (str(flags_dir / f"{code3.lower()}.png"), int(target_w), int(target_h))
+                flag_resized = _FLAG_RESIZE_CACHE.get(_fkey)
+                if flag_resized is None:
+                    flag_resized = flag_img.resize((target_w, target_h), PILImage.LANCZOS)
+                    _FLAG_RESIZE_CACHE[_fkey] = flag_resized
                 fx = b2_x + left_off
                 fy = b2_y + margin_tb
                 img.paste(flag_resized, (fx, fy), flag_resized)
@@ -2428,15 +2474,59 @@ def render_video(
     else:
         temps_d = np.array([], dtype=float)
 
+    # Put this flag OUTSIDE temp_at() (one line), near where temp_at is defined:
+    _temp_debug_printed = False
+    _temp_dbg = {"printed": False}
+
     def temp_at(t_video: float) -> Optional[float]:
-        if temps_d.size == 0 or len(times_d) == 0:
+        """
+        Return temperature (C) at video time t_video, with:
+        - use finite samples only
+        - hold first/last valid value beyond range
+        - print debug once
+        """
+        # ---- debug print ONCE ----
+        if not _temp_dbg["printed"]:
+            _temp_dbg["printed"] = True
+            try:
+                import numpy as np
+                print("[TEMP DEBUG] times_d size:", getattr(times_d, "size", None))
+                print("[TEMP DEBUG] temps_d size:", getattr(temps_d, "size", None))
+    
+                if getattr(temps_d, "size", 0) > 0 and getattr(times_d, "size", 0) > 0:
+                    m = np.isfinite(times_d) & np.isfinite(temps_d)
+                    print("[TEMP DEBUG] finite pair count:", int(m.sum()))
+                    if m.any():
+                        tt0 = float(times_d[m][0])
+                        vv0 = float(temps_d[m][0])
+                        tt1 = float(times_d[m][-1])
+                        vv1 = float(temps_d[m][-1])
+                        print("[TEMP DEBUG] first t/temp:", tt0, vv0)
+                        print("[TEMP DEBUG] last  t/temp:", tt1, vv1)
+                        vv = temps_d[m]
+                        print("[TEMP DEBUG] temp min/max:", float(np.nanmin(vv)), float(np.nanmax(vv)))
+            except Exception as e:
+                print("[TEMP DEBUG] exception:", repr(e))
+    
+        # ---- normal logic ----
+        if getattr(temps_d, "size", 0) == 0 or getattr(times_d, "size", 0) == 0:
             return None
+    
+        import numpy as np
+        mask = np.isfinite(times_d) & np.isfinite(temps_d)
+        if not np.any(mask):
+            return None
+    
+        tt = times_d[mask]
+        vv = temps_d[mask]
+    
         t = t_video + effective_offset
-        if t <= times_d[0]:
-            return float(temps_d[0]) if np.isfinite(temps_d[0]) else None
-        if t >= times_d[-1]:
-            return float(temps_d[-1]) if np.isfinite(temps_d[-1]) else None
-        return float(np.interp(t, times_d, temps_d))
+        if t <= float(tt[0]):
+            return float(vv[0])
+        if t >= float(tt[-1]):
+            return float(vv[-1])
+        return float(np.interp(t, tt, vv))
+
 
 
     def is_descent_at(t_video: float, half_window_s: float = 0.30) -> bool:
@@ -2956,9 +3046,33 @@ def render_video(
 
         # ===== Layout D (Temperature module) =====
         if layout == "D":
+            # Throttle temperature sampling independently from overlay FPS.
+            # Recommended values: 1 / 2 / 5 / 15 (Hz).
+            try:
+                _tfps = float(getattr(layout_d_temp_cfg, "temp_update_fps", 15))
+            except Exception:
+                _tfps = 15.0
+            if not np.isfinite(_tfps) or _tfps <= 0:
+                _tfps = 15.0
+            _allowed = (1.0, 2.0, 5.0, 15.0)
+            _tfps = min(_allowed, key=lambda v: abs(v - _tfps))
+            _tstep = 1.0 / _tfps
+            _t_temp = math.floor(float(t_global) / _tstep) * _tstep
+        
+            # Temperature sensor lag compensation (shift temperature earlier in time).
+            # Example: 10.0 or 15.0 seconds.
+            try:
+                _t_shift = float(getattr(layout_d_temp_cfg, "temp_time_shift_s", 0.0))
+            except Exception:
+                _t_shift = 0.0
+            if not np.isfinite(_t_shift):
+                _t_shift = 0.0
+        
+            _t_temp_shifted = float(_t_temp) - float(_t_shift)
+        
             overlay = render_layout_d_temp_module(
                 base_img=overlay,
-                temp_c=temp_at(float(t_global)),
+                temp_c=temp_at(_t_temp_shifted),
                 cfg=layout_d_temp_cfg,
                 assets_dir=assets_dir,
                 nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
