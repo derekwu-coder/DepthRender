@@ -3,6 +3,7 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from datetime import datetime
+import numpy as np
 
 def parse_atmos_uddf(file_like) -> pd.DataFrame:
     """
@@ -141,5 +142,28 @@ def parse_atmos_uddf(file_like) -> pd.DataFrame:
 
     # 依時間排序 & 重設 index
     df = df.sort_values("time_s").reset_index(drop=True)
+
+    # ============================================================
+    # ATMOS UDDF quirk fix:
+    # ATMOS UDDF files may contain 2-3 samples within the same second.
+    # For stable on-screen depth (and rate) rendering, reduce to 1 Hz
+    # by averaging all samples that fall into the same integer second.
+    # ============================================================
+    if not df.empty:
+        # Floor to integer seconds (robust for float time_s)
+        sec_key = np.floor(df["time_s"].astype(float)).astype(int)
+        df = df.assign(_sec=sec_key)
+
+        # Use mean within each second; NaN temps are ignored by mean
+        df = (
+            df.groupby("_sec", as_index=False)
+              .agg({
+                  "time_s": "mean",
+                  "depth_m": "mean",
+                  "water_temp_c": "mean",
+              })
+        )
+
+        df = df.sort_values("time_s").reset_index(drop=True)
 
     return df
