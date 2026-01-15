@@ -47,7 +47,7 @@ def _get_font_cached(font_path: Optional[Path], size: int) -> ImageFont.FreeType
 # ============================================================
 LAYOUT_AB_OVERLAY_FPS = 15   # Layout A & B overlay update fps
 LAYOUT_C_OVERLAY_FPS  = 10   # Layout C overlay update fps
-LAYOUT_D_OVERLAY_FPS  = 15   # Layout D overlay update fps
+LAYOUT_D_OVERLAY_FPS  = 10   # Layout D overlay update fps
 
 # Internal overlay cache (per layout): {"tq": float, "size": (w,h), "overlay": PIL.Image}
 _OVERLAY_CACHE = {}
