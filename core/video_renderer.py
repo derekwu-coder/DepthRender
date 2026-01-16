@@ -2315,6 +2315,14 @@ def render_video(
     # Apply global fine-tune correction (seconds)
     effective_offset = float(time_offset) + float(ALIGN_DISPLAY_CORRECTION_S)
 
+    # Timing model (shared by ALL layouts):
+    # - t_video   : MoviePy timeline time (seconds)
+    # - t_global  : data timeline time = t_video + effective_offset
+    # - elapsed   : in-dive elapsed time (seconds), clamped to [0, dive_end_s - dive_start_s]
+    #
+    # IMPORTANT: Any *displayed* dive time should use `elapsed_dive_time(...)`.
+    #            Using `t_global` directly will cause the time to keep counting after surfacing.
+
 
     def update_progress(p: float, msg: str = ""):
         if progress_callback is None:
@@ -2905,8 +2913,17 @@ def render_video(
         # Direction (for Layout C arrow/label). If not in dive, default to descent label.
         direction_is_descent = bool(is_descent_at(t_use)) if in_dive else True
 
+        # Unified elapsed-time logic (all layouts):
+        # - starts at dive_start_s
+        # - pauses at/after dive_end_s (surfacing)
+        # - unaffected by per-layout rendering
         elapsed = elapsed_dive_time(t)
-        time_text = format_dive_time(elapsed) if elapsed is not None else ""
+        # (time_text assigned below from time_disp_s)
+        # Display dive time base (start at 0 at video/data t_global=0; stop at dive_end_s)
+        time_disp_s = float(max(0.0, t_global))
+        if dive_end_s is not None:
+            time_disp_s = float(min(time_disp_s, float(dive_end_s)))
+        time_text = format_dive_time(time_disp_s)
 
         text_depth = f"{depth_disp:.1f} m"
         text_rate = f"{rate_val_abs:.1f} m/s"
@@ -2920,7 +2937,7 @@ def render_video(
                 nationality=nationality,
                 diver_name=diver_name,
                 discipline=discipline,
-                dive_time_s=elapsed,
+                dive_time_s=time_disp_s,
                 depth_val=depth_disp,
                 params=layout_params,
             )
@@ -2988,7 +3005,10 @@ def render_video(
 
             overlay = render_layout_c_time_module(
                 overlay,
-                time_s=float(max(0.0, t_global)),
+                # IMPORTANT: Layout C time MUST use the unified elapsed time,
+                # not raw t_global. This prevents the timer from continuing
+                # after surfacing, and aligns behavior with Layout A/D.
+                time_s=float(time_disp_s),
                 cfg=layout_c_time_cfg,
             )
 
@@ -3022,7 +3042,7 @@ def render_video(
 
             overlay = render_layout_d_depth_module(
                 base_img=overlay,
-                t_global_s=float(max(0.0, elapsed if elapsed is not None else 0.0)),
+                t_global_s=float(time_disp_s),
                 current_depth_m=float(depth_disp),
                 static_img=layout_d_plate,
                 curve_fill_img=layout_d_curve_fill,
@@ -3036,7 +3056,7 @@ def render_video(
         if layout == "D":
             overlay = render_layout_d_time_module(
                 base_img=overlay,
-                t_global_s=float(max(0.0, elapsed if elapsed is not None else 0.0)),
+                t_global_s=float(time_disp_s),
                 depth_cfg=layout_d_depth_cfg,
                 cfg=layout_d_time_cfg,
                 nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
