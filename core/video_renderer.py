@@ -1175,6 +1175,59 @@ class LayoutDTimeConfig:
     # Optional fine spacing when you want auto-flow (used only if the *_ox fields are all 0)
     auto_flow_gap_px: int = 6
 
+
+
+# ===================
+# Layout D (Speed module)
+# ===================
+
+@dataclass
+class LayoutDSpeedConfig:
+    enabled: bool = True
+
+    # Global module offset (applied to all elements)
+    global_x: int = 0
+    global_y: int = 20
+
+    # Vertical placement: under the Layout D Time module time-row
+    below_time_gap_px: int = 18
+
+    # Color (RGBA)
+    color: tuple = (255, 255, 255, 255)
+
+    # Label: "Speed"
+    label_text: str = "Speed"
+    label_font_size: int = 36
+    label_ox: int = 0
+    label_oy: int = 0
+
+    # Value (absolute, no +/-)
+    value_font_size: int = 65
+    decimals: int = 1
+    value_row_oy: int = 20  # vertical offset of value row relative to label row
+    value_ox: int = 7
+    value_oy: int = 0
+
+    # Unit: "m/s" (draw the slash manually as a line)
+    unit_font_size: int = 50
+    unit_text_left: str = "m"
+    unit_text_right: str = "s"
+    unit_gap_px: int = 10  # gap between value and unit block
+    unit_ox: int = 0
+    unit_oy: int = -3
+
+    # Unit vertical alignment relative to value
+    unit_bottom_align: bool = True
+    unit_bottom_extra_dy: int = 0
+
+    # Manual slash parameters (drawn as a line)
+    slash_dx: int = 6          # +x from start to end
+    slash_dy: int = -22         # -y from start to end (negative = up)
+    slash_thickness_px: int = 4
+    slash_gap_px: int = 4       # gap between 'm' and slash and 's'
+    slash_ox: int = 0
+    slash_oy: int = 25
+
 # ===================
 # Layout D (Temperature module)
 # ===================
@@ -1185,10 +1238,10 @@ class LayoutDTempConfig:
 
     # Positioning
     # If x/y are -1, the module is anchored to bottom-right using margin_right/margin_bottom.
-    x: int = -1
+    x: int = 860   # original = -1
     y: int = -1
     global_x: int = 0
-    global_y: int = 0
+    global_y: int = -15
     margin_right: int = 60
     margin_bottom: int = 80
 
@@ -1211,7 +1264,7 @@ class LayoutDTempConfig:
     unit_font_size: int = 40
     unit_gap_px: int = 6
     unit_ox: int = 0
-    unit_oy: int = -14
+    unit_oy: int = -11
 
     # Degree symbol rendering
     # If True, draw degree as a small hollow dot (circle) instead of the "°" glyph.
@@ -1465,6 +1518,157 @@ def render_layout_d_time_module(
         sx = x0 + int(getattr(cfg, "ss_ox", 0))
         sy = y0 + int(getattr(cfg, "ss_oy", 0))
         draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+
+    return out
+
+
+def render_layout_d_speed_module(
+    base_img: Image.Image,
+    speed_mps: float,
+    depth_cfg: "LayoutDDepthConfig",
+    time_cfg: "LayoutDTimeConfig",
+    cfg: "LayoutDSpeedConfig",
+    nereus_font_path: Optional[Path],
+    base_font_path: Optional[Path],
+) -> Image.Image:
+    """Draw Layout D speed module.
+
+    Requirements:
+      - Label "Speed" under the time VALUE row
+      - Value uses absolute speed with 1 decimal (configurable)
+      - Unit rendered as m/s, with a manually drawn slash line (configurable)
+      - Left align label to time label ("Dive Time")
+      - Left align value to time value (MM)
+      - Unit placed to the right of value, bottom-aligned to value bottom
+    """
+    if not getattr(cfg, "enabled", True):
+        return base_img
+
+    out = base_img.copy().convert("RGBA")
+    draw = ImageDraw.Draw(out)
+
+    # ---------- Helpers ----------
+    def _safe_font(path: Optional[Path], size: int):
+        return _get_font_cached(Path(path) if path else None, int(size))
+
+    def _bbox_wh(font: ImageFont.FreeTypeFont, s: str) -> tuple:
+        try:
+            b = font.getbbox(s)
+            return (b[2] - b[0], b[3] - b[1])
+        except Exception:
+            return (0, 0)
+
+    # ---------- Recompute Layout D time anchors (to align with it) ----------
+    # Time module origin is below the depth plate
+    ox = int(depth_cfg.x + depth_cfg.global_x)
+    oy = int(depth_cfg.y + depth_cfg.global_y)
+    x0 = ox + int(getattr(time_cfg, "x_offset", 0))
+    y0 = oy + int(getattr(depth_cfg, "plate_h", 0)) + int(getattr(time_cfg, "below_gap_px", 0)) + int(getattr(time_cfg, "y_offset", 0))
+
+    # Time label position
+    time_label_x = x0 + int(getattr(time_cfg, "label_ox", 0))
+    time_label_y = y0 + int(getattr(time_cfg, "label_oy", 0))
+
+    # Time row origin
+    stacked = bool(getattr(time_cfg, "stacked", False))
+    time_row_oy = int(getattr(time_cfg, "time_row_oy", 0))
+    align_with_label = bool(getattr(time_cfg, "time_row_align_with_label", True))
+
+    # When stacked: time row starts at label_x by default
+    time_x0 = (time_label_x if align_with_label else x0) if stacked else (time_label_x if align_with_label else x0)
+    time_y0 = (time_label_y + time_row_oy) if stacked else time_label_y
+
+    # Time MM start x (for alignment). We mirror the time renderer's default behavior.
+    mm_x = time_x0 + int(getattr(time_cfg, "mm_ox", 0))
+    mm_y = time_y0 + int(getattr(time_cfg, "mm_oy", 0))
+
+    # Time row height (for placing speed below time value row)
+    nereus_mm = _safe_font(nereus_font_path, int(getattr(time_cfg, "mm_font_size", 65)))
+    nereus_ss = _safe_font(nereus_font_path, int(getattr(time_cfg, "ss_font_size", 65)))
+    base_colon = _safe_font(base_font_path, int(getattr(time_cfg, "colon_font_size", 30)))
+    base_apos = _safe_font(base_font_path, int(getattr(time_cfg, "apostrophe_font_size", 36)))
+
+    colon_txt = str(getattr(time_cfg, "colon_text", ": "))
+    apos_txt = str(getattr(time_cfg, "apostrophe_text", "'"))
+
+    # Use representative glyphs for height estimation
+    h_parts = [
+        _bbox_wh(nereus_mm, "88")[1],
+        _bbox_wh(nereus_ss, "88")[1],
+        _bbox_wh(base_colon, colon_txt or ":")[1],
+        _bbox_wh(base_apos, apos_txt or "'")[1],
+    ]
+    time_row_h = int(max(h_parts) if h_parts else 0)
+
+    # ---------- Speed content ----------
+    try:
+        v = float(speed_mps)
+    except Exception:
+        v = 0.0
+    if not np.isfinite(v):
+        v = 0.0
+    v = abs(v)
+
+    decimals = int(getattr(cfg, "decimals", 1))
+    value_txt = f"{v:.{decimals}f}"
+
+    color = getattr(cfg, "color", (255, 255, 255, 255))
+
+    font_label = _safe_font(nereus_font_path, int(getattr(cfg, "label_font_size", 36)))
+    font_value = _safe_font(nereus_font_path, int(getattr(cfg, "value_font_size", 65)))
+    font_unit  = _safe_font(nereus_font_path, int(getattr(cfg, "unit_font_size", 36)))
+
+    gx = int(getattr(cfg, "global_x", 0))
+    gy = int(getattr(cfg, "global_y", 0))
+
+    # Label position: under time value row, left-aligned to time label
+    label_x = time_label_x + int(getattr(cfg, "label_ox", 0)) + gx
+    label_y = time_y0 + time_row_h + int(getattr(cfg, "below_time_gap_px", 18)) + int(getattr(cfg, "label_oy", 0)) + gy
+
+    draw.text((label_x, label_y), str(getattr(cfg, "label_text", "Speed")), font=font_label, fill=color)
+
+    # Value position: under label, left-aligned to MM start
+    value_x = mm_x + int(getattr(cfg, "value_ox", 0)) + gx
+    value_y = label_y + int(getattr(cfg, "value_row_oy", 20)) + int(getattr(cfg, "value_oy", 0))
+
+    draw.text((value_x, value_y), value_txt, font=font_value, fill=color)
+
+    # Value bbox for unit placement
+    v_w, v_h = _bbox_wh(font_value, value_txt)
+
+    # Unit block position: right of value
+    unit_x = value_x + v_w + int(getattr(cfg, "unit_gap_px", 10)) + int(getattr(cfg, "unit_ox", 0))
+
+    # Bottom align unit to value bottom if enabled
+    unit_y = value_y + int(getattr(cfg, "unit_oy", 0))
+    if bool(getattr(cfg, "unit_bottom_align", True)):
+        # Estimate unit height with representative text "ms"
+        u_h = _bbox_wh(font_unit, "ms")[1]
+        unit_y = (value_y + v_h - u_h) + int(getattr(cfg, "unit_bottom_extra_dy", 0)) + int(getattr(cfg, "unit_oy", 0))
+
+    # Draw unit "m/s" with manual slash
+    left_txt = str(getattr(cfg, "unit_text_left", "m"))
+    right_txt = str(getattr(cfg, "unit_text_right", "s"))
+
+    # left part
+    draw.text((unit_x, unit_y), left_txt, font=font_unit, fill=color)
+    left_w, left_h = _bbox_wh(font_unit, left_txt)
+
+    slash_gap = int(getattr(cfg, "slash_gap_px", 4))
+    sx = unit_x + left_w + slash_gap + int(getattr(cfg, "slash_ox", 0))
+    sy = unit_y + int(max(0, (left_h * 0.75))) + int(getattr(cfg, "slash_oy", 0))
+
+    dx = int(getattr(cfg, "slash_dx", 18))
+    dy = int(getattr(cfg, "slash_dy", -28))
+    thickness = int(getattr(cfg, "slash_thickness_px", 4))
+
+    # Draw the slash line (as a thick line)
+    draw.line([(sx, sy), (sx + dx, sy + dy)], fill=color, width=max(1, thickness))
+
+    # right part
+    right_x = sx + dx + slash_gap
+    # Align right part top with unit_y (simple, adjustable via unit_oy / slash_oy)
+    draw.text((right_x, unit_y), right_txt, font=font_unit, fill=color)
 
     return out
 
@@ -2409,7 +2613,24 @@ def render_video(
 
 
     # =========================
-    # Layout D config (Temperature module)
+    
+
+    # =========================
+    # Layout D config (Speed module)
+    # Optional overrides:
+    #   layout_params["layout_d_speed_cfg"] = {"below_time_gap_px": 18, "value_font_size": 65, ...}
+    # =========================
+    layout_d_speed_cfg = LayoutDSpeedConfig()
+    try:
+        _s_overrides = layout_params.get("layout_d_speed_cfg", {})
+        if isinstance(_s_overrides, dict):
+            for _k, _v in _s_overrides.items():
+                if hasattr(layout_d_speed_cfg, _k):
+                    setattr(layout_d_speed_cfg, _k, _v)
+    except Exception:
+        pass
+
+# Layout D config (Temperature module)
     # Optional overrides:
     #   layout_params["layout_d_temp_cfg"] = {"global_x": -20, "margin_bottom": 90, "icon_size": 70, ...}
     # =========================
@@ -3062,6 +3283,19 @@ def render_video(
                 nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
                 base_font_path=base_font_path,
             )
+
+        # ===== Layout D (Speed module) =====
+        if layout == "D":
+            overlay = render_layout_d_speed_module(
+                base_img=overlay,
+                speed_mps=float(rate_val_abs),
+                depth_cfg=layout_d_depth_cfg,
+                time_cfg=layout_d_time_cfg,
+                cfg=layout_d_speed_cfg,
+                nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
+                base_font_path=base_font_path,
+            )
+
 
 
         # ===== Layout D (Temperature module) =====
