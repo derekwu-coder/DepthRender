@@ -22,22 +22,109 @@ _ICON_BASE_CACHE = {}  # key: str(icon_path) -> PILImage.Image (RGBA, bg-removed
 _FLAG_BASE_CACHE = {}  # key: str(flag_path) -> PILImage.Image (RGBA)
 _FLAG_RESIZE_CACHE = {}  # key: (str(flag_path), int(w), int(h)) -> PILImage.Image (RGBA resized)
 
+
+# Shadow caches (performance): avoid per-frame alpha-mask generation
+_TEMP_ICON_SHADOW_CACHE = {}  # key: (str(icon_path), int(icon_size), int(dx), int(dy), int(alpha), tuple(color_rgb)) -> PILImage.Image
+
+
+def _rgba_shadow_color(color_rgb=(0, 0, 0), alpha: int = 140) -> tuple:
+    try:
+        r, g, b = color_rgb
+    except Exception:
+        r, g, b = 0, 0, 0
+    return (int(r), int(g), int(b), int(max(0, min(255, int(alpha)))))
+
+
+def _draw_text_hard_shadow(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple,
+    text: str,
+    *,
+    font,
+    fill,
+    shadow_enable: bool,
+    shadow_dx: int,
+    shadow_dy: int,
+    shadow_color_rgb=(0, 0, 0),
+    shadow_alpha: int = 140,
+):
+    """Fast hard shadow: draw shadow text at offset, then normal text."""
+    if text is None:
+        return
+    s = str(text)
+    if shadow_enable and s:
+        sc = _rgba_shadow_color(shadow_color_rgb, shadow_alpha)
+        draw.text((int(xy[0]) + int(shadow_dx), int(xy[1]) + int(shadow_dy)), s, font=font, fill=sc)
+    draw.text((int(xy[0]), int(xy[1])), s, font=font, fill=fill)
+
+
+def _draw_line_hard_shadow(
+    draw: ImageDraw.ImageDraw,
+    p0: tuple,
+    p1: tuple,
+    *,
+    fill,
+    width: int,
+    shadow_enable: bool,
+    shadow_dx: int,
+    shadow_dy: int,
+    shadow_color_rgb=(0, 0, 0),
+    shadow_alpha: int = 140,
+):
+    """Fast hard shadow for a line."""
+    if shadow_enable:
+        sc = _rgba_shadow_color(shadow_color_rgb, shadow_alpha)
+        draw.line([(int(p0[0]) + int(shadow_dx), int(p0[1]) + int(shadow_dy)), (int(p1[0]) + int(shadow_dx), int(p1[1]) + int(shadow_dy))], fill=sc, width=max(1, int(width)))
+    draw.line([(int(p0[0]), int(p0[1])), (int(p1[0]), int(p1[1]))], fill=fill, width=max(1, int(width)))
+
+
+def _draw_ellipse_outline_hard_shadow(
+    draw: ImageDraw.ImageDraw,
+    box: tuple,
+    *,
+    outline,
+    width: int,
+    shadow_enable: bool,
+    shadow_dx: int,
+    shadow_dy: int,
+    shadow_color_rgb=(0, 0, 0),
+    shadow_alpha: int = 140,
+):
+    if shadow_enable:
+        sc = _rgba_shadow_color(shadow_color_rgb, shadow_alpha)
+        x0, y0, x1, y1 = box
+        draw.ellipse((x0 + int(shadow_dx), y0 + int(shadow_dy), x1 + int(shadow_dx), y1 + int(shadow_dy)), outline=sc, width=max(1, int(width)))
+    draw.ellipse(box, outline=outline, width=max(1, int(width)))
+
+
+def _get_icon_shadow_cached(icon_rgba: PILImage.Image, *, key, shadow_color_rgb=(0, 0, 0), shadow_alpha: int = 140) -> PILImage.Image:
+    """Return a same-size RGBA shadow silhouette image (no offset baked in)."""
+    sh = _TEMP_ICON_SHADOW_CACHE.get(key)
+    if sh is not None:
+        return sh
+    alpha = icon_rgba.getchannel('A')
+    sc = _rgba_shadow_color(shadow_color_rgb, shadow_alpha)
+    sh = PILImage.new('RGBA', icon_rgba.size, (sc[0], sc[1], sc[2], 0))
+
+    # Scale icon alpha to shadow alpha
+    sa = alpha.point(lambda p: int(p * sc[3] / 255))
+    sh.putalpha(sa)
+    _TEMP_ICON_SHADOW_CACHE[key] = sh
+    return sh
+
 def _get_font_cached(font_path: Optional[Path], size: int) -> ImageFont.FreeTypeFont:
-    """Return a cached FreeTypeFont for (font_path, size). Falls back to default font."""
+    """Load a FreeTypeFont for (font_path, size).
+
+    Note: Caching FreeTypeFont objects can trigger RecursionError in some Streamlit
+    execution paths. We therefore avoid caching here to maximize robustness.
+    """
     try:
         if font_path is None:
             return ImageFont.load_default()
         p = Path(font_path)
-        key = (str(p), int(size))
-        f = _TEMP_FONT_CACHE.get(key)
-        if f is not None:
-            return f
         if p.exists():
-            f = ImageFont.truetype(str(p), int(size))
-        else:
-            f = ImageFont.load_default()
-        _TEMP_FONT_CACHE[key] = f
-        return f
+            return ImageFont.truetype(str(p), int(size))
+        return ImageFont.load_default()
     except Exception:
         return ImageFont.load_default()
 
@@ -50,7 +137,7 @@ LAYOUT_C_OVERLAY_FPS  = 10   # Layout C overlay update fps
 LAYOUT_D_OVERLAY_FPS  = 10   # Layout D overlay update fps
 
 # Internal overlay cache (per layout): {"tq": float, "size": (w,h), "overlay": PIL.Image}
-_OVERLAY_CACHE = {}
+_OVERLAY_CACHE = None  # disabled to avoid recursion issues with PIL objects in some environments
 
 # ============================================================
 # Font paths
@@ -1090,6 +1177,13 @@ class LayoutDDepthConfig:
     decimals: int = 1
     text_color: tuple = (255, 255, 255, 255)
 
+    # Depth value hard shadow (numbers only)
+    depth_value_shadow_enable: bool = True  # original = False
+    depth_value_shadow_dx: int = 2
+    depth_value_shadow_dy: int = 2
+    depth_value_shadow_alpha: int = 80
+    depth_value_shadow_color_rgb: tuple = (0, 0, 0)
+
     # Text anchor (within plate)
     text_x: int = 130
     text_y: int = 20
@@ -1132,6 +1226,13 @@ class LayoutDTimeConfig:
 
     # Color (RGBA)
     color: tuple = (255, 255, 255, 255)
+
+    # Hard shadow (no blur)
+    shadow_enable: bool = True
+    shadow_dx: int = 2
+    shadow_dy: int = 2
+    shadow_alpha: int = 80
+    shadow_color_rgb: tuple = (0, 0, 0)
 
     # ------------------------------------------------------------
     # Split elements: label / colon / minutes / apostrophe / seconds
@@ -1194,6 +1295,13 @@ class LayoutDSpeedConfig:
 
     # Color (RGBA)
     color: tuple = (255, 255, 255, 255)
+
+    # Hard shadow (no blur)
+    shadow_enable: bool = True
+    shadow_dx: int = 2
+    shadow_dy: int = 2
+    shadow_alpha: int = 80
+    shadow_color_rgb: tuple = (0, 0, 0)
 
     # Label: "Speed"
     label_text: str = "Speed"
@@ -1277,6 +1385,13 @@ class LayoutDTempConfig:
     # Color (RGBA)
     color: tuple = (255, 255, 255, 255)
 
+    # Hard shadow (no blur)
+    shadow_enable: bool = True
+    shadow_dx: int = 2
+    shadow_dy: int = 2
+    shadow_alpha: int = 80
+    shadow_color_rgb: tuple = (0, 0, 0)
+
     # Unit: show as "°C" where:
     # - "°" uses base font (to avoid missing glyph in nereus)
     # - "C" uses nereus-bold
@@ -1346,6 +1461,19 @@ def render_layout_d_time_module(
     out = base_img.copy().convert("RGBA")
     draw = ImageDraw.Draw(out)
 
+
+    # Hard shadow (fast path): draw shadow text at offset, then normal text
+    _sh_enable = bool(getattr(cfg, 'shadow_enable', False))
+    _sh_dx = int(getattr(cfg, 'shadow_dx', 4))
+    _sh_dy = int(getattr(cfg, 'shadow_dy', 4))
+    _sh_alpha = int(getattr(cfg, 'shadow_alpha', 140))
+    _sh_rgb = getattr(cfg, 'shadow_color_rgb', (0, 0, 0))
+
+    def _dt(xy, s, *, font, fill):
+        _draw_text_hard_shadow(draw, xy, s, font=font, fill=fill,
+                              shadow_enable=_sh_enable, shadow_dx=_sh_dx, shadow_dy=_sh_dy,
+                              shadow_color_rgb=_sh_rgb, shadow_alpha=_sh_alpha)
+
     # Base origin: directly below the depth plate
     ox = int(depth_cfg.x + depth_cfg.global_x)
     oy = int(depth_cfg.y + depth_cfg.global_y)
@@ -1403,7 +1531,7 @@ def render_layout_d_time_module(
     # --- Row 1: Label (always drawn at label_ox/label_oy) ---
     label_x = x0 + int(getattr(cfg, "label_ox", 0))
     label_y = y0 + int(getattr(cfg, "label_oy", 0))
-    draw.text((label_x, label_y), label_txt, font=nereus_label, fill=color)
+    _dt((label_x, label_y), label_txt, font=nereus_label, fill=color)
 
     if stacked:
         # --- Row 2: Time row origin ---
@@ -1416,39 +1544,39 @@ def render_layout_d_time_module(
             # Auto-flow within time row: colon -> mm -> apostrophe -> ss
             cx = time_x0 + int(getattr(cfg, "colon_ox", 0))  # still 0 in auto-flow mode
             cy = time_y0 + int(getattr(cfg, "colon_oy", 0))
-            draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+            _dt((cx, cy), colon_txt, font=base_colon, fill=color)
             cw = draw.textbbox((0, 0), colon_txt, font=base_colon)[2]
 
             mx = cx + cw + gap
             my = time_y0 + int(getattr(cfg, "mm_oy", 0))
-            draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+            _dt((mx, my), mm_txt, font=nereus_mm, fill=color)
             mw = draw.textbbox((0, 0), mm_txt, font=nereus_mm)[2]
 
             ax = mx + mw + gap
             ay = time_y0 + int(getattr(cfg, "apostrophe_oy", 0))
-            draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+            _dt((ax, ay), apos_txt, font=base_apos, fill=color)
             aw = draw.textbbox((0, 0), apos_txt, font=base_apos)[2]
 
             sx = ax + aw + gap
             sy = time_y0 + int(getattr(cfg, "ss_oy", 0))
-            draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+            _dt((sx, sy), ss_txt, font=nereus_ss, fill=color)
         else:
             # Explicit positioning within time row (offsets relative to time row origin)
             cx = time_x0 + int(getattr(cfg, "colon_ox", 0))
             cy = time_y0 + int(getattr(cfg, "colon_oy", 0))
-            draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+            _dt((cx, cy), colon_txt, font=base_colon, fill=color)
 
             mx = time_x0 + int(getattr(cfg, "mm_ox", 0))
             my = time_y0 + int(getattr(cfg, "mm_oy", 0))
-            draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+            _dt((mx, my), mm_txt, font=nereus_mm, fill=color)
 
             ax = time_x0 + int(getattr(cfg, "apostrophe_ox", 0))
             ay = time_y0 + int(getattr(cfg, "apostrophe_oy", 0))
-            draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+            _dt((ax, ay), apos_txt, font=base_apos, fill=color)
 
             sx = time_x0 + int(getattr(cfg, "ss_ox", 0))
             sy = time_y0 + int(getattr(cfg, "ss_oy", 0))
-            draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+            _dt((sx, sy), ss_txt, font=nereus_ss, fill=color)
 
     else:
         # --- Original single-row behavior (legacy) ---
@@ -1459,65 +1587,65 @@ def render_layout_d_time_module(
             lx = x0 + int(getattr(cfg, "label_ox", 0))
             ly = y0 + int(getattr(cfg, "label_oy", 0))
             # (label already drawn above, but we redraw here for parity)
-            draw.text((lx, ly), label_txt, font=nereus_label, fill=color)
+            _dt((lx, ly), label_txt, font=nereus_label, fill=color)
             lw = draw.textbbox((0, 0), label_txt, font=nereus_label)[2]
 
             cx = lx + lw + gap
             cy = y0 + int(getattr(cfg, "colon_oy", 0))
-            draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+            _dt((cx, cy), colon_txt, font=base_colon, fill=color)
             cw = draw.textbbox((0, 0), colon_txt, font=base_colon)[2]
 
             mx = cx + cw + gap
             my = y0 + int(getattr(cfg, "mm_oy", 0))
-            draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+            _dt((mx, my), mm_txt, font=nereus_mm, fill=color)
             mw = draw.textbbox((0, 0), mm_txt, font=nereus_mm)[2]
 
             ax = mx + mw + gap
             ay = y0 + int(getattr(cfg, "apostrophe_oy", 0))
-            draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+            _dt((ax, ay), apos_txt, font=base_apos, fill=color)
             aw = draw.textbbox((0, 0), apos_txt, font=base_apos)[2]
 
             sx = ax + aw + gap
             sy = y0 + int(getattr(cfg, "ss_oy", 0))
-            draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+            _dt((sx, sy), ss_txt, font=nereus_ss, fill=color)
         else:
             # Explicit positioning on one row (original)
             cx = x0 + int(getattr(cfg, "colon_ox", 0))
             cy = y0 + int(getattr(cfg, "colon_oy", 0))
-            draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+            _dt((cx, cy), colon_txt, font=base_colon, fill=color)
 
             mx = x0 + int(getattr(cfg, "mm_ox", 0))
             my = y0 + int(getattr(cfg, "mm_oy", 0))
-            draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+            _dt((mx, my), mm_txt, font=nereus_mm, fill=color)
 
             ax = x0 + int(getattr(cfg, "apostrophe_ox", 0))
             ay = y0 + int(getattr(cfg, "apostrophe_oy", 0))
-            draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+            _dt((ax, ay), apos_txt, font=base_apos, fill=color)
 
             sx = x0 + int(getattr(cfg, "ss_ox", 0))
             sy = y0 + int(getattr(cfg, "ss_oy", 0))
-            draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+            _dt((sx, sy), ss_txt, font=nereus_ss, fill=color)
 
         # Explicit positioning: each element uses its own offset from module origin.
         lx = x0 + int(getattr(cfg, "label_ox", 0))
         ly = y0 + int(getattr(cfg, "label_oy", 0))
-        draw.text((lx, ly), label_txt, font=nereus_label, fill=color)
+        _dt((lx, ly), label_txt, font=nereus_label, fill=color)
 
         cx = x0 + int(getattr(cfg, "colon_ox", 0))
         cy = y0 + int(getattr(cfg, "colon_oy", 0))
-        draw.text((cx, cy), colon_txt, font=base_colon, fill=color)
+        _dt((cx, cy), colon_txt, font=base_colon, fill=color)
 
         mx = x0 + int(getattr(cfg, "mm_ox", 0))
         my = y0 + int(getattr(cfg, "mm_oy", 0))
-        draw.text((mx, my), mm_txt, font=nereus_mm, fill=color)
+        _dt((mx, my), mm_txt, font=nereus_mm, fill=color)
 
         ax = x0 + int(getattr(cfg, "apostrophe_ox", 0))
         ay = y0 + int(getattr(cfg, "apostrophe_oy", 0))
-        draw.text((ax, ay), apos_txt, font=base_apos, fill=color)
+        _dt((ax, ay), apos_txt, font=base_apos, fill=color)
 
         sx = x0 + int(getattr(cfg, "ss_ox", 0))
         sy = y0 + int(getattr(cfg, "ss_oy", 0))
-        draw.text((sx, sy), ss_txt, font=nereus_ss, fill=color)
+        _dt((sx, sy), ss_txt, font=nereus_ss, fill=color)
 
     return out
 
@@ -1546,6 +1674,24 @@ def render_layout_d_speed_module(
 
     out = base_img.copy().convert("RGBA")
     draw = ImageDraw.Draw(out)
+
+
+    # Hard shadow (fast path): draw shadow first, then normal
+    _sh_enable = bool(getattr(cfg, 'shadow_enable', False))
+    _sh_dx = int(getattr(cfg, 'shadow_dx', 4))
+    _sh_dy = int(getattr(cfg, 'shadow_dy', 4))
+    _sh_alpha = int(getattr(cfg, 'shadow_alpha', 140))
+    _sh_rgb = getattr(cfg, 'shadow_color_rgb', (0, 0, 0))
+
+    def _dt(xy, s, *, font, fill):
+        _draw_text_hard_shadow(draw, xy, s, font=font, fill=fill,
+                              shadow_enable=_sh_enable, shadow_dx=_sh_dx, shadow_dy=_sh_dy,
+                              shadow_color_rgb=_sh_rgb, shadow_alpha=_sh_alpha)
+
+    def _dl(p0, p1, *, fill, width):
+        _draw_line_hard_shadow(draw, p0, p1, fill=fill, width=width,
+                              shadow_enable=_sh_enable, shadow_dx=_sh_dx, shadow_dy=_sh_dy,
+                              shadow_color_rgb=_sh_rgb, shadow_alpha=_sh_alpha)
 
     # ---------- Helpers ----------
     def _safe_font(path: Optional[Path], size: int):
@@ -1625,13 +1771,13 @@ def render_layout_d_speed_module(
     label_x = time_label_x + int(getattr(cfg, "label_ox", 0)) + gx
     label_y = time_y0 + time_row_h + int(getattr(cfg, "below_time_gap_px", 18)) + int(getattr(cfg, "label_oy", 0)) + gy
 
-    draw.text((label_x, label_y), str(getattr(cfg, "label_text", "Speed")), font=font_label, fill=color)
+    _dt((label_x, label_y), str(getattr(cfg, "label_text", "Speed")), font=font_label, fill=color)
 
     # Value position: under label, left-aligned to MM start
     value_x = mm_x + int(getattr(cfg, "value_ox", 0)) + gx
     value_y = label_y + int(getattr(cfg, "value_row_oy", 20)) + int(getattr(cfg, "value_oy", 0))
 
-    draw.text((value_x, value_y), value_txt, font=font_value, fill=color)
+    _dt((value_x, value_y), value_txt, font=font_value, fill=color)
 
     # Value bbox for unit placement
     v_w, v_h = _bbox_wh(font_value, value_txt)
@@ -1651,7 +1797,7 @@ def render_layout_d_speed_module(
     right_txt = str(getattr(cfg, "unit_text_right", "s"))
 
     # left part
-    draw.text((unit_x, unit_y), left_txt, font=font_unit, fill=color)
+    _dt((unit_x, unit_y), left_txt, font=font_unit, fill=color)
     left_w, left_h = _bbox_wh(font_unit, left_txt)
 
     slash_gap = int(getattr(cfg, "slash_gap_px", 4))
@@ -1663,12 +1809,12 @@ def render_layout_d_speed_module(
     thickness = int(getattr(cfg, "slash_thickness_px", 4))
 
     # Draw the slash line (as a thick line)
-    draw.line([(sx, sy), (sx + dx, sy + dy)], fill=color, width=max(1, thickness))
+    _dl((sx, sy), (sx + dx, sy + dy), fill=color, width=max(1, thickness))
 
     # right part
     right_x = sx + dx + slash_gap
     # Align right part top with unit_y (simple, adjustable via unit_oy / slash_oy)
-    draw.text((right_x, unit_y), right_txt, font=font_unit, fill=color)
+    _dt((right_x, unit_y), right_txt, font=font_unit, fill=color)
 
     return out
 
@@ -1730,6 +1876,31 @@ def render_layout_d_temp_module(
     overlay = base_img.copy()
     draw = ImageDraw.Draw(overlay)
 
+
+    # Hard shadow (fast path)
+    _sh_enable = bool(getattr(cfg, 'shadow_enable', False))
+    _sh_dx = int(getattr(cfg, 'shadow_dx', 4))
+    _sh_dy = int(getattr(cfg, 'shadow_dy', 4))
+    _sh_alpha = int(getattr(cfg, 'shadow_alpha', 140))
+    _sh_rgb = getattr(cfg, 'shadow_color_rgb', (0, 0, 0))
+
+    def _dt(xy, s, *, font, fill):
+        _draw_text_hard_shadow(draw, xy, s, font=font, fill=fill,
+                              shadow_enable=_sh_enable, shadow_dx=_sh_dx, shadow_dy=_sh_dy,
+                              shadow_color_rgb=_sh_rgb, shadow_alpha=_sh_alpha)
+
+    def _ellipse(bbox, *, outline, width):
+        # Low-level ellipse draw (no recursion)
+        draw.ellipse(bbox, outline=outline, width=width)
+
+    def _de(bbox, *, outline, width):
+        # ellipse outline with hard shadow
+        if _sh_enable:
+            sc = _rgba_shadow_color(_sh_rgb, _sh_alpha)
+            x0, y0, x1, y1 = bbox
+            _ellipse((x0 + _sh_dx, y0 + _sh_dy, x1 + _sh_dx, y1 + _sh_dy), outline=sc, width=width)
+        _ellipse(bbox, outline=outline, width=width)
+
     # Measure value
     if temp_str:
         bbox_val = draw.textbbox((0, 0), temp_str, font=nereus_value_font)
@@ -1779,6 +1950,14 @@ def render_layout_d_temp_module(
     # Icon placement (vertically centered in module)
     ix = x0
     iy = y0 + (module_h - h_icon) // 2
+    if _sh_enable:
+        # Fast per-frame hard shadow for icon (small icon, avoid global cache to prevent recursion issues)
+        _sc = _rgba_shadow_color(_sh_rgb, _sh_alpha)
+        _a = icon_img.getchannel("A")
+        _sa = _a.point(lambda p: int(p * _sc[3] / 255))
+        _sh_icon = PILImage.new("RGBA", icon_img.size, (_sc[0], _sc[1], _sc[2], 0))
+        _sh_icon.putalpha(_sa)
+        overlay.alpha_composite(_sh_icon, dest=(ix + _sh_dx, iy + _sh_dy))
     overlay.alpha_composite(icon_img, dest=(ix, iy))
 
     # If no temperature string, still show icon only
@@ -1794,7 +1973,7 @@ def render_layout_d_temp_module(
     tx_val = ix + w_icon + gap + value_ox
     ty_val = y0 + (module_h - h_val) // 2 + value_oy
 
-    draw.text((tx_val, ty_val), temp_str, font=nereus_value_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
+    _dt((tx_val, ty_val), temp_str, font=nereus_value_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
 
     # Unit start (after value)
     tx_unit = tx_val + w_val + unit_gap + unit_ox
@@ -1812,18 +1991,18 @@ def render_layout_d_temp_module(
 
         cx0 = tx_unit + dx
         cy0 = ty_unit + dy
-        draw.ellipse(
+        _de(
             (cx0, cy0, cx0 + 2 * r, cy0 + 2 * r),
             outline=getattr(cfg, "color", (255, 255, 255, 255)),
             width=line,
         )
         tx_after_deg = tx_unit + 2 * r
     else:
-        draw.text((tx_unit, ty_unit), getattr(cfg, "deg_symbol", "°"), font=base_unit_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
+        _dt((tx_unit, ty_unit), getattr(cfg, "deg_symbol", "°"), font=base_unit_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
         tx_after_deg = tx_unit + w_deg_glyph
 
     # Draw 'C'
-    draw.text((tx_after_deg, ty_unit), getattr(cfg, "unit_c", "C"), font=nereus_unit_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
+    _dt((tx_after_deg, ty_unit), getattr(cfg, "unit_c", "C"), font=nereus_unit_font, fill=getattr(cfg, "color", (255, 255, 255, 255)))
 
     return overlay
 
@@ -2046,7 +2225,16 @@ def render_layout_d_depth_module(
     else:
         # text_x is the left edge
         tx = ox + int(cfg.text_x)
-    draw.text((tx, ty), val_txt, font=value_font, fill=cfg.text_color)
+    # Depth value (optional hard shadow)
+    if bool(getattr(cfg, 'depth_value_shadow_enable', False)):
+        _draw_text_hard_shadow(draw, (tx, ty), val_txt, font=value_font, fill=cfg.text_color,
+                              shadow_enable=True,
+                              shadow_dx=int(getattr(cfg, 'depth_value_shadow_dx', 4)),
+                              shadow_dy=int(getattr(cfg, 'depth_value_shadow_dy', 4)),
+                              shadow_color_rgb=getattr(cfg, 'depth_value_shadow_color_rgb', (0, 0, 0)),
+                              shadow_alpha=int(getattr(cfg, 'depth_value_shadow_alpha', 140)))
+    else:
+        draw.text((tx, ty), val_txt, font=value_font, fill=cfg.text_color)
 
     if cfg.unit_bottom_align:
         # Align bottoms
@@ -2055,7 +2243,15 @@ def render_layout_d_depth_module(
         uy = ty
 
     ux = tx + v_w + int(cfg.unit_gap_px)
-    draw.text((ux, uy), unit_txt, font=unit_font, fill=cfg.text_color)
+    _draw_text_hard_shadow(
+        draw, (ux, uy), unit_txt,
+        font=unit_font, fill=cfg.text_color,
+        shadow_enable=bool(getattr(cfg, "depth_value_shadow_enable", False)),
+        shadow_dx=int(getattr(cfg, "depth_value_shadow_dx", 4)),
+        shadow_dy=int(getattr(cfg, "depth_value_shadow_dy", 4)),
+        shadow_color_rgb=getattr(cfg, "depth_value_shadow_color_rgb", (0, 0, 0)),
+        shadow_alpha=int(getattr(cfg, "depth_value_shadow_alpha", 140)),
+    )
 
     return out
 
@@ -2542,6 +2738,8 @@ def render_video(
 
     t_load_start = time.perf_counter()
     clip = VideoFileClip(str(video_path))
+    src_clip = clip  # keep an immutable reference for make_frame
+
     W, H = output_resolution
     clip = clip.resize((W, H))
     t_load_end = time.perf_counter()
@@ -3019,7 +3217,7 @@ def render_video(
                 last_p["value"] = p
                 update_progress(p, "產生疊加畫面中...")
 
-        frame = clip.get_frame(t)
+        frame = src_clip.get_frame(t)
         img = PILImage.fromarray(frame).convert("RGBA")
         img_w, img_h = img.size
 
@@ -3040,11 +3238,13 @@ def render_video(
             step = 1.0 / overlay_fps
             tq = math.floor(float(t) / step) * step
 
-        cache = _OVERLAY_CACHE.get(layout_u)
-        if cache is not None and cache.get("tq") == tq and cache.get("size") == img.size and cache.get("overlay") is not None:
-            overlay = cache["overlay"]
-            composed = PILImage.alpha_composite(img, overlay).convert("RGB")
-            return np.array(composed)
+        cache = None
+        if _OVERLAY_CACHE is not None:
+            cache = _OVERLAY_CACHE.get(layout_u)
+            if cache is not None and cache.get("tq") == tq and cache.get("size") == img.size and cache.get("overlay") is not None:
+                overlay = cache["overlay"]
+                composed = PILImage.alpha_composite(img, overlay).convert("RGB")
+                return np.array(composed)
 
         # Cache miss: render overlay at quantized time tq
         overlay = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
@@ -3359,7 +3559,8 @@ def render_video(
 
         # Update overlay cache (A/B/C only)
         if layout_u in ("A", "B", "C"):
-            _OVERLAY_CACHE[layout_u] = {"tq": tq, "size": img.size, "overlay": overlay}
+            if _OVERLAY_CACHE is not None:
+                _OVERLAY_CACHE[layout_u] = {"tq": tq, "size": img.size, "overlay": overlay}
 
         composed = PILImage.alpha_composite(img, overlay).convert("RGB")
         return np.array(composed)
@@ -3379,8 +3580,8 @@ def render_video(
     tmp_audio_path = None
 
     try:
-        new_clip = VideoClip(make_frame, duration=clip.duration)
-        new_clip = new_clip.set_fps(clip.fps).set_audio(clip.audio)
+        new_clip = VideoClip(make_frame, duration=src_clip.duration)
+        new_clip = new_clip.set_fps(src_clip.fps).set_audio(src_clip.audio)
 
         output_path = Path(tempfile.gettempdir()) / f"dive_overlay_output_{uuid.uuid4().hex}.mp4"
         tmp_audio_path = str(Path(tempfile.gettempdir()) / f"dive_overlay_audio_{uuid.uuid4().hex}.m4a")
@@ -3388,7 +3589,7 @@ def render_video(
         new_clip.write_videofile(
             str(output_path),
             codec="libx264",
-            fps=clip.fps,
+            fps=src_clip.fps,
             audio=True,
             audio_codec="aac",
             temp_audiofile=tmp_audio_path,
