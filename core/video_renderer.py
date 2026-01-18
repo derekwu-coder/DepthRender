@@ -1181,8 +1181,8 @@ class LayoutDDepthConfig:
     depth_value_shadow_enable: bool = True  # original = False
     depth_value_shadow_dx: int = 2
     depth_value_shadow_dy: int = 2
-    depth_value_shadow_alpha: int = 80
-    depth_value_shadow_color_rgb: tuple = (0, 0, 0)
+    depth_value_shadow_alpha: int = 120
+    depth_value_shadow_color_rgb: tuple = (80, 80, 80)
 
     # Text anchor (within plate)
     text_x: int = 130
@@ -1231,8 +1231,8 @@ class LayoutDTimeConfig:
     shadow_enable: bool = True
     shadow_dx: int = 2
     shadow_dy: int = 2
-    shadow_alpha: int = 80
-    shadow_color_rgb: tuple = (0, 0, 0)
+    shadow_alpha: int = 120
+    shadow_color_rgb: tuple = (80, 80, 80)
 
     # ------------------------------------------------------------
     # Split elements: label / colon / minutes / apostrophe / seconds
@@ -1300,8 +1300,8 @@ class LayoutDSpeedConfig:
     shadow_enable: bool = True
     shadow_dx: int = 2
     shadow_dy: int = 2
-    shadow_alpha: int = 80
-    shadow_color_rgb: tuple = (0, 0, 0)
+    shadow_alpha: int = 120
+    shadow_color_rgb: tuple = (80, 80, 80)
 
     # Label: "Speed"
     label_text: str = "Speed"
@@ -1389,8 +1389,8 @@ class LayoutDTempConfig:
     shadow_enable: bool = True
     shadow_dx: int = 2
     shadow_dy: int = 2
-    shadow_alpha: int = 80
-    shadow_color_rgb: tuple = (0, 0, 0)
+    shadow_alpha: int = 120
+    shadow_color_rgb: tuple = (80, 80, 80)
 
     # Unit: show as "°C" where:
     # - "°" uses base font (to avoid missing glyph in nereus)
