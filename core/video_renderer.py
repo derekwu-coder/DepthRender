@@ -16,6 +16,7 @@ import time
 # ---------------------------------------------------------------------------
 _TEMP_FONT_CACHE = {}  # key: (str(font_path), int(size)) -> ImageFont.FreeTypeFont
 _TEMP_ICON_CACHE = {}  # key: (str(icon_path), int(icon_size)) -> PILImage.Image (RGBA, resized)
+_HR_ICON_CACHE = {}  # key: (str(icon_path), int(icon_h)) -> (outline_rgba, inside_mask_L)
 
 # Additional caches
 _ICON_BASE_CACHE = {}  # key: str(icon_path) -> PILImage.Image (RGBA, bg-removed if applied)
@@ -161,6 +162,9 @@ LAYOUT_C_HR_ICON_REL = Path("icons") / "heart_rate_icon.png"
 
 # Layout D Temperature icon (place the PNG at: assets/icons/thermo.png)
 LAYOUT_D_TEMP_ICON_REL = Path("icons") / "thermo.png"
+# Layout D Heart Rate icon (place the PNG at: assets/icons/heart_rate_icon_2.png)
+LAYOUT_D_HR_ICON_REL = Path("icons") / "heart_rate_icon_2.png"
+
 if not LAYOUT_C_VALUE_FONT_PATH.exists():
     print(f"[WARN] Layout C value font NOT found: {LAYOUT_C_VALUE_FONT_PATH}")
 else:
@@ -810,7 +814,7 @@ def _load_font_path(path: Path, size: int) -> ImageFont.FreeTypeFont:
     return _get_font_cached(Path(path) if path else None, int(size))
 
 # ==========================================================
-# Shadow helper for Layout C modules
+# Shadow helper for Layout C modules (BBox optimized)
 # ==========================================================
 from PIL import ImageFilter
 
@@ -822,27 +826,68 @@ def _apply_shadow_layer(
 ) -> PILImage.Image:
     """
     Apply a drop shadow to the non-transparent area of img.
+
+    Optimized:
+    - Only process the bounding box of non-zero alpha instead of the full frame.
     """
-    shadow = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+
     alpha = img.split()[-1]
+    bbox = alpha.getbbox()
+    if bbox is None:
+        return img  # nothing to shadow
 
-    # paint shadow using alpha as mask
-    shadow_draw = ImageDraw.Draw(shadow)
-    shadow_draw.bitmap((0, 0), alpha, fill=shadow_color)
-    if blur_radius and int(blur_radius) > 0:
-        shadow = shadow.filter(ImageFilter.GaussianBlur(int(blur_radius)))
+    dx, dy = int(offset[0]), int(offset[1])
+    br = int(blur_radius) if blur_radius is not None else 0
 
-    base = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
-    base.paste(shadow, offset, shadow)
-    base.paste(img, (0, 0), img)
-    return base
+    # Padding to contain shadow region
+    pad = max(abs(dx), abs(dy)) + (br * 2) + 2
+
+    x0 = max(0, bbox[0] - pad)
+    y0 = max(0, bbox[1] - pad)
+    x1 = min(img.size[0], bbox[2] + pad)
+    y1 = min(img.size[1], bbox[3] + pad)
+    crop_box = (x0, y0, x1, y1)
+
+    # Crop to small region
+    img_c = img.crop(crop_box)
+    alpha_c = img_c.split()[-1]
+
+    # Build shadow only on cropped region
+    shadow_c = PILImage.new("RGBA", img_c.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow_c)
+    shadow_draw.bitmap((0, 0), alpha_c, fill=shadow_color)
+
+    if br > 0:
+        shadow_c = shadow_c.filter(ImageFilter.GaussianBlur(br))
+
+    # Compose shadow + original in cropped space
+    base_c = PILImage.new("RGBA", img_c.size, (0, 0, 0, 0))
+    base_c.paste(shadow_c, (dx, dy), shadow_c)
+    base_c.paste(img_c, (0, 0), img_c)
+
+    # Paste back to full size canvas
+    out = PILImage.new("RGBA", img.size, (0, 0, 0, 0))
+    out.paste(base_c, (x0, y0), base_c)
+    return out
+
 
 def _try_render_textbbox(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont):
+    """
+    Safe wrapper for text bbox across Pillow versions.
+    Returns (x0, y0, x1, y1).
+    """
     try:
         return draw.textbbox((0, 0), text, font=font)
     except Exception:
-        w, h = font.getsize(text)
+        try:
+            w, h = font.getsize(text)
+        except Exception:
+            w, h = (0, 0)
         return (0, 0, w, h)
+
+# Layout C Heart Rate module
 
 def render_layout_c_rate_module(
     base_img: PILImage.Image,
@@ -855,7 +900,7 @@ def render_layout_c_rate_module(
     Layout C Rate module:
       - Label: Klavika (Descent Rate / Ascent Rate)
       - Value: Nereus (same as depth numeric)
-      - Unit: project default font (RobotoCondensedBold) so "/" renders and size is controllable
+      - Unit: base font (RobotoCondensedBold) so "/" renders and size is controllable
       - Direction: arrow + label (value displayed as absolute)
     """
     if not cfg.enabled:
@@ -877,9 +922,9 @@ def render_layout_c_rate_module(
     value_txt = f"{v:.{int(cfg.decimals)}f}"
     unit_txt = "m/s"
 
-    label_font = _load_font_path(LAYOUT_C_RATE_FONT_PATH, cfg.label_font_size)
-    value_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, cfg.value_font_size)
-    unit_font = load_font(cfg.unit_font_size)  # Roboto => "/" OK and size controllable
+    label_font = _load_font_path(LAYOUT_C_RATE_FONT_PATH, int(cfg.label_font_size))
+    value_font = _load_font_path(LAYOUT_C_VALUE_FONT_PATH, int(cfg.value_font_size))
+    unit_font = load_font(int(cfg.unit_font_size))  # base font => "/" OK and size controllable
 
     gx = int(cfg.global_x)
     gy = int(cfg.global_y)
@@ -920,11 +965,11 @@ def render_layout_c_rate_module(
     draw.text((int(ux), int(uy)), unit_txt, font=unit_font, fill=cfg.unit_color)
 
     # Shadow on the module layer (arrow + label + value + unit)
-    if LAYOUT_C_SHADOW_ENABLED:
+    if bool(LAYOUT_C_SHADOW_ENABLED):
         layer = _apply_shadow_layer(
             layer,
             offset=LAYOUT_C_SHADOW_OFFSET,
-            blur_radius=LAYOUT_C_SHADOW_BLUR,
+            blur_radius=int(LAYOUT_C_SHADOW_BLUR),
             shadow_color=LAYOUT_C_SHADOW_COLOR,
         )
 
@@ -933,9 +978,6 @@ def render_layout_c_rate_module(
     out.alpha_composite(layer)
     return out
 
-
-# ============================================================
-# Layout C Heart Rate module
 # ============================================================
 
 
@@ -1181,8 +1223,8 @@ class LayoutDDepthConfig:
     depth_value_shadow_enable: bool = True  # original = False
     depth_value_shadow_dx: int = 2
     depth_value_shadow_dy: int = 2
-    depth_value_shadow_alpha: int = 120
-    depth_value_shadow_color_rgb: tuple = (80, 80, 80)
+    depth_value_shadow_alpha: int = 80
+    depth_value_shadow_color_rgb: tuple = (0, 0, 0)
 
     # Text anchor (within plate)
     text_x: int = 130
@@ -1231,8 +1273,8 @@ class LayoutDTimeConfig:
     shadow_enable: bool = True
     shadow_dx: int = 2
     shadow_dy: int = 2
-    shadow_alpha: int = 120
-    shadow_color_rgb: tuple = (80, 80, 80)
+    shadow_alpha: int = 80
+    shadow_color_rgb: tuple = (0, 0, 0)
 
     # ------------------------------------------------------------
     # Split elements: label / colon / minutes / apostrophe / seconds
@@ -1300,8 +1342,8 @@ class LayoutDSpeedConfig:
     shadow_enable: bool = True
     shadow_dx: int = 2
     shadow_dy: int = 2
-    shadow_alpha: int = 120
-    shadow_color_rgb: tuple = (80, 80, 80)
+    shadow_alpha: int = 80
+    shadow_color_rgb: tuple = (0, 0, 0)
 
     # Label: "Speed"
     label_text: str = "Speed"
@@ -1389,8 +1431,8 @@ class LayoutDTempConfig:
     shadow_enable: bool = True
     shadow_dx: int = 2
     shadow_dy: int = 2
-    shadow_alpha: int = 120
-    shadow_color_rgb: tuple = (80, 80, 80)
+    shadow_alpha: int = 80
+    shadow_color_rgb: tuple = (0, 0, 0)
 
     # Unit: show as "°C" where:
     # - "°" uses base font (to avoid missing glyph in nereus)
@@ -1416,6 +1458,350 @@ class LayoutDTempConfig:
         "temp",
     )
 
+# ===================
+# Layout D (Heart rate module)
+# ===================
+
+# Cache for (icon_path, icon_h) -> (outline_rgba, inside_mask_L)
+_HR_ICON_CACHE: dict = {}
+
+
+@dataclass
+class LayoutDHeartRateConfig:
+    enabled: bool = True
+
+    # Anchor: top-right (ICON is anchored to the right edge using margin_right)
+    margin_right: int = 120
+    margin_top: int = 150
+    global_x: int = 0
+    global_y: int = 0
+
+    # Icon
+    icon_rel: Path = LAYOUT_D_HR_ICON_REL
+    icon_h: int = 40
+    gap_px: int = 14
+
+    # Value text
+    value_font_size: int = 70
+    color: tuple = (255, 255, 255, 255)
+    value_ox: int = 0
+    value_oy: int = -20
+
+    # Animation: fill alpha (no scale)
+    pulse_amp: float = 0.06
+    pulse_period_s: float = 1.0
+
+    # Follow real heart rate for pulse speed
+    pulse_follow_hr: bool = True
+
+    # Clamp alpha range: 0%~90%  => 255~25
+    fill_alpha_min: int = 25     # most transparent (90% transparent)
+    fill_alpha_max: int = 255    # fully filled (0% transparent)
+
+    # (NEW) Phase-integrator state (Layout C style) to avoid jitter when bpm changes
+    _anim_phase: float = 0.0
+    _anim_bpm_active: Optional[float] = None
+    _anim_bpm_pending: Optional[float] = None
+    _anim_switch_pending: bool = False
+    _anim_t_prev: Optional[float] = None
+
+    # Hard shadow (no blur)
+    shadow_enable: bool = True
+    shadow_dx: int = 2
+    shadow_dy: int = 2
+    shadow_alpha: int = 120
+    shadow_color_rgb: tuple = (80, 80, 80)
+
+
+def _load_layout_d_hr_icon_assets(icon_path: Path, icon_h: int) -> Optional[tuple]:
+    """
+    Load HR outline icon, remove dark bg to alpha, resize by height (keep aspect),
+    and compute an "inside" mask for fill animation.
+
+    Returns:
+      (outline_rgba, inside_mask_L) or None
+    """
+    key = (str(icon_path), int(icon_h))
+    cached = _HR_ICON_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        base = PILImage.open(str(icon_path)).convert("RGBA")
+    except Exception:
+        return None
+
+    # Remove dark background (supports icons with black background)
+    try:
+        base = _remove_dark_bg_to_alpha(base, threshold=10)
+    except Exception:
+        pass
+
+    # Resize by height (keep aspect)
+    try:
+        outline = _resize_icon_keep_aspect(base, int(icon_h))
+        outline = outline.convert("RGBA")
+    except Exception:
+        return None
+
+    # Compute inside mask:
+    # - boundary = alpha>0 (outline stroke)
+    # - background = alpha==0
+    # - flood fill background from edges => outside
+    # - inside = background - outside
+    try:
+        a = np.array(outline.getchannel("A"), dtype=np.uint8)
+        boundary = a > 0
+        bg = ~boundary
+
+        h, w = a.shape
+        outside = np.zeros((h, w), dtype=bool)
+
+        from collections import deque
+        q = deque()
+
+        # seed edges where bg is true
+        for x in range(w):
+            if bg[0, x] and not outside[0, x]:
+                outside[0, x] = True
+                q.append((0, x))
+            if bg[h - 1, x] and not outside[h - 1, x]:
+                outside[h - 1, x] = True
+                q.append((h - 1, x))
+        for y in range(h):
+            if bg[y, 0] and not outside[y, 0]:
+                outside[y, 0] = True
+                q.append((y, 0))
+            if bg[y, w - 1] and not outside[y, w - 1]:
+                outside[y, w - 1] = True
+                q.append((y, w - 1))
+
+        # BFS 4-neighborhood
+        while q:
+            y, x = q.popleft()
+            if y > 0 and bg[y - 1, x] and not outside[y - 1, x]:
+                outside[y - 1, x] = True
+                q.append((y - 1, x))
+            if y < h - 1 and bg[y + 1, x] and not outside[y + 1, x]:
+                outside[y + 1, x] = True
+                q.append((y + 1, x))
+            if x > 0 and bg[y, x - 1] and not outside[y, x - 1]:
+                outside[y, x - 1] = True
+                q.append((y, x - 1))
+            if x < w - 1 and bg[y, x + 1] and not outside[y, x + 1]:
+                outside[y, x + 1] = True
+                q.append((y, x + 1))
+
+        inside = bg & (~outside)
+        inside_mask = PILImage.fromarray((inside.astype(np.uint8) * 255), mode="L")
+    except Exception:
+        # If inside mask fails, fallback to "no fill" behavior
+        inside_mask = PILImage.new("L", outline.size, 0)
+
+    _HR_ICON_CACHE[key] = (outline, inside_mask)
+    return _HR_ICON_CACHE[key]
+
+
+def render_layout_d_heart_rate_module(
+    base_img: PILImage.Image,
+    *,
+    t_global_s: float,
+    hr_value: Optional[float],
+    cfg: LayoutDHeartRateConfig,
+    assets_dir: Path,
+    nereus_font_path: Path,
+) -> PILImage.Image:
+    """
+    Layout D HR:
+    - Top-right.
+    - Icon has fixed size (no scaling animation).
+    - Animation is "fill" inside the outline by varying alpha.
+    - Value text position is fixed and LEFT-aligned; it does NOT shift when digits change.
+    - Uses Layout C style phase-integrator to avoid jitter when bpm changes.
+    """
+    if not getattr(cfg, "enabled", True):
+        return base_img
+
+    if hr_value is None or (not np.isfinite(float(hr_value))):
+        # If can't read HR => hide whole module
+        return base_img
+
+    # Resolve icon path (IMPORTANT: defines icon_path)
+    icon_rel = getattr(cfg, "icon_rel", LAYOUT_D_HR_ICON_REL)
+    icon_path = Path(assets_dir) / Path(icon_rel)
+    if not icon_path.exists():
+        alt = Path(assets_dir) / LAYOUT_C_HR_ICON_REL
+        if alt.exists():
+            icon_path = alt
+        else:
+            return base_img
+
+    # Load icon assets (outline + inside mask)
+    icon_h = int(getattr(cfg, "icon_h", 40))
+    icon_assets = _load_layout_d_hr_icon_assets(icon_path, icon_h)
+    if icon_assets is None:
+        return base_img
+    outline_icon, inside_mask = icon_assets
+
+    # ===== Pulse -> fill alpha (CLAMPED RANGE, follow HR, phase-integrator) =====
+    amp = float(getattr(cfg, "pulse_amp", 0.0))
+    amin = int(getattr(cfg, "fill_alpha_min", 0))
+    amax = int(getattr(cfg, "fill_alpha_max", 255))
+    amin = max(0, min(255, amin))
+    amax = max(0, min(255, amax))
+
+    # Decide target bpm for animation
+    target_bpm = None
+    try:
+        if getattr(cfg, "pulse_follow_hr", True) and float(hr_value) > 1.0:
+            target_bpm = float(hr_value)
+    except Exception:
+        target_bpm = None
+
+    # If not following HR, use fixed period -> equivalent bpm
+    if target_bpm is None:
+        per = float(getattr(cfg, "pulse_period_s", 1.0))
+        if np.isfinite(per) and per > 1e-6:
+            target_bpm = 60.0 / per
+        else:
+            target_bpm = 60.0  # safe fallback
+
+    # Initialize state
+    if getattr(cfg, "_anim_bpm_active", None) is None:
+        cfg._anim_bpm_active = float(target_bpm)
+        cfg._anim_bpm_pending = None
+        cfg._anim_switch_pending = False
+        cfg._anim_phase = 0.0
+        cfg._anim_t_prev = None
+
+    # Queue bpm change, but only switch at beat boundary (Layout C behavior)
+    try:
+        bpm_active = float(cfg._anim_bpm_active) if cfg._anim_bpm_active is not None else float(target_bpm)
+        if abs(float(target_bpm) - bpm_active) > 0.1 and (not bool(getattr(cfg, "_anim_switch_pending", False))):
+            cfg._anim_bpm_pending = float(target_bpm)
+            cfg._anim_switch_pending = True
+    except Exception:
+        pass
+
+    # Integrate phase with real dt to keep continuity
+    t_now = float(t_global_s)
+    t_prev = getattr(cfg, "_anim_t_prev", None)
+    dt_real = 0.0 if (t_prev is None) else max(0.0, t_now - float(t_prev))
+    cfg._anim_t_prev = t_now
+
+    bpm_for_phase = float(cfg._anim_bpm_active or target_bpm or 0.0)
+    if (not np.isfinite(bpm_for_phase)) or bpm_for_phase <= 0.0:
+        bpm_for_phase = 60.0
+
+    cfg._anim_phase = float(getattr(cfg, "_anim_phase", 0.0)) + (2.0 * math.pi * (bpm_for_phase / 60.0) * dt_real)
+
+    # Wrap phase; switch bpm at boundary
+    if cfg._anim_phase >= 2.0 * math.pi:
+        # handle large dt as well
+        cfg._anim_phase = math.fmod(cfg._anim_phase, 2.0 * math.pi)
+        if bool(getattr(cfg, "_anim_switch_pending", False)) and (getattr(cfg, "_anim_bpm_pending", None) is not None):
+            cfg._anim_bpm_active = float(cfg._anim_bpm_pending)
+            cfg._anim_switch_pending = False
+            cfg._anim_bpm_pending = None
+
+    # Use sine of continuous phase
+    if (not np.isfinite(amp)) or amp <= 0.0:
+        fill_alpha = amax
+    else:
+        pulse_scale = 1.0 + amp * math.sin(float(cfg._anim_phase))
+
+        # normalize to 0~1 based on [1-amp, 1+amp]
+        denom = max(1e-9, 2.0 * amp)
+        u = (pulse_scale - (1.0 - amp)) / denom
+        u = max(0.0, min(1.0, u))
+
+        # map to [amin, amax]
+        fill_alpha = int(round(amin + (amax - amin) * u))
+        fill_alpha = max(0, min(255, fill_alpha))
+
+    # Build filled layer (white) using inside mask
+    fill_layer = PILImage.new("RGBA", outline_icon.size, (255, 255, 255, 0))
+    if fill_alpha > 0:
+        a = inside_mask.point(lambda p: int(p * fill_alpha / 255))
+        fill_layer.putalpha(a)
+
+    # Compose final icon: fill under the outline stroke
+    icon_img = fill_layer
+    icon_img.alpha_composite(outline_icon)
+
+    # Output image and draw helper
+    out = base_img.copy().convert("RGBA")
+    draw = ImageDraw.Draw(out)
+
+    # Fonts
+    value_font_size = int(getattr(cfg, "value_font_size", 70))
+    nereus_font = _get_font_cached(Path(nereus_font_path) if nereus_font_path else None, int(value_font_size))
+
+    # HR text (integer bpm)
+    try:
+        hr_i = int(round(float(hr_value)))
+    except Exception:
+        hr_i = None
+    if hr_i is None:
+        return base_img
+    hr_txt = f"{hr_i:d}"
+
+    color = getattr(cfg, "color", (255, 255, 255, 255))
+
+    # Layout / positioning
+    W, H = out.size
+    margin_right = int(getattr(cfg, "margin_right", 120))
+    margin_top = int(getattr(cfg, "margin_top", 150))
+    gap_px = int(getattr(cfg, "gap_px", 14))
+    gx = int(getattr(cfg, "global_x", 0))
+    gy = int(getattr(cfg, "global_y", 0))
+
+    # Text bbox (only for height / baseline alignment)
+    tb = draw.textbbox((0, 0), hr_txt, font=nereus_font)
+    th = (tb[3] - tb[1])
+
+    # Icon size
+    iw, ih = icon_img.size
+
+    # ICON anchored to top-right; VALUE is fixed and LEFT-aligned next to icon
+    icon_x = int((W - margin_right - iw) + gx)
+    icon_y = int(margin_top + gy)
+
+    text_x = int(icon_x + iw + gap_px + int(getattr(cfg, "value_ox", 0)) + gx)
+    text_y = int(icon_y + ih - th + int(getattr(cfg, "value_oy", 0)))
+
+    # Shadow params
+    _sh_enable = bool(getattr(cfg, "shadow_enable", False))
+    _sh_dx = int(getattr(cfg, "shadow_dx", 2))
+    _sh_dy = int(getattr(cfg, "shadow_dy", 2))
+    _sh_alpha = int(getattr(cfg, "shadow_alpha", 120))
+    _sh_rgb = getattr(cfg, "shadow_color_rgb", (80, 80, 80))
+
+    # Draw icon with hard shadow
+    if _sh_enable:
+        _sc = _rgba_shadow_color(_sh_rgb, _sh_alpha)
+        _a = icon_img.getchannel("A")
+        _sa = _a.point(lambda p: int(p * _sc[3] / 255))
+        _sh_icon = PILImage.new("RGBA", icon_img.size, (_sc[0], _sc[1], _sc[2], 0))
+        _sh_icon.putalpha(_sa)
+        out.alpha_composite(_sh_icon, dest=(icon_x + _sh_dx, icon_y + _sh_dy))
+    out.alpha_composite(icon_img, dest=(icon_x, icon_y))
+
+    # Draw value text with hard shadow
+    _draw_text_hard_shadow(
+        draw,
+        (text_x, text_y),
+        hr_txt,
+        font=nereus_font,
+        fill=color,
+        shadow_enable=_sh_enable,
+        shadow_dx=_sh_dx,
+        shadow_dy=_sh_dy,
+        shadow_color_rgb=_sh_rgb,
+        shadow_alpha=_sh_alpha,
+    )
+
+    return out
 
 
 def _format_dive_time_mmss_tenths(t_s: float) -> tuple:
@@ -2842,6 +3228,21 @@ def render_video(
     except Exception:
         pass
 
+# Layout D config (Heart rate module)
+    # Optional overrides:
+    #   layout_params["layout_d_hr_cfg"] = {"margin_right": 80, "margin_top": 60, "icon_h": 80, ...}
+    # =========================
+    layout_d_hr_cfg = LayoutDHeartRateConfig()
+    try:
+        _hr_overrides = layout_params.get("layout_d_hr_cfg", {})
+        if isinstance(_hr_overrides, dict):
+            for _k, _v in _hr_overrides.items():
+                if hasattr(layout_d_hr_cfg, _k):
+                    setattr(layout_d_hr_cfg, _k, _v)
+    except Exception:
+        pass
+
+
 # Layout D static build (backplate + curve)
     # =========================
     layout_d_static = None
@@ -3266,6 +3667,19 @@ def render_video(
         show_hr_value = False
         pulse_scale = 1.0
 
+        # Heart rate value for Layout D (and potential reuse)
+        hr_value = None
+        if hr_available:
+            try:
+                _hv = hr_at(float(t_global))
+                if _hv is not None and np.isfinite(float(_hv)):
+                    hr_value = float(_hv)
+            except Exception:
+                hr_value = None
+
+        show_hr_module_d = (layout.upper() == "D" and getattr(layout_d_hr_cfg, "enabled", True) and hr_value is not None)
+
+
         if layout.upper() == "C" and hr_cfg.enabled and hr_available:
             t_data = float(t_global)
             data_start = float(hr_times[0]) if (hr_times is not None and len(hr_times) > 0) else 0.0
@@ -3532,6 +3946,19 @@ def render_video(
                 nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
                 base_font_path=base_font_path,
             )
+
+        # ===== Layout D (Heart rate module) =====
+        if layout == "D" and show_hr_module_d:
+            overlay = render_layout_d_heart_rate_module(
+                base_img=overlay,
+                t_global_s=float(t_global),
+                hr_value=hr_value,
+                cfg=layout_d_hr_cfg,
+                assets_dir=assets_dir,
+                nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
+            )
+
+
 
 
 # ===== Layout B =====
