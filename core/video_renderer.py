@@ -8,6 +8,7 @@ from moviepy.video.VideoClip import VideoClip
 from pathlib import Path
 from PIL import Image as PILImage, ImageDraw, ImageFont, Image, ImageFilter, ImageChops
 from dataclasses import dataclass
+from functools import lru_cache
 import time
 
 
@@ -1017,6 +1018,44 @@ def _resize_icon_keep_aspect(base_icon: PILImage.Image, box: int) -> PILImage.Im
             return base_icon.resize((box, box))
 
 
+# ==========================================================
+# HR icon resize cache (Layout C)
+#   Avoid per-frame resize when pulse_scale produces same target size.
+#   Keyed by (icon_path, target_px).
+# ==========================================================
+from functools import lru_cache
+
+@lru_cache(maxsize=256)
+def _get_icon_resized_cached(icon_key: str, target_px: int) -> PILImage.Image:
+    """Return resized RGBA icon cached by (icon_key, target_px).
+
+    icon_key is typically str(path_to_icon). The function will:
+    - Ensure the base icon is loaded and stored in _ICON_BASE_CACHE
+    - Resize to (target_px, target_px) with high-quality resampling
+    """
+    target_px = max(1, int(target_px))
+
+    # Ensure base icon is available
+    base = _ICON_BASE_CACHE.get(icon_key)
+    if base is None:
+        try:
+            p = Path(icon_key)
+            if not p.exists():
+                raise FileNotFoundError(icon_key)
+            _im = PILImage.open(str(p)).convert("RGBA")
+            _im = _remove_dark_bg_to_alpha(_im, threshold=10)
+            base = _im
+            _ICON_BASE_CACHE[icon_key] = base
+        except Exception:
+            # In worst case, return a 1x1 transparent image to avoid crash
+            return PILImage.new("RGBA", (1, 1), (0, 0, 0, 0))
+
+    try:
+        return base.resize((target_px, target_px), resample=PILImage.LANCZOS)
+    except Exception:
+        return base.resize((target_px, target_px))
+
+
 
 
 def render_layout_c_heart_rate_module(
@@ -1059,7 +1098,8 @@ def render_layout_c_heart_rate_module(
     icon_size = int(cfg.icon_size)
 
     # Icon (animated scale)
-    icon_scaled = _resize_icon(icon_base, float(pulse_scale), icon_size)
+    target_px = max(1, int(round(float(icon_size) * float(pulse_scale))))
+    icon_scaled = _get_icon_resized_cached(icon_key, target_px)
     ox = (icon_size - icon_scaled.size[0]) // 2
     oy = (icon_size - icon_scaled.size[1]) // 2
     ix = gx + int(cfg.icon_ox) + ox
