@@ -11,6 +11,32 @@ import time
 import os
 import base64
 
+# -------------------------------
+# Output filename helpers
+# -------------------------------
+def make_safe_stem(upload_name: str) -> str:
+    """Return a filesystem-safe stem (keep CJK and spaces; remove problematic symbols)."""
+    stem = Path(upload_name).stem if upload_name else "dive_overlay"
+    # Replace characters that are problematic across platforms / browsers
+    for ch in ['\\', '/', ':', '*', '?', '"', '<', '>', '|', '#']:
+        stem = stem.replace(ch, '_')
+    # Trim and collapse repeated underscores
+    stem = stem.strip()
+    while '__' in stem:
+        stem = stem.replace('__', '_')
+    return stem if stem else "dive_overlay"
+
+def build_output_filename(upload_name: str, suffix: str, max_depth_m: float, dive_no: int | None = None) -> str:
+    stem = make_safe_stem(upload_name)
+    depth_tag = f"{max_depth_m:.1f}m"
+    if suffix == ".fit":
+        n = int(dive_no) if dive_no is not None else 1
+        return f"{stem}_Dive {n}_{depth_tag}.mp4"
+    if suffix == ".uddf":
+        return f"{stem}_{depth_tag}.mp4"
+    return f"{stem}_{depth_tag}.mp4"
+
+
 from core.parser_garmin import parse_garmin_fit_to_dives, parse_garmin_fit_to_dives_with_hr
 from core.parser_atmos import parse_atmos_uddf
 from core.video_renderer import render_video
@@ -857,11 +883,31 @@ with st.container():
                     st.session_state["ov_output_path"] = str(output_path)
                     st.session_state["ov_job_state"] = "done"
 
+                                        # ---- Build a user-friendly output filename (download name) ----
+                    try:
+                        max_depth_for_name = float(dive_df["depth_m"].max()) if (dive_df is not None and "depth_m" in dive_df.columns) else 0.0
+                    except Exception:
+                        max_depth_for_name = 0.0
+
+                    dive_no_for_name = None
+                    if suffix == ".fit":
+                        try:
+                            dive_no_for_name = int(selected_dive_index) + 1
+                        except Exception:
+                            dive_no_for_name = 1
+
+                    download_name = build_output_filename(
+                        upload_name=watch_name,
+                        suffix=suffix,
+                        max_depth_m=max_depth_for_name,
+                        dive_no=dive_no_for_name,
+                    )
+
                     with open(output_path, "rb") as f:
                         st.download_button(
                             tr("download_button"),
                             data=f,
-                            file_name="dive_overlay_1080p.mp4",
+                            file_name=download_name,
                             mime="video/mp4",
                         )
 

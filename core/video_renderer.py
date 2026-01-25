@@ -1,8 +1,16 @@
 # core/video_renderer.py
+
+# Global default colors
+label_color = (255, 255, 255, 255)
+value_color = (0, 255, 255, 255)
+
 from typing import Optional, Tuple
 import math
 import numpy as np
 import pandas as pd
+import subprocess
+import json
+import hashlib
 from moviepy.editor import VideoFileClip
 from moviepy.video.VideoClip import VideoClip
 from pathlib import Path
@@ -390,12 +398,12 @@ def _layout_a_defaults():
 class LayoutCDepthConfig:
     enabled: bool = True
 
-    window_top: int = 1600
-    window_bottom_margin: int = 80
+    window_top: int = 1570  # original = 1600
+    window_bottom_margin: int = 50  # original = 80
     px_per_m: int = 17              # original = 20
 
     fade_enable: bool = True
-    fade_margin_px: int = 70
+    fade_margin_px: int = 100    # original = 70
     fade_edge_transparency: float = 0.95
 
     depth_min_m: int = 0
@@ -448,6 +456,153 @@ class LayoutCDepthConfig:
     value_x: int = 205
     arrow_y_offset: int = 35
 
+
+# ============================================================
+# Layout C - Depth scale / fade caches (performance)
+# ============================================================
+
+def _layout_c_depth_scale_cache_key(
+    *,
+    cfg: "LayoutCDepthConfig",
+    depth_max_display: int,
+    W: int,
+    H: int,
+    pad_top: int,
+    pad_bot: int,
+    font_path: Optional[str],
+) -> tuple:
+    """
+    Build a stable, hashable cache key for the Layout C depth scale (ticks + numbers).
+
+    The scale itself is static for a given config / resolution; only the vertical offset
+    changes per frame. Caching avoids re-drawing 100+ ticks and labels per frame.
+    """
+    fp = str(font_path) if font_path else ""
+    return (
+        int(W), int(H), int(pad_top), int(pad_bot),
+        int(cfg.depth_min_m), int(depth_max_display),
+        int(cfg.px_per_m), int(getattr(cfg, "scale_y_offset", 0)),
+        int(cfg.scale_x), int(getattr(cfg, "scale_x_offset", 0)),
+        # tick geometry
+        int(cfg.tick_len_10m), int(cfg.tick_len_5m), int(cfg.tick_len_1m), int(cfg.tick_len_max),
+        int(cfg.tick_w_10m), int(cfg.tick_w_5m), int(cfg.tick_w_1m), int(cfg.tick_w_max),
+        tuple(cfg.tick_color),
+        # number style / placement
+        int(cfg.num_left_margin), int(getattr(cfg, "num_offset_x", 0)), int(getattr(cfg, "num_offset_y", 0)),
+        int(cfg.num_font_size), tuple(cfg.num_color),
+        int(getattr(cfg, "zero_num_offset_x", 0)), int(getattr(cfg, "zero_num_offset_y", 0)),
+        int(getattr(cfg, "max_num_offset_x", 0)), int(getattr(cfg, "max_num_offset_y", 0)),
+        fp,
+    )
+
+@lru_cache(maxsize=16)
+def _get_layout_c_depth_scale_moving_cached(cache_key: tuple) -> PILImage.Image:
+    """
+    Return a pre-rendered RGBA image containing the full moving depth scale
+    (ticks + numbers) for Layout C. The caller should treat the returned image
+    as read-only.
+    """
+    (
+        W, H, pad_top, pad_bot,
+        depth_min_m, depth_max_display,
+        px_per_m, scale_y_offset,
+        scale_x, scale_x_offset,
+        tick_len_10m, tick_len_5m, tick_len_1m, tick_len_max,
+        tick_w_10m, tick_w_5m, tick_w_1m, tick_w_max,
+        tick_color,
+        num_left_margin, num_offset_x, num_offset_y,
+        num_font_size, num_color,
+        zero_num_offset_x, zero_num_offset_y,
+        max_num_offset_x, max_num_offset_y,
+        font_path_str,
+    ) = cache_key
+
+    moving_h = int(H) + int(pad_top) + int(pad_bot)
+    moving = PILImage.new("RGBA", (int(W), int(moving_h)), (0, 0, 0, 0))
+    d = ImageDraw.Draw(moving)
+
+    # Font for scale numbers
+    if font_path_str:
+        try:
+            num_font = _get_font_cached(Path(font_path_str), int(num_font_size))
+        except Exception:
+            num_font = ImageFont.load_default()
+    else:
+        num_font = ImageFont.load_default()
+
+    center_x = int(scale_x) + int(scale_x_offset)
+
+    # Draw ticks + numbers onto moving canvas
+    for m in range(int(depth_min_m), int(depth_max_display) + 1):
+        y = int(pad_top) + int(m) * int(px_per_m) + int(scale_y_offset)
+        is_max = (m == int(depth_max_display))
+
+        if is_max:
+            w, L = int(tick_w_max), int(tick_len_max)
+        elif (m % 10) == 0:
+            w, L = int(tick_w_10m), int(tick_len_10m)
+        elif (m % 5) == 0:
+            w, L = int(tick_w_5m), int(tick_len_5m)
+        else:
+            w, L = int(tick_w_1m), int(tick_len_1m)
+
+        x1 = center_x - L // 2
+        x2 = center_x + L // 2
+        d.line([(x1, y), (x2, y)], fill=tick_color, width=w)
+
+        if ((m % 10) == 0) or is_max:
+            txt = str(m)
+            num_x = int(num_left_margin) + int(num_offset_x)
+            num_y_center = y + int(num_offset_y)
+
+            if m == 0:
+                num_x += int(zero_num_offset_x)
+                num_y_center += int(zero_num_offset_y)
+
+            if is_max:
+                num_x += int(max_num_offset_x)
+                num_y_center += int(max_num_offset_y)
+
+            d.text(
+                (int(num_x), int(num_y_center)),
+                txt,
+                font=num_font,
+                fill=num_color,
+                anchor="lm",
+            )
+
+    return moving
+
+@lru_cache(maxsize=32)
+def _get_layout_c_fade_mask_cached(*, W: int, win_h: int, fade: int, edge_transparency: float) -> PILImage.Image:
+    """
+    Build and cache an L-mode alpha multiplier mask for fading the top/bottom edges.
+    Mask values are in [0..255] where 255 keeps alpha and smaller values attenuate alpha.
+    """
+    W = int(W)
+    win_h = int(win_h)
+    fade = int(fade)
+    edge_transparency = float(edge_transparency)
+
+    # edge_transparency is "how transparent the edge should be"
+    # so the alpha multiplier at the edges is (1 - edge_transparency)
+    edge_opacity = max(0.0, min(1.0, 1.0 - edge_transparency))
+
+    # 1D factors
+    factors = np.ones((win_h,), dtype=np.float32)
+    if fade > 0:
+        top = np.linspace(edge_opacity, 1.0, fade, dtype=np.float32)
+        factors[:fade] = top
+        bot = np.linspace(1.0, edge_opacity, fade, dtype=np.float32)
+        factors[win_h - fade:] = bot
+
+    vals = np.clip(np.round(factors * 255.0), 0, 255).astype(np.uint8)
+
+    # Build mask as (W x win_h)
+    mask = np.repeat(vals[:, None], W, axis=1)
+    return PILImage.fromarray(mask, mode="L")
+
+
 def render_layout_c_depth_module(
     base_img: Image.Image,
     current_depth_m: float,
@@ -469,10 +624,6 @@ def render_layout_c_depth_module(
 
     pad_top = int(getattr(cfg, "scale_pad_top", 0))
     pad_bot = int(getattr(cfg, "scale_pad_bottom", 0))
-
-    moving_h = H + pad_top + pad_bot
-    moving = PILImage.new("RGBA", (W, moving_h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(moving)
 
     # Fonts (cached)
     if font_path:
@@ -496,45 +647,19 @@ def render_layout_c_depth_module(
     else:
         depth_max_display = int(cfg.depth_max_m)
 
-    # Draw ticks + numbers onto moving canvas
-    for m in range(cfg.depth_min_m, depth_max_display + 1):
-        y = pad_top + m * cfg.px_per_m + cfg.scale_y_offset
-        is_max = (m == depth_max_display)
 
-        if is_max:
-            w, L = cfg.tick_w_max, cfg.tick_len_max
-        elif m % 10 == 0:
-            w, L = cfg.tick_w_10m, cfg.tick_len_10m
-        elif m % 5 == 0:
-            w, L = cfg.tick_w_5m, cfg.tick_len_5m
-        else:
-            w, L = cfg.tick_w_1m, cfg.tick_len_1m
-
-        center_x = cfg.scale_x + cfg.scale_x_offset
-        x1 = center_x - L // 2
-        x2 = center_x + L // 2
-        d.line([(x1, y), (x2, y)], fill=cfg.tick_color, width=w)
-
-        if (m % 10 == 0) or is_max:
-            txt = str(m)
-            num_x = cfg.num_left_margin + cfg.num_offset_x
-            num_y_center = y + cfg.num_offset_y
-
-            if m == 0:
-                num_x += int(getattr(cfg, "zero_num_offset_x", 0))
-                num_y_center += int(getattr(cfg, "zero_num_offset_y", 0))
-
-            if is_max:
-                num_x += int(getattr(cfg, "max_num_offset_x", 0))
-                num_y_center += int(getattr(cfg, "max_num_offset_y", 0))
-
-            d.text(
-                (int(num_x), int(num_y_center)),
-                txt,
-                font=num_font,
-                fill=cfg.num_color,
-                anchor="lm",
-            )
+    # Build (and cache) the static depth scale layer (ticks + numbers).
+    # This is expensive to draw and does not change frame-to-frame, only the vertical offset changes.
+    depth_scale_key = _layout_c_depth_scale_cache_key(
+        cfg=cfg,
+        depth_max_display=depth_max_display,
+        W=W,
+        H=H,
+        pad_top=pad_top,
+        pad_bot=pad_bot,
+        font_path=font_path,
+    )
+    moving = _get_layout_c_depth_scale_moving_cached(depth_scale_key)
 
     # Move scale so current depth aligns to indicator
     offset_y = int(round(indicator_y - (pad_top + current_depth_m * cfg.px_per_m)))
@@ -543,25 +668,22 @@ def render_layout_c_depth_module(
     moved.alpha_composite(moving, (0, offset_y))
     clipped = moved.crop((0, y0, W, y1))  # RGBA
 
-    # Fade edges (on clipped)
+    # Fade edges (on clipped) - cache the mask to avoid per-frame numpy work
     if cfg.fade_enable and cfg.fade_margin_px > 0 and 0.0 <= cfg.fade_edge_transparency < 1.0:
         win_h = clipped.size[1]
         fade = int(cfg.fade_margin_px)
         fade = max(0, min(fade, win_h // 2))
 
-        edge_opacity = 1.0 - float(cfg.fade_edge_transparency)
-        factors = np.ones((win_h,), dtype=np.float32)
-
         if fade > 0:
-            top = np.linspace(edge_opacity, 1.0, fade, dtype=np.float32)
-            factors[:fade] = top
-            bot = np.linspace(1.0, edge_opacity, fade, dtype=np.float32)
-            factors[win_h - fade:] = bot
-
-        a = np.array(clipped.getchannel("A"), dtype=np.float32)
-        a *= factors[:, None]
-        a = np.clip(a, 0, 255).astype(np.uint8)
-        clipped.putalpha(Image.fromarray(a, mode="L"))
+            mask = _get_layout_c_fade_mask_cached(
+                W=W,
+                win_h=win_h,
+                fade=fade,
+                edge_transparency=float(cfg.fade_edge_transparency),
+            )
+            a = clipped.getchannel("A")
+            a2 = ImageChops.multiply(a, mask)  # alpha * (mask/255)
+            clipped.putalpha(a2)
 
     # --- Build a clean module layer (scale window + arrow + value + unit) ---
     layer = PILImage.new("RGBA", out.size, (0, 0, 0, 0))
@@ -617,7 +739,7 @@ def render_layout_c_depth_module(
         layer,
         offset=(5, 6),
         blur_radius=8,
-        shadow_color=(0, 0, 0, 130),
+        shadow_color=(0, 0, 0, 100),
     )
 
     # Composite back
@@ -632,12 +754,12 @@ def render_layout_c_depth_module(
 class LayoutCRateConfig:
     enabled: bool = True  # original = True
 
-    global_x: int = 720
-    global_y: int = 60
+    global_x: int = 760
+    global_y: int = 125   # original = 60
 
-    label_font_size: int = 52
-    value_font_size: int = 118
-    unit_font_size: int = 58
+    label_font_size: int = 46  # original = 52
+    value_font_size: int = 98  # original = 118
+    unit_font_size: int = 48  # original = 58
 
     decimals: int = 2
 
@@ -646,20 +768,20 @@ class LayoutCRateConfig:
     unit_color: tuple = (255, 255, 255, 255)
     arrow_color: tuple = (255, 255, 255, 255)
 
-    label_ox: int = 70
+    label_ox: int = 35  # original = 70
     label_oy: int = 0
-    arrow_ox: int = 20
-    arrow_oy: int = 0
+    arrow_ox: int = 0  # original = 20
+    arrow_oy: int = 6  # original = 0
     value_ox: int = 30
-    value_oy: int = 65
-    unit_ox: int = 10
-    unit_oy: int = 120
+    value_oy: int = 20  # original = 65
+    unit_ox: int = -3  # original = 10
+    unit_oy: int = 46  # original = 120
 
     unit_follow_value: bool = True
     unit_gap_px: int = 10
 
-    arrow_w: int = 26
-    arrow_h: int = 28
+    arrow_w: int = 20
+    arrow_h: int = 24
 
 
 
@@ -669,20 +791,20 @@ class LayoutCHeartRateConfig:
 
 
     # Global anchor (top-left)
-    global_x: int = 63
-    global_y: int = 150
+    global_x: int = 40
+    global_y: int = 120
 
     # Icon
-    icon_size: int = 100
+    icon_size: int = 85  # original = 100
 
     # Value text
-    value_font_size: int = 120
+    value_font_size: int = 100  # original = 120
     value_color: tuple = (255, 255, 255, 255)
 
     # Offsets (relative to global)
     icon_ox: int = 0
     icon_oy: int = 0
-    value_ox: int = 110
+    value_ox: int = 85  # original = 110
     value_oy: int = 10
 
     # Animation
@@ -696,25 +818,113 @@ class LayoutCTimeConfig:
     enabled: bool = True
 
     # Global anchor (top-left of time text)
-    global_x: int = 80
-    global_y: int = 900
+    global_x: int = 205
+    global_y: int = 1740
 
     # Text style
-    font_size: int = 80
+    font_size: int = 62
     color: tuple = (255, 255, 255, 255)
 
     # Colon uses base font due to Nereus lacking ":"
-    colon_font_size: Optional[int] = None  # None => same as font_size
+    colon_font_size: int = 44
 
     # Optional fine-tune offsets
     ox: int = 0
     oy: int = 0
-    part_gap_px: int = 0  # extra gap between parts (mm ":" ss)
+    part_gap_px: int = 2  # extra gap between parts (mm ":" ss)
 
 # ==========================================================
 # Layout C - Centralized manual tuning block
 #   Adjust Layout C (Depth / Rate / Heart Rate / Shadow) here
 # ==========================================================
+@dataclass
+class LayoutCTempConfig:
+    """Layout C temperature module configuration (reuses Layout D design defaults)."""
+    enabled: bool = True
+
+    # Positioning
+    # If x/y are -1, the module is anchored to bottom-right using margin_right/margin_bottom.
+    x: int = 860   # original = 860
+    y: int = -1  # original = -1
+    global_x: int = 0
+    global_y: int = -40
+    margin_right: int = 60
+    margin_bottom: int = 80
+
+    # Update rate for temperature value (Hz). Overlay can render at higher FPS; this throttles
+    # only the temperature sampling/refresh. Recommended options: 1 / 2 / 5 / 15.
+    temp_update_fps: int = 15
+
+    # Icon + text
+    icon_size: int = 100
+    gap_px: int = 14
+
+    # Font
+    # Value (temperature number)
+    value_font_size: int = 60
+    decimals: int = 1
+    value_ox: int = -20
+    value_oy: int = -25
+
+    # Unit ("°C")
+    unit_font_size: int = 40
+    unit_gap_px: int = 6
+    unit_ox: int = 0
+    unit_oy: int = -11
+
+    # Degree symbol rendering
+    # If True, draw degree as a small hollow dot (circle) instead of the "°" glyph.
+    deg_as_dot: bool = True
+    deg_dot_r_px: int = 4
+    deg_dot_line_px: int = 3
+    deg_dot_dx: int = 0
+    deg_dot_dy: int = 5
+
+    # Color (RGBA)
+    color: tuple = (255, 255, 255, 255)
+
+    # Hard shadow (no blur)
+    shadow_enable: bool = True
+    shadow_dx: int = 2
+    shadow_dy: int = 2
+    shadow_alpha: int = 80
+    shadow_color_rgb: tuple = (0, 0, 0)
+
+    # Unit: show as "°C" where:
+    # - "°" uses base font (to avoid missing glyph in nereus)
+    # - "C" uses nereus-bold
+    deg_symbol: str = "°"
+    unit_c: str = "C"
+    
+    temp_time_shift_s: float = -12.0  # e.g. 10.0 or 15.0
+
+    # Optional: if input temperature looks like Kelvin, auto-convert to Celsius.
+    auto_kelvin_to_c: bool = True
+    kelvin_threshold: float = 100.0  # values above this are treated as Kelvin
+
+    # Column name candidates (first match wins)
+    temp_col_candidates: Tuple[str, ...] = (
+        "water_temp_c",
+        "water_temperature_c",
+        "temperature_c",
+        "temp_c",
+        "water_temp",
+        "water_temperature",
+        "temperature",
+        "temp",
+    )
+
+# ===================
+# Layout D (Heart rate module)
+# ===================
+
+# Cache for (icon_path, icon_h) -> (outline_rgba, inside_mask_L)
+_HR_ICON_CACHE: dict = {}
+
+
+
+# Layout C - Temperature module (reuse Layout D design)
+
 
 @dataclass
 class LayoutCShadowConfig:
@@ -736,72 +946,31 @@ class LayoutCAllConfig:
     rate: "LayoutCRateConfig"
     hr: "LayoutCHeartRateConfig"
     time: "LayoutCTimeConfig"
+    temp: "LayoutCTempConfig"
     shadow: LayoutCShadowConfig
 
 def get_layout_c_config() -> LayoutCAllConfig:
-    """Single source of truth for Layout C defaults."""
-    shadow_cfg = LayoutCShadowConfig(
-        shadow_mode="solid",
-        enabled=True,
-        offset=(4, 4),
-        blur_radius=0,
-        color=(80, 80, 80, 120),
-    )
+    """Single source of truth for Layout C defaults.
 
-    # Depth config is mostly driven by LayoutCDepthConfig defaults (tuned in dataclass)
+    Important: Layout C defaults should be independently tunable via the
+    corresponding LayoutC*Config dataclasses. Therefore, do NOT hard-code
+    overrides here—instantiate each config with its own defaults.
+    """
+    shadow_cfg = LayoutCShadowConfig()
     depth_cfg = LayoutCDepthConfig()
+    rate_cfg = LayoutCRateConfig()
+    hr_cfg = LayoutCHeartRateConfig()
+    time_cfg = LayoutCTimeConfig()
+    temp_cfg = LayoutCTempConfig()
 
-    # Rate config default (your tuned values)
-    rate_cfg = LayoutCRateConfig(
-        enabled=True, # original = True
-        global_x=720,
-        global_y=60,
-        label_font_size=48,
-        value_font_size=120,
-        unit_font_size=50,
-        decimals=1,
-        label_ox=50, label_oy=82,
-        arrow_ox=12, arrow_oy=87,
-        value_ox=50, value_oy=100,
-        unit_ox=-4, unit_oy=141,
-        unit_follow_value=True,
-        unit_gap_px=10,
+    return LayoutCAllConfig(
+        depth=depth_cfg,
+        rate=rate_cfg,
+        hr=hr_cfg,
+        time=time_cfg,
+        temp=temp_cfg,
+        shadow=shadow_cfg,
     )
-
-    # Heart rate config default (your tuned values)
-    hr_cfg = LayoutCHeartRateConfig(
-        enabled=True, # original = True
-        global_x=63,
-        global_y=150,
-        icon_size=100,
-        value_font_size=120,
-        value_color=(255, 255, 255, 255),
-        icon_ox=0,
-        icon_oy=0,
-        value_ox=110,
-        value_oy=10,
-        pulse_amp=0.06,  # original = 0.08
-    )
-
-    # Time config (Layout C): mm:ss under depth value (":" uses base font)
-    time_cfg = LayoutCTimeConfig(
-        enabled=True,
-    
-        global_x=204,
-        global_y=1743,
-    
-        font_size=75,
-        color=(255, 255, 255, 255),
-    
-        # ":" base font size (tunable)
-        colon_font_size=50,
-    
-        ox=0,
-        oy=-4,
-        part_gap_px=0,
-    )
-
-    return LayoutCAllConfig(depth=depth_cfg, rate=rate_cfg, hr=hr_cfg, time=time_cfg, shadow=shadow_cfg)
 
 # Default Layout C shadow parameters (used by all Layout C modules)
 _layout_c_shadow_defaults = get_layout_c_config().shadow
@@ -1307,7 +1476,10 @@ class LayoutDTimeConfig:
     below_gap_px: int = 16  # vertical gap below depth plate
 
     # Color (RGBA)
-    color: tuple = (255, 255, 255, 255)
+    # Legacy 'color' kept for backward-compat (fallback for value_color)
+    color: tuple = (0, 255, 255, 255)
+    label_color: tuple = (255, 255, 255, 255)
+    value_color: tuple = (0, 255, 255, 255)
 
     # Hard shadow (no blur)
     shadow_enable: bool = True
@@ -1376,7 +1548,10 @@ class LayoutDSpeedConfig:
     below_time_gap_px: int = 18
 
     # Color (RGBA)
-    color: tuple = (255, 255, 255, 255)
+    # Legacy 'color' kept for backward-compat (fallback for value_color)
+    color: tuple = (0, 255, 255, 255)
+    label_color: tuple = (255, 255, 255, 255)
+    value_color: tuple = (0, 255, 255, 255)
 
     # Hard shadow (no blur)
     shadow_enable: bool = True
@@ -1505,6 +1680,9 @@ class LayoutDTempConfig:
 # Cache for (icon_path, icon_h) -> (outline_rgba, inside_mask_L)
 _HR_ICON_CACHE: dict = {}
 
+
+
+# Layout C - Temperature module (reuse Layout D design)
 
 @dataclass
 class LayoutDHeartRateConfig:
@@ -1786,7 +1964,8 @@ def render_layout_d_heart_rate_module(
         return base_img
     hr_txt = f"{hr_i:d}"
 
-    color = getattr(cfg, "color", (255, 255, 255, 255))
+    label_color = getattr(cfg, "label_color", (255, 255, 255, 255))
+    color = getattr(cfg, "value_color", getattr(cfg, "color", (255, 255, 255, 255)))
 
     # Layout / positioning
     W, H = out.size
@@ -1919,7 +2098,9 @@ def render_layout_d_time_module(
     mm_txt = f"{mm:02d}"
     ss_txt = f"{ss:02d}"
 
-    color = getattr(cfg, "color", (255, 255, 255, 255))
+    label_color = getattr(cfg, "label_color", (255, 255, 255, 255))
+
+    color = getattr(cfg, "value_color", getattr(cfg, "color", (255, 255, 255, 255)))
 
     # Load fonts (independent sizes)
     def _safe_font(path: Optional[Path], size: int):
@@ -1957,7 +2138,7 @@ def render_layout_d_time_module(
     # --- Row 1: Label (always drawn at label_ox/label_oy) ---
     label_x = x0 + int(getattr(cfg, "label_ox", 0))
     label_y = y0 + int(getattr(cfg, "label_oy", 0))
-    _dt((label_x, label_y), label_txt, font=nereus_label, fill=color)
+    _dt((label_x, label_y), label_txt, font=nereus_label, fill=label_color)
 
     if stacked:
         # --- Row 2: Time row origin ---
@@ -2013,7 +2194,7 @@ def render_layout_d_time_module(
             lx = x0 + int(getattr(cfg, "label_ox", 0))
             ly = y0 + int(getattr(cfg, "label_oy", 0))
             # (label already drawn above, but we redraw here for parity)
-            _dt((lx, ly), label_txt, font=nereus_label, fill=color)
+            _dt((lx, ly), label_txt, font=nereus_label, fill=label_color)
             lw = draw.textbbox((0, 0), label_txt, font=nereus_label)[2]
 
             cx = lx + lw + gap
@@ -2055,7 +2236,7 @@ def render_layout_d_time_module(
         # Explicit positioning: each element uses its own offset from module origin.
         lx = x0 + int(getattr(cfg, "label_ox", 0))
         ly = y0 + int(getattr(cfg, "label_oy", 0))
-        _dt((lx, ly), label_txt, font=nereus_label, fill=color)
+        _dt((lx, ly), label_txt, font=nereus_label, fill=label_color)
 
         cx = x0 + int(getattr(cfg, "colon_ox", 0))
         cy = y0 + int(getattr(cfg, "colon_oy", 0))
@@ -2197,7 +2378,7 @@ def render_layout_d_speed_module(
     label_x = time_label_x + int(getattr(cfg, "label_ox", 0)) + gx
     label_y = time_y0 + time_row_h + int(getattr(cfg, "below_time_gap_px", 18)) + int(getattr(cfg, "label_oy", 0)) + gy
 
-    _dt((label_x, label_y), str(getattr(cfg, "label_text", "Speed")), font=font_label, fill=color)
+    _dt((label_x, label_y), str(getattr(cfg, "label_text", "Speed")), font=font_label, fill=label_color)
 
     # Value position: under label, left-aligned to MM start
     value_x = mm_x + int(getattr(cfg, "value_ox", 0)) + gx
@@ -3112,8 +3293,201 @@ def draw_depth_bar_and_bubbles(
 
 # ============================================================
 # Main render function
-# ============================================================
+# =================# ==========================================================
+# Web version: input video normalization (1080p portrait)
+#   Goals:
+#     - Enforce 1080x1920 for predictable overlay coordinates
+#     - Fix DJI Mimo HEVC 10-bit + rotation metadata cases (avoid side black bars)
+#     - Skip normalization when the source is already a clean 1080x1920 portrait
+# ==========================================================
 
+def _run_cmd(cmd: list) -> None:
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(p.stderr.strip() or "Command failed")
+
+def _ffprobe_stream_info(video_path: Path) -> dict:
+    """Return primary video stream info: width/height, codec, pix_fmt, rotation, SAR."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries",
+        "stream=width,height,codec_name,pix_fmt,sample_aspect_ratio:stream_tags=rotate:side_data_list=rotation",
+        "-of", "json",
+        str(video_path),
+    ]
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(p.stderr.strip() or "ffprobe failed")
+    data = json.loads(p.stdout or "{}")
+    streams = data.get("streams") or []
+    if not streams:
+        return {}
+    st = streams[0]
+    # Rotation can appear in tags.rotate (string) or side_data_list.rotation (number)
+    rot = None
+    try:
+        rot = int((st.get("tags") or {}).get("rotate"))
+    except Exception:
+        rot = None
+    if rot is None:
+        sdl = st.get("side_data_list") or []
+        for sd in sdl:
+            if "rotation" in sd:
+                try:
+                    rot = int(sd.get("rotation"))
+                    break
+                except Exception:
+                    pass
+    sar = st.get("sample_aspect_ratio")
+    if sar in (None, "", "N/A"):
+        sar = None
+    info = {
+        "width": int(st.get("width") or 0),
+        "height": int(st.get("height") or 0),
+        "codec": (st.get("codec_name") or "").lower(),
+        "pix_fmt": (st.get("pix_fmt") or "").lower(),
+        "rotation": rot,
+        "sar": sar,
+    }
+    return info
+
+def _effective_wh(w: int, h: int, rot: Optional[int]) -> tuple:
+    if rot in (90, 270, -90, -270):
+        return (h, w)
+    return (w, h)
+
+def _is_clean_portrait_1080(info: dict, target_wh=(1080, 1920)) -> bool:
+    """Treat missing SAR/rotation as OK. Only reject if an explicit non-1:1 SAR exists."""
+    tw, th = int(target_wh[0]), int(target_wh[1])
+    w, h = int(info.get("width") or 0), int(info.get("height") or 0)
+    rot = info.get("rotation")
+    eff_w, eff_h = _effective_wh(w, h, rot)
+    if (eff_w, eff_h) != (tw, th):
+        return False
+    # If already portrait pixels (w<h) but rot says 90/270, treat as stale and ignore rot
+    if w < h and rot in (90, 270, -90, -270):
+        rot = 0
+        eff_w, eff_h = _effective_wh(w, h, rot)
+        if (eff_w, eff_h) != (tw, th):
+            return False
+    sar = info.get("sar")
+    if sar is None:
+        return True
+    return sar in ("1:1", "1/1")
+
+def _is_dji_mimo_like(info: dict) -> bool:
+    """Heuristic for DJI Mimo exports that trigger DAR/SAR quirks in ffmpeg scale+pad."""
+    codec = (info.get("codec") or "").lower()
+    pix = (info.get("pix_fmt") or "").lower()
+    rot = info.get("rotation")
+    return (codec == "hevc") and ("10" in pix) and (rot in (90, 270, -90, -270))
+
+def _norm_cache_path(src: Path, tag: str) -> Path:
+    cache_dir = Path(tempfile.gettempdir()) / "depthrender_norm_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    st = src.stat()
+    key = f"{src.resolve()}|{st.st_size}|{int(st.st_mtime)}|{tag}"
+    h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+    return cache_dir / f"{src.stem}_{tag}_{h}.mp4"
+
+
+def _is_norm_cache_valid(path: Path, target_wh=(1080, 1920)) -> bool:
+    """Validate cached normalized video matches target dimensions and has no rotation."""
+    try:
+        info = _ffprobe_stream_info(path)
+        if not info:
+            return False
+        tw, th = int(target_wh[0]), int(target_wh[1])
+        w, h = int(info.get("width", 0)), int(info.get("height", 0))
+        rot = int(info.get("rotation") or 0)
+        return (w == tw and h == th and rot == 0)
+    except Exception:
+        return False
+
+def normalize_video_to_portrait_1080(
+    src_path: Path,
+    *,
+    target_wh=(1080, 1920),
+    rotate_landscape: str = "left",  # "left" default
+) -> Path:
+    """Return a path to a normalized mp4. May return src_path if no normalization is needed."""
+    info = _ffprobe_stream_info(src_path)
+    if not info:
+        return src_path
+
+    # Fast-path: already clean 1080x1920 portrait => skip normalization
+    if _is_clean_portrait_1080(info, target_wh=target_wh):
+        return src_path
+
+    tw, th = int(target_wh[0]), int(target_wh[1])
+    w, h = int(info["width"]), int(info["height"])
+    rot = info.get("rotation") or 0
+
+    # Special-case: DJI Mimo-like (HEVC 10-bit + Display Matrix rotation)
+    # Use fill + crop to avoid side black bars caused by DAR/SAR derivation in scale+pad.
+    is_mimo = _is_dji_mimo_like(info)
+
+    tag = "mimo_v7" if is_mimo else "norm_v7"
+    out_path = _norm_cache_path(src_path, tag)
+    # Reuse cache only when it matches target (protect against older buggy cache files)
+    if out_path.exists() and out_path.stat().st_size > 1024 * 1024 and _is_norm_cache_valid(out_path, target_wh=target_wh):
+        return out_path
+
+    # Build filter chain
+    filters = []
+
+    # 1) Bake in metadata rotation when present
+    if rot in (90, -270):
+        filters.append("transpose=1")  # clockwise 90
+    elif rot in (270, -90):
+        filters.append("transpose=2")  # counter-clockwise 90
+    elif rot in (180, -180):
+        filters.append("transpose=2,transpose=2")
+
+    # 2) If still landscape (coded or after baking), rotate to portrait (default left)
+    #    We infer from effective dimensions after baking metadata.
+    eff_w, eff_h = _effective_wh(w, h, rot)
+    # After baking, the stream no longer has rotation; but we still use the pre-bake effective size to decide.
+    if eff_w > eff_h:
+        if rotate_landscape == "left":
+            filters.append("transpose=2")
+        elif rotate_landscape == "right":
+            filters.append("transpose=1")
+        else:
+            # no rotation
+            pass
+
+    # 3) Force square pixels and 9:16 display aspect for stability
+    filters.append("setsar=1")
+    filters.append("setdar=9/16")
+
+    # 4) Resize to target
+    if is_mimo:
+        # Fill then crop (no black bars)
+        filters.append(f"scale={tw}:{th}:force_original_aspect_ratio=increase")
+        filters.append(f"crop={tw}:{th}")
+    else:
+        # Fit then pad (preserve full frame)
+        filters.append(f"scale={tw}:{th}:force_original_aspect_ratio=decrease")
+        filters.append(f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2")
+
+    vf = ",".join(filters)
+
+    cmd = [
+        "ffmpeg", "-y", "-v", "error",
+        "-noautorotate",
+        "-i", str(src_path),
+        "-vf", vf,
+        "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
+        str(out_path),
+    ]
+    _run_cmd(cmd)
+    return out_path
+
+# ===========================================
 def render_video(
     video_path: Path,
     dive_df: pd.DataFrame,
@@ -3163,11 +3537,37 @@ def render_video(
     update_progress(0.02, "初始化中...")
 
     t_load_start = time.perf_counter()
-    clip = VideoFileClip(str(video_path))
-    src_clip = clip  # keep an immutable reference for make_frame
+
+    # --- Web: FORCE 1080x1920 portrait for all inputs (web version policy) ---
+    output_resolution = (1080, 1920)
+
+    # --- Web normalization to 1080x1920 (portrait) ---
+    # Skip transcode when the source is already a clean 1080x1920 portrait.
+    # DJI Mimo (HEVC 10-bit + rotation metadata) is handled with a special fill+crop path to avoid side black bars.
+    try:
+        norm_path = normalize_video_to_portrait_1080(
+            Path(video_path),
+            target_wh=output_resolution,
+            rotate_landscape="left",
+        )
+    except Exception as _e:
+        # If ffmpeg/ffprobe is not available, fall back to original path
+        print(f"[render_video] 影片正規化失敗，改用原始影片：{_e}")
+        norm_path = Path(video_path)
+
+    clip = VideoFileClip(str(norm_path))
 
     W, H = output_resolution
-    clip = clip.resize((W, H))
+    # Avoid expensive resize transform when already matching the target
+    try:
+        if int(getattr(clip, "w", 0)) != int(W) or int(getattr(clip, "h", 0)) != int(H):
+            clip = clip.resize((W, H))
+    except Exception:
+        clip = clip.resize((W, H))
+
+    # Use the (possibly resized) clip as the frame source for make_frame
+    src_clip = clip  # frames source
+
     t_load_end = time.perf_counter()
     print(f"[render_video] 載入 + resize 影片耗時 {t_load_end - t_load_start:.2f} 秒")
     update_progress(0.08, "載入影片完成")
@@ -3285,7 +3685,8 @@ def render_video(
 
 # Layout D static build (backplate + curve)
     # =========================
-    layout_d_static = None
+    layout_d_plate = None
+    layout_d_curve_fill = None
     layout_d_tmax = None
     if str(layout).upper() == "D":
         try:
@@ -3296,7 +3697,9 @@ def render_video(
                 max_depth_m=max_depth_raw,
             )
         except Exception:
-            layout_d_static, layout_d_tmax = None, None
+            layout_d_plate = None
+            layout_d_curve_fill = None
+            layout_d_tmax = None
 
 # Layout B scale logic
     if max_depth_raw <= 0:
@@ -3571,6 +3974,7 @@ def render_video(
     layout_c_rate_cfg = layout_c_all.rate
     hr_cfg = layout_c_all.hr
     layout_c_time_cfg = layout_c_all.time
+    layout_c_temp_cfg = layout_c_all.temp
     shadow_cfg = layout_c_all.shadow
 
     # Optional overrides from layout_params (dict)
@@ -3906,15 +4310,36 @@ def render_video(
                     show_icon=True,
                 )
 
-        
-        # ===== Layout D (Depth module only) =====
-        if (
-            layout == "D"
-            and layout_d_plate is not None
-            and layout_d_curve_fill is not None
-            and layout_d_tmax is not None
-        ):
+            # Temperature module (reuse Layout D design)
+            try:
+                _hz = float(getattr(layout_c_temp_cfg, "temp_refresh_hz", 5.0))
+            except Exception:
+                _hz = 5.0
+            if not np.isfinite(_hz) or _hz <= 0:
+                _hz = 5.0
+            _tstep = 1.0 / _hz
+            _t_temp = math.floor(float(time_disp_s) / _tstep) * _tstep
 
+            # Temperature sensor lag compensation (shift temperature earlier in time).
+            try:
+                _t_shift = float(getattr(layout_c_temp_cfg, "temp_time_shift_s", 0.0))
+            except Exception:
+                _t_shift = 0.0
+            if not np.isfinite(_t_shift):
+                _t_shift = 0.0
+
+            _t_temp_shifted = float(_t_temp) - float(_t_shift)
+
+            overlay = render_layout_d_temp_module(
+                base_img=overlay,
+                temp_c=temp_at(_t_temp_shifted),
+                cfg=layout_c_temp_cfg,
+                assets_dir=assets_dir,
+                nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
+                base_font_path=base_font_path,
+            )
+        # ===== Layout D (Depth module) =====
+        if layout == "D" and layout_d_plate is not None and layout_d_tmax is not None:
             overlay = render_layout_d_depth_module(
                 base_img=overlay,
                 t_global_s=float(time_disp_s),
@@ -3926,6 +4351,7 @@ def render_video(
                 cfg=layout_d_depth_cfg,
                 font_path=str(LAYOUT_C_VALUE_FONT_PATH),
             )
+
 
         # ===== Layout D (Time module) =====
         if layout == "D":
