@@ -75,6 +75,14 @@ TRANSLATIONS = {
         "layout_d_desc": "Simple_B",
 
         "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給賽事風格使用）",
+
+        "advanced_options_subheader": "6️⃣ 進階選項（請選擇想顯示的數據）",
+        "module_depth": "深度",
+        "module_rate": "速率",
+        "module_time": "時間",
+        "module_hr": "心率",
+        "module_temp": "溫度",
+        "module_hr_unavailable_suffix": "（無心率資訊）",
         "diver_name_label": "姓名（暫不支援中文）",
         "nationality_label": "國籍",
         "discipline_label": "潛水項目（Discipline）",
@@ -237,6 +245,14 @@ TRANSLATIONS = {
         "layout_d_desc": "Simple_B",
 
         "diver_info_subheader": "5️⃣ Diver info (optional, mainly for Competition Style)",
+
+        "advanced_options_subheader": "Advanced options (select data to display)",
+        "module_depth": "Depth",
+        "module_rate": "Rate",
+        "module_time": "Time",
+        "module_hr": "Heart rate",
+        "module_temp": "Temperature",
+        "module_hr_unavailable_suffix": " (No HR data)",
         "diver_name_label": "Diver name / Nickname",
         "nationality_label": "Nationality",
         "discipline_label": "Discipline",

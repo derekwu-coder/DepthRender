@@ -4024,6 +4024,8 @@ def render_video(
                 layout_c_time_cfg = LayoutCTimeConfig(**layout_params["layout_c_time_cfg"])
             if isinstance(layout_params.get("layout_c_shadow_cfg"), dict):
                 shadow_cfg = LayoutCShadowConfig(**layout_params["layout_c_shadow_cfg"])
+            if isinstance(layout_params.get("layout_c_temp_cfg"), dict):
+                layout_c_temp_cfg = LayoutCTempConfig(**layout_params["layout_c_temp_cfg"])
     except Exception:
         pass
 
@@ -4307,7 +4309,8 @@ def render_video(
 
         # ===== Layout C =====
         if layout == "C":
-            overlay = render_layout_c_depth_module(
+            if getattr(layout_c_depth_cfg, "enabled", True):
+                overlay = render_layout_c_depth_module(
                 base_img=overlay,
                 current_depth_m=depth_disp,
                 cfg=layout_c_depth_cfg,
@@ -4315,7 +4318,8 @@ def render_video(
                 max_depth_m=best_depth,
             )
 
-            overlay = render_layout_c_time_module(
+            if getattr(layout_c_time_cfg, "enabled", True):
+                overlay = render_layout_c_time_module(
                 overlay,
                 # IMPORTANT: Layout C time MUST use the unified elapsed time,
                 # not raw t_global. This prevents the timer from continuing
@@ -4324,7 +4328,8 @@ def render_video(
                 cfg=layout_c_time_cfg,
             )
 
-            overlay = render_layout_c_rate_module(
+            if getattr(layout_c_rate_cfg, "enabled", True):
+                overlay = render_layout_c_rate_module(
                 base_img=overlay,
                 speed_mps_signed=rate_val_signed_c,
                 cfg=layout_c_rate_cfg,
@@ -4332,7 +4337,7 @@ def render_video(
             )
 
             # Heart rate module (icon + value) - only when HR data exists
-            if show_hr_module:
+            if show_hr_module and getattr(hr_cfg, "enabled", True):
                 overlay = render_layout_c_heart_rate_module(
                     overlay,
                     hr_text=hr_text,
@@ -4344,35 +4349,36 @@ def render_video(
                 )
 
             # Temperature module (reuse Layout D design)
-            try:
-                _hz = float(getattr(layout_c_temp_cfg, "temp_refresh_hz", 5.0))
-            except Exception:
-                _hz = 5.0
-            if not np.isfinite(_hz) or _hz <= 0:
-                _hz = 5.0
-            _tstep = 1.0 / _hz
-            _t_temp = math.floor(float(time_disp_s) / _tstep) * _tstep
-
-            # Temperature sensor lag compensation (shift temperature earlier in time).
-            try:
-                _t_shift = float(getattr(layout_c_temp_cfg, "temp_time_shift_s", 0.0))
-            except Exception:
-                _t_shift = 0.0
-            if not np.isfinite(_t_shift):
-                _t_shift = 0.0
-
-            _t_temp_shifted = float(_t_temp) - float(_t_shift)
-
-            overlay = render_layout_d_temp_module(
-                base_img=overlay,
-                temp_c=temp_at(_t_temp_shifted),
-                cfg=layout_c_temp_cfg,
-                assets_dir=assets_dir,
-                nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
-                base_font_path=base_font_path,
-            )
-        # ===== Layout D (Depth module) =====
-        if layout == "D" and layout_d_plate is not None and layout_d_tmax is not None:
+            if getattr(layout_c_temp_cfg, "enabled", True):
+                try:
+                    _hz = float(getattr(layout_c_temp_cfg, "temp_refresh_hz", 5.0))
+                except Exception:
+                    _hz = 5.0
+                if not np.isfinite(_hz) or _hz <= 0:
+                    _hz = 5.0
+                _tstep = 1.0 / _hz
+                _t_temp = math.floor(float(time_disp_s) / _tstep) * _tstep
+    
+                # Temperature sensor lag compensation (shift temperature earlier in time).
+                try:
+                    _t_shift = float(getattr(layout_c_temp_cfg, "temp_time_shift_s", 0.0))
+                except Exception:
+                    _t_shift = 0.0
+                if not np.isfinite(_t_shift):
+                    _t_shift = 0.0
+    
+                _t_temp_shifted = float(_t_temp) - float(_t_shift)
+    
+                overlay = render_layout_d_temp_module(
+                    base_img=overlay,
+                    temp_c=temp_at(_t_temp_shifted),
+                    cfg=layout_c_temp_cfg,
+                    assets_dir=assets_dir,
+                    nereus_font_path=LAYOUT_C_VALUE_FONT_PATH,
+                    base_font_path=base_font_path,
+                )
+            # ===== Layout D (Depth module) =====
+        if layout == "D" and getattr(layout_d_depth_cfg, "enabled", True) and layout_d_plate is not None and layout_d_tmax is not None:
             overlay = render_layout_d_depth_module(
                 base_img=overlay,
                 t_global_s=float(time_disp_s),
@@ -4387,7 +4393,7 @@ def render_video(
 
 
         # ===== Layout D (Time module) =====
-        if layout == "D":
+        if layout == "D" and getattr(layout_d_time_cfg, "enabled", True):
             overlay = render_layout_d_time_module(
                 base_img=overlay,
                 t_global_s=float(time_disp_s),
@@ -4398,7 +4404,7 @@ def render_video(
             )
 
         # ===== Layout D (Speed module) =====
-        if layout == "D":
+        if layout == "D" and getattr(layout_d_speed_cfg, "enabled", True):
             overlay = render_layout_d_speed_module(
                 base_img=overlay,
                 speed_mps=float(rate_val_abs),

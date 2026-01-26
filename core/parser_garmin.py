@@ -198,8 +198,8 @@ def parse_garmin_fit_to_dives(
 def parse_garmin_fit_to_dives_with_hr(
     file_like,
     start_threshold: float = 1.1,  # start count as a dive if depth > 1.1m
-    end_threshold: float = 0.3,
-    min_dive_duration_s: float = 10.0,  # count as a dive# when dive time > 10sec
+    end_threshold: float = 0.1,  # original = 0.3
+    min_dive_duration_s: float = 5.0,  # count as a dive# when dive time > 10sec, original = 10.0
 ):
     """
     Backward-compatible wrapper for app.py.

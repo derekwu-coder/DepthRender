@@ -828,8 +828,195 @@ with st.container():
                     options=[not_spec_label, "CWT", "CWTB", "CNF", "FIM"],
                     key="overlay_discipline",
                 )
+
+
+# --- 8.5 進階選項（Layout C / D）---
+        # Show ONLY when:
+        #   1) Layout C or D is selected, AND
+        #   2) dive data has been loaded (so we can infer availability)
+        if selected_id in ("C", "D") and dive_df is not None and len(dive_df) > 0:
+            st.subheader(tr("advanced_options_subheader"))
+
+            # ---- CSS for selected/unselected styles (supports dark mode) ----
+            st.markdown(
+                """
+                <style>
+                .mod-selected { font-weight: 700; color: #000000; }
+                .mod-unselected { font-weight: 600; color: #9E9E9E; }
+                .mod-disabled { font-weight: 600; color: #9E9E9E; }
+                @media (prefers-color-scheme: dark) {
+                    .mod-selected { color: #FFFFFF; }
+                }
+                /* --- alignment & spacing fix (scoped) --- */
+
+/* Pull the advanced options block closer to the title */
+.adv-mod-scope { margin-top: -30px; }
+.adv-mod-scope div[data-testid="stCheckbox"] > label {
+    display: flex;
+    align-items: center;          /* checkbox + label baseline alignment */
+    gap: 6px;                     /* tighter gap between box and text */
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Move the *visible* checkbox box (BaseWeb) upward */
+.adv-mod-scope div[data-testid="stCheckbox"] [data-baseweb="checkbox"] > div:first-child {
+    transform: translateY(-10px);
+}
+
+/* remove extra top/bottom whitespace around markdown label in the right column */
+.adv-mod-scope [data-testid="stMarkdownContainer"] p {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+</style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # ---- Detect availability from loaded data ----
+            # Depth / Time / Rate are derived from dive_df.
+            cols_lower = {str(c).lower(): c for c in dive_df.columns}
+            has_depth = ("depth_m" in cols_lower)
+            has_time  = ("time_s" in cols_lower)
+
+            # Rate is computable only if depth & time exist
+            has_rate = bool(has_depth and has_time)
+
+            # Temperature: accept common variants
+            has_temp = False
+            try:
+                cand = [c for c in dive_df.columns if "temp" in str(c).lower()]
+                if cand:
+                    s = pd.to_numeric(dive_df[cand[0]], errors="coerce")
+                    has_temp = bool(s.notna().any())
+            except Exception:
+                has_temp = False
+
+            # Heart-rate: from hr_df
+            has_hr = False
+            try:
+                if hr_df is not None and len(hr_df) > 0:
+                    cand_cols = [c for c in hr_df.columns if str(c).lower() in ("hr_bpm", "heart_rate", "bpm", "hr")]
+                    if not cand_cols:
+                        cand_cols = [c for c in hr_df.columns if "hr" in str(c).lower() or "heart" in str(c).lower()]
+                    if cand_cols:
+                        s = pd.to_numeric(hr_df[cand_cols[0]], errors="coerce").fillna(0)
+                        has_hr = bool((s > 0).any())
+                    else:
+                        num_df = hr_df.select_dtypes(include=["number"])
+                        if len(num_df.columns) > 0:
+                            has_hr = bool((num_df.fillna(0) > 0).any().any())
+            except Exception:
+                has_hr = False
+
+            # ---- Initialize defaults AFTER data load (and when data/dive changes) ----
+            # Re-init when:
+            #   - user switches dive / file / layout
+            sig = (
+                st.session_state.get("ov_watch_meta", {}).get("path", ""),
+                int(selected_dive_index) if str(selected_dive_index).isdigit() else str(selected_dive_index),
+                selected_id,
+            )
+            if st.session_state.get("ov_mod_sig") != sig:
+                st.session_state["ov_mod_sig"] = sig
+                st.session_state["ov_mod_depth"] = bool(has_depth)
+                st.session_state["ov_mod_rate"]  = bool(has_rate)
+                st.session_state["ov_mod_time"]  = bool(has_time)
+                st.session_state["ov_mod_temp"]  = bool(has_temp)
+                st.session_state["ov_mod_hr"]    = bool(has_hr)
+
+            # Force-disable if not available
+            if not has_depth:
+                st.session_state["ov_mod_depth"] = False
+            if not has_rate:
+                st.session_state["ov_mod_rate"] = False
+            if not has_time:
+                st.session_state["ov_mod_time"] = False
+            if not has_temp:
+                st.session_state["ov_mod_temp"] = False
+            if not has_hr:
+                st.session_state["ov_mod_hr"] = False
+
+            def _label_html(label_text: str, checked: bool, disabled: bool) -> str:
+                cls = "mod-disabled" if disabled else ("mod-selected" if checked else "mod-unselected")
+                return f"<span class='{cls}'>{label_text}</span>"
+
+            # ---- Layout: horizontal, label to the RIGHT of toggle; wraps if needed ----
+            st.markdown('<div class="adv-mod-scope">', unsafe_allow_html=True)
+            cols_mod = st.columns(5)
+
+            # Depth
+            with cols_mod[0]:
+                tcol, lcol = st.columns([0.12, 0.88])
+                with tcol:
+                    st.session_state["ov_mod_depth"] = st.checkbox(
+                        "",
+                        value=st.session_state.get("ov_mod_depth", True),
+                        key="ov_mod_depth_cb",
+                        disabled=not has_depth,
+                    )
+                with lcol:
+                    st.markdown(_label_html(tr("module_depth"), st.session_state["ov_mod_depth"], disabled=not has_depth), unsafe_allow_html=True)
+
+            # Rate
+            with cols_mod[1]:
+                tcol, lcol = st.columns([0.12, 0.88])
+                with tcol:
+                    st.session_state["ov_mod_rate"] = st.checkbox(
+                        "",
+                        value=st.session_state.get("ov_mod_rate", True),
+                        key="ov_mod_rate_cb",
+                        disabled=not has_rate,
+                    )
+                with lcol:
+                    st.markdown(_label_html(tr("module_rate"), st.session_state["ov_mod_rate"], disabled=not has_rate), unsafe_allow_html=True)
+
+            # Time
+            with cols_mod[2]:
+                tcol, lcol = st.columns([0.12, 0.88])
+                with tcol:
+                    st.session_state["ov_mod_time"] = st.checkbox(
+                        "",
+                        value=st.session_state.get("ov_mod_time", True),
+                        key="ov_mod_time_cb",
+                        disabled=not has_time,
+                    )
+                with lcol:
+                    st.markdown(_label_html(tr("module_time"), st.session_state["ov_mod_time"], disabled=not has_time), unsafe_allow_html=True)
+
+            # HR
+            with cols_mod[3]:
+                tcol, lcol = st.columns([0.12, 0.88])
+                hr_label = tr("module_hr")
+                if not has_hr:
+                    hr_label = f"{hr_label}{tr('module_hr_unavailable_suffix')}"
+                with tcol:
+                    st.session_state["ov_mod_hr"] = st.checkbox(
+                        "",
+                        value=st.session_state.get("ov_mod_hr", False),
+                        key="ov_mod_hr_cb",
+                        disabled=not has_hr,
+                    )
+                with lcol:
+                    st.markdown(_label_html(hr_label, st.session_state["ov_mod_hr"], disabled=not has_hr), unsafe_allow_html=True)
+
+            # Temp
+            with cols_mod[4]:
+                tcol, lcol = st.columns([0.12, 0.88])
+                with tcol:
+                    st.session_state["ov_mod_temp"] = st.checkbox(
+                        "",
+                        value=st.session_state.get("ov_mod_temp", True),
+                        key="ov_mod_temp_cb",
+                        disabled=not has_temp,
+                    )
+                with lcol:
+                    st.markdown(_label_html(tr("module_temp"), st.session_state["ov_mod_temp"], disabled=not has_temp), unsafe_allow_html=True)
+
 # --- 9. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
+            st.markdown('</div>', unsafe_allow_html=True)
             video_meta = st.session_state.get("ov_video_meta")
             video_path_ok = bool(video_meta and video_meta.get("path") and os.path.exists(video_meta.get("path", "")))
             watch_meta = st.session_state.get("ov_watch_meta")
@@ -888,6 +1075,29 @@ with st.container():
                 try:
                     st.session_state["ov_job_state"] = "rendering"
                     st.session_state.pop("ov_render_error", None)
+                    
+                    # ---- Advanced module toggles (Layout C / D) ----
+                    layout_params = {}
+                    if selected_id in ("C", "D"):
+                        # Read UI selections (default to True if missing)
+                        mod_depth = bool(st.session_state.get("ov_mod_depth", True))
+                        mod_rate  = bool(st.session_state.get("ov_mod_rate", True))
+                        mod_time  = bool(st.session_state.get("ov_mod_time", True))
+                        mod_hr    = bool(st.session_state.get("ov_mod_hr", False))
+                        mod_temp  = bool(st.session_state.get("ov_mod_temp", True))
+
+                        if selected_id == "C":
+                            layout_params["layout_c_depth_cfg"] = {"enabled": mod_depth}
+                            layout_params["layout_c_rate_cfg"]  = {"enabled": mod_rate}
+                            layout_params["layout_c_time_cfg"]  = {"enabled": mod_time}
+                            layout_params["layout_c_hr_cfg"]    = {"enabled": mod_hr}
+                            layout_params["layout_c_temp_cfg"]  = {"enabled": mod_temp}
+                        elif selected_id == "D":
+                            layout_params["layout_d_depth_cfg"] = {"enabled": mod_depth}
+                            layout_params["layout_d_speed_cfg"] = {"enabled": mod_rate}
+                            layout_params["layout_d_time_cfg"]  = {"enabled": mod_time}
+                            layout_params["layout_d_hr_cfg"]    = {"enabled": mod_hr}
+                            layout_params["layout_d_temp_cfg"]  = {"enabled": mod_temp}
                     output_path = render_video(
                         video_path=tmp_video_path,
                         dive_df=dive_df,
@@ -904,7 +1114,8 @@ with st.container():
                         dive_end_s=dive_end_s,
                         progress_callback=progress_callback,
                         hr_df=hr_df,
-)
+                        layout_params=layout_params,
+                    )
 
                     progress_callback(1.0, tr("progress_done"))
                     st.success(tr("render_success"))
@@ -912,7 +1123,7 @@ with st.container():
                     st.session_state["ov_output_path"] = str(output_path)
                     st.session_state["ov_job_state"] = "done"
 
-                                        # ---- Build a user-friendly output filename (download name) ----
+                    # ---- Build a user-friendly output filename (download name) ----
                     try:
                         max_depth_for_name = float(dive_df["depth_m"].max()) if (dive_df is not None and "depth_m" in dive_df.columns) else 0.0
                     except Exception:
