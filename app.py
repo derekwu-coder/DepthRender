@@ -837,53 +837,76 @@ with st.container():
         if selected_id in ("C", "D") and dive_df is not None and len(dive_df) > 0:
             st.subheader(tr("advanced_options_subheader"))
 
-            # ---- CSS for selected/unselected styles (supports dark mode) ----
             st.markdown(
                 """
                 <style>
-                .mod-selected { font-weight: 700; color: #000000; }
-                .mod-unselected { font-weight: 600; color: #9E9E9E; }
-                .mod-disabled { font-weight: 600; color: #9E9E9E; }
-                @media (prefers-color-scheme: dark) {
-                    .mod-selected { color: #FFFFFF; }
+                /* ===== Advanced options: pill-style toggles (scoped) ===== */
+                .adv-pill-scope {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    margin-top: 6px;
                 }
-                /* --- alignment & spacing fix (scoped) --- */
-
-/* Pull the advanced options block closer to the title */
-.adv-mod-scope { margin-top: -30px; }
-.adv-mod-scope div[data-testid="stCheckbox"] > label {
-    display: flex;
-    align-items: center;          /* checkbox + label baseline alignment */
-    gap: 6px;                     /* tighter gap between box and text */
-    padding: 0 !important;
-    margin: 0 !important;
-}
-
-/* Move the *visible* checkbox box (BaseWeb) upward */
-.adv-mod-scope div[data-testid="stCheckbox"] [data-baseweb="checkbox"] > div:first-child {
-    transform: translateY(-10px);
-}
-
-/* remove extra top/bottom whitespace around markdown label in the right column */
-.adv-mod-scope [data-testid="stMarkdownContainer"] p {
-    margin: 0 !important;
-    padding: 0 !important;
-}
-</style>
+                .adv-pill-scope div[data-testid="stCheckbox"] {
+                    margin: 0 !important;
+                }
+                .adv-pill-scope div[data-testid="stCheckbox"] > label {
+                    padding: 0 !important;
+                    margin: 0 !important;
+                }
+                /* Style the visible BaseWeb checkbox element as a pill */
+                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"] {
+                    border: 2px solid #3A3A3A;
+                    border-radius: 20px;
+                    padding: 10px 14px;
+                    background: transparent;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 0;
+                    line-height: 1.1;
+                    white-space: nowrap;
+                    user-select: none;
+                }
+                /* Hide the square box graphic (we use the pill border instead) */
+                .adv-pill-scope div[data-testid="stCheckbox"] [data-baseweb="checkbox"] > div:first-child {
+                    display: none !important;
+                }
+                /* Checked / unchecked border colors (match tab styling: blue vs dark gray) */
+                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"][aria-checked="true"] {
+                    border-color: #1F77FF;
+                }
+                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"][aria-checked="false"] {
+                    border-color: #3A3A3A;
+                }
+                /* Disabled */
+                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"][aria-disabled="true"] {
+                    opacity: 0.45;
+                    cursor: not-allowed;
+                }
+                /* Text color: light/dark mode */
+                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"] span {
+                    font-weight: 700;
+                    color: #000000;
+                }
+                @media (prefers-color-scheme: dark) {
+                    .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"] span {
+                        color: #FFFFFF;
+                    }
+                }
+                </style>
                 """,
                 unsafe_allow_html=True,
             )
 
             # ---- Detect availability from loaded data ----
-            # Depth / Time / Rate are derived from dive_df.
             cols_lower = {str(c).lower(): c for c in dive_df.columns}
-            has_depth = ("depth_m" in cols_lower)
-            has_time  = ("time_s" in cols_lower)
+            has_depth = ("depth_m" in cols_lower) or any("depth" == str(c).lower() for c in dive_df.columns)
+            has_time = ("time_s" in cols_lower) or any("time" == str(c).lower() for c in dive_df.columns)
 
-            # Rate is computable only if depth & time exist
             has_rate = bool(has_depth and has_time)
 
-            # Temperature: accept common variants
+            # Temp: try common variants
             has_temp = False
             try:
                 cand = [c for c in dive_df.columns if "temp" in str(c).lower()]
@@ -910,9 +933,7 @@ with st.container():
             except Exception:
                 has_hr = False
 
-            # ---- Initialize defaults AFTER data load (and when data/dive changes) ----
-            # Re-init when:
-            #   - user switches dive / file / layout
+            # ---- Initialize defaults AFTER data load (and when data/dive/layout changes) ----
             sig = (
                 st.session_state.get("ov_watch_meta", {}).get("path", ""),
                 int(selected_dive_index) if str(selected_dive_index).isdigit() else str(selected_dive_index),
@@ -927,93 +948,44 @@ with st.container():
                 st.session_state["ov_mod_hr"]    = bool(has_hr)
 
             # Force-disable if not available
-            if not has_depth:
-                st.session_state["ov_mod_depth"] = False
-            if not has_rate:
-                st.session_state["ov_mod_rate"] = False
-            if not has_time:
-                st.session_state["ov_mod_time"] = False
-            if not has_temp:
-                st.session_state["ov_mod_temp"] = False
-            if not has_hr:
-                st.session_state["ov_mod_hr"] = False
+            if not has_depth: st.session_state["ov_mod_depth"] = False
+            if not has_rate:  st.session_state["ov_mod_rate"]  = False
+            if not has_time:  st.session_state["ov_mod_time"]  = False
+            if not has_temp:  st.session_state["ov_mod_temp"]  = False
+            if not has_hr:    st.session_state["ov_mod_hr"]    = False
 
-            def _label_html(label_text: str, checked: bool, disabled: bool) -> str:
-                cls = "mod-disabled" if disabled else ("mod-selected" if checked else "mod-unselected")
-                return f"<span class='{cls}'>{label_text}</span>"
-
-            # ---- Layout: horizontal, label to the RIGHT of toggle; wraps if needed ----
-            st.markdown('<div class="adv-mod-scope">', unsafe_allow_html=True)
-            cols_mod = st.columns(5)
-
-            # Depth
-            with cols_mod[0]:
-                tcol, lcol = st.columns([0.12, 0.88])
-                with tcol:
-                    st.session_state["ov_mod_depth"] = st.checkbox(
-                        "",
-                        value=st.session_state.get("ov_mod_depth", True),
-                        key="ov_mod_depth_cb",
-                        disabled=not has_depth,
-                    )
-                with lcol:
-                    st.markdown(_label_html(tr("module_depth"), st.session_state["ov_mod_depth"], disabled=not has_depth), unsafe_allow_html=True)
-
-            # Rate
-            with cols_mod[1]:
-                tcol, lcol = st.columns([0.12, 0.88])
-                with tcol:
-                    st.session_state["ov_mod_rate"] = st.checkbox(
-                        "",
-                        value=st.session_state.get("ov_mod_rate", True),
-                        key="ov_mod_rate_cb",
-                        disabled=not has_rate,
-                    )
-                with lcol:
-                    st.markdown(_label_html(tr("module_rate"), st.session_state["ov_mod_rate"], disabled=not has_rate), unsafe_allow_html=True)
-
-            # Time
-            with cols_mod[2]:
-                tcol, lcol = st.columns([0.12, 0.88])
-                with tcol:
-                    st.session_state["ov_mod_time"] = st.checkbox(
-                        "",
-                        value=st.session_state.get("ov_mod_time", True),
-                        key="ov_mod_time_cb",
-                        disabled=not has_time,
-                    )
-                with lcol:
-                    st.markdown(_label_html(tr("module_time"), st.session_state["ov_mod_time"], disabled=not has_time), unsafe_allow_html=True)
-
-            # HR
-            with cols_mod[3]:
-                tcol, lcol = st.columns([0.12, 0.88])
-                hr_label = tr("module_hr")
-                if not has_hr:
-                    hr_label = f"{hr_label}{tr('module_hr_unavailable_suffix')}"
-                with tcol:
-                    st.session_state["ov_mod_hr"] = st.checkbox(
-                        "",
-                        value=st.session_state.get("ov_mod_hr", False),
-                        key="ov_mod_hr_cb",
-                        disabled=not has_hr,
-                    )
-                with lcol:
-                    st.markdown(_label_html(hr_label, st.session_state["ov_mod_hr"], disabled=not has_hr), unsafe_allow_html=True)
-
-            # Temp
-            with cols_mod[4]:
-                tcol, lcol = st.columns([0.12, 0.88])
-                with tcol:
-                    st.session_state["ov_mod_temp"] = st.checkbox(
-                        "",
-                        value=st.session_state.get("ov_mod_temp", True),
-                        key="ov_mod_temp_cb",
-                        disabled=not has_temp,
-                    )
-                with lcol:
-                    st.markdown(_label_html(tr("module_temp"), st.session_state["ov_mod_temp"], disabled=not has_temp), unsafe_allow_html=True)
-
+            st.markdown('<div class="adv-pill-scope">', unsafe_allow_html=True)
+            st.session_state["ov_mod_depth"] = st.checkbox(
+                tr("module_depth"),
+                value=st.session_state.get("ov_mod_depth", True),
+                key="ov_mod_depth_cb",
+                disabled=not has_depth,
+            )
+            st.session_state["ov_mod_rate"] = st.checkbox(
+                tr("module_rate"),
+                value=st.session_state.get("ov_mod_rate", True),
+                key="ov_mod_rate_cb",
+                disabled=not has_rate,
+            )
+            st.session_state["ov_mod_time"] = st.checkbox(
+                tr("module_time"),
+                value=st.session_state.get("ov_mod_time", True),
+                key="ov_mod_time_cb",
+                disabled=not has_time,
+            )
+            st.session_state["ov_mod_hr"] = st.checkbox(
+                tr("module_hr"),
+                value=st.session_state.get("ov_mod_hr", False),
+                key="ov_mod_hr_cb",
+                disabled=not has_hr,
+            )
+            st.session_state["ov_mod_temp"] = st.checkbox(
+                tr("module_temp"),
+                value=st.session_state.get("ov_mod_temp", True),
+                key="ov_mod_temp_cb",
+                disabled=not has_temp,
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
 # --- 9. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
             st.markdown('</div>', unsafe_allow_html=True)
