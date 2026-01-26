@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import subprocess
 import json
+import re
 import hashlib
 from moviepy.editor import VideoFileClip
 from moviepy.video.VideoClip import VideoClip
@@ -3357,24 +3358,56 @@ def _effective_wh(w: int, h: int, rot: Optional[int]) -> tuple:
         return (h, w)
     return (w, h)
 
+def _parse_sar_ratio(sar: Optional[str]) -> Optional[float]:
+    """Parse ffprobe sample_aspect_ratio like '1:1' or '1/1' into a float ratio."""
+    if sar is None:
+        return None
+    s = str(sar).strip()
+    if not s or s.upper() == "N/A":
+        return None
+    m = re.match(r"^\s*(\d+)\s*[:/]\s*(\d+)\s*$", s)
+    if not m:
+        return None
+    a = int(m.group(1))
+    b = int(m.group(2))
+    if b == 0:
+        return None
+    return float(a) / float(b)
+
 def _is_clean_portrait_1080(info: dict, target_wh=(1080, 1920)) -> bool:
-    """Treat missing SAR/rotation as OK. Only reject if an explicit non-1:1 SAR exists."""
+    """More permissive fast-path for true 1080x1920 portrait sources.
+
+    We skip normalization when:
+      - effective (width,height) after considering rotation == target
+      - rotation metadata (if any) is benign (0/90/180/270)
+      - SAR is missing OR approximately 1.0 (tolerant), OR unparsable (assume safe)
+
+    We still normalize for DJI Mimo-like HEVC 10-bit + rotation cases elsewhere.
+    """
     tw, th = int(target_wh[0]), int(target_wh[1])
     w, h = int(info.get("width") or 0), int(info.get("height") or 0)
     rot = info.get("rotation")
     eff_w, eff_h = _effective_wh(w, h, rot)
     if (eff_w, eff_h) != (tw, th):
         return False
+
     # If already portrait pixels (w<h) but rot says 90/270, treat as stale and ignore rot
     if w < h and rot in (90, 270, -90, -270):
         rot = 0
         eff_w, eff_h = _effective_wh(w, h, rot)
         if (eff_w, eff_h) != (tw, th):
             return False
+
+    # Rotation sanity (treat None as OK)
+    if rot not in (None, 0, 90, 180, 270, -90, -180, -270):
+        return False
+
+    # SAR tolerance: accept if missing or ~1.0. If unparsable, treat as OK (many encoders lie but display is fine).
     sar = info.get("sar")
-    if sar is None:
+    r = _parse_sar_ratio(sar)
+    if r is None:
         return True
-    return sar in ("1:1", "1/1")
+    return abs(r - 1.0) <= 0.02
 
 def _is_dji_mimo_like(info: dict) -> bool:
     """Heuristic for DJI Mimo exports that trigger DAR/SAR quirks in ffmpeg scale+pad."""

@@ -10,6 +10,7 @@ import altair as alt
 import time
 import os
 import base64
+import gc
 
 # -------------------------------
 # Output filename helpers
@@ -138,6 +139,25 @@ for _k in ("ov_video_meta", "ov_output_path"):
 cleanup_tmp_dir(max_age_sec=60*60*2, keep_paths=_keep)
 
 # -------------------------------
+# Memory cleanup helpers
+# -------------------------------
+def _clear_uploader_keys(keys):
+    """Best-effort: release Streamlit UploadedFile objects from session_state."""
+    for k in keys:
+        try:
+            if k in st.session_state:
+                st.session_state[k] = None
+        except Exception:
+            pass
+
+def _gc_collect():
+    """Best-effort: trigger Python GC after releasing large objects."""
+    try:
+        gc.collect()
+    except Exception:
+        pass
+
+# -------------------------------
 # UI bootstrap: CSS + language + header
 # -------------------------------
 init_lang(default="zh")
@@ -210,6 +230,9 @@ with st.container():
             st.session_state["ov_reset_on_next_run"] = False
             reset_overlay_job()
             cleanup_tmp_dir(max_age_sec=60 * 60 * 2)  # best-effort sweep
+            # best-effort: release UploadedFile objects (they can be large)
+            _clear_uploader_keys(["overlay_watch_file", "overlay_video_file", "cmp_file_a", "cmp_file_b"])
+            _gc_collect()
             # 重要：reset 完立刻 rerun，確保狀態乾淨
             st.rerun()
 
@@ -246,12 +269,18 @@ with st.container():
             wmeta = st.session_state.get("ov_watch_meta")
             if (wmeta is None) or (wmeta.get("name") != watch_file.name) or (not wmeta.get("path")) or (not os.path.exists(wmeta.get("path", ""))):
                 st.session_state["ov_watch_meta"] = persist_upload_to_tmp(watch_file)
+                # Release the UploadedFile object ASAP to reduce RAM pressure
+                _clear_uploader_keys(["overlay_watch_file"])
+                _gc_collect()
         
         # video（大檔必須用串流落地）
         if video_file is not None:
             vmeta = st.session_state.get("ov_video_meta")
             if (vmeta is None) or (vmeta.get("name") != video_file.name) or (not vmeta.get("path")) or (not os.path.exists(vmeta.get("path", ""))):
                 st.session_state["ov_video_meta"] = persist_upload_to_tmp(video_file)
+                # Release the UploadedFile object ASAP to reduce RAM pressure (video can be large)
+                _clear_uploader_keys(["overlay_video_file"])
+                _gc_collect()
         
         # --- 4. 標記 job 進入 idle（可開始下一步） ---
         if (
@@ -963,7 +992,14 @@ with st.container():
                     key="cmp_file_b",
                 )
             st.markdown('</div>', unsafe_allow_html=True)
-    
+
+
+        # Best-effort: allow releasing large UploadedFile objects from RAM
+        if st.button("清除比對上傳檔案 / Clear compare uploads", key="cmp_clear_uploads"):
+            _clear_uploader_keys(["cmp_file_a", "cmp_file_b"])
+            _gc_collect()
+            st.rerun()
+
         # 解析結果容器
         dives_a = []
         dives_b = []
