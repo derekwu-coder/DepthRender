@@ -837,76 +837,58 @@ with st.container():
         if selected_id in ("C", "D") and dive_df is not None and len(dive_df) > 0:
             st.subheader(tr("advanced_options_subheader"))
 
+            
+            # ---- Advanced module toggles (scoped, vertical) ----
             st.markdown(
                 """
                 <style>
-                /* ===== Advanced options: pill-style toggles (scoped) ===== */
-                .adv-pill-scope {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 10px;
-                    margin-top: 6px;
+                /* ===== Advanced options: scoped GREEN checkbox ===== */
+                .adv-mod-scope {
+                    --primary-color: #00C853 !important; /* Streamlit theme token */
                 }
-                .adv-pill-scope div[data-testid="stCheckbox"] {
-                    margin: 0 !important;
+
+                /* If browser honors accent-color (some Streamlit builds still keep input in DOM) */
+                .adv-mod-scope input[type="checkbox"] { accent-color: #00C853 !important; }
+
+                /* BaseWeb checkbox box (most common) */
+                .adv-mod-scope div[data-testid="stCheckbox"] [data-baseweb="checkbox"] div[role="checkbox"] {
+                    border-color: #6B6B6B !important;
                 }
-                .adv-pill-scope div[data-testid="stCheckbox"] > label {
-                    padding: 0 !important;
-                    margin: 0 !important;
+                .adv-mod-scope div[data-testid="stCheckbox"] [data-baseweb="checkbox"][aria-checked="true"] div[role="checkbox"] {
+                    background-color: #00C853 !important;
+                    border-color: #00C853 !important;
                 }
-                /* Style the visible BaseWeb checkbox element as a pill */
-                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"] {
-                    border: 2px solid #3A3A3A;
-                    border-radius: 20px;
-                    padding: 10px 14px;
-                    background: transparent;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 0;
-                    line-height: 1.1;
-                    white-space: nowrap;
-                    user-select: none;
+                .adv-mod-scope div[data-testid="stCheckbox"] [data-baseweb="checkbox"][aria-checked="true"] svg {
+                    color: #FFFFFF !important;
+                    fill: #FFFFFF !important;
                 }
-                /* Hide the square box graphic (we use the pill border instead) */
-                .adv-pill-scope div[data-testid="stCheckbox"] [data-baseweb="checkbox"] > div:first-child {
-                    display: none !important;
-                }
-                /* Checked / unchecked border colors (match tab styling: blue vs dark gray) */
-                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"][aria-checked="true"] {
-                    border-color: #1F77FF;
-                }
-                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"][aria-checked="false"] {
-                    border-color: #3A3A3A;
-                }
-                /* Disabled */
-                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"][aria-disabled="true"] {
-                    opacity: 0.45;
-                    cursor: not-allowed;
-                }
-                /* Text color: light/dark mode */
-                .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"] span {
-                    font-weight: 700;
-                    color: #000000;
-                }
-                @media (prefers-color-scheme: dark) {
-                    .adv-pill-scope div[data-testid="stCheckbox"] [role="checkbox"] span {
-                        color: #FFFFFF;
-                    }
-                }
-                </style>
+                
+/* Hint text between subheader and checkboxes (do not change overall spacing) */
+.adv-options-hint{
+    font-size: 0.85rem;
+    line-height: 1.2;
+    color: #7a7a7a;
+    margin-top: -10px;
+    margin-bottom: -10px;
+}
+@media (prefers-color-scheme: dark) {
+    .adv-options-hint{ color: #a0a0a0; }
+}
+</style>
                 """,
                 unsafe_allow_html=True,
             )
 
+
             # ---- Detect availability from loaded data ----
             cols_lower = {str(c).lower(): c for c in dive_df.columns}
-            has_depth = ("depth_m" in cols_lower) or any("depth" == str(c).lower() for c in dive_df.columns)
-            has_time = ("time_s" in cols_lower) or any("time" == str(c).lower() for c in dive_df.columns)
+            has_depth = ("depth_m" in cols_lower)
+            has_time  = ("time_s" in cols_lower)
 
+            # Rate is computable only if depth & time exist
             has_rate = bool(has_depth and has_time)
 
-            # Temp: try common variants
+            # Temperature: accept common variants
             has_temp = False
             try:
                 cand = [c for c in dive_df.columns if "temp" in str(c).lower()]
@@ -933,7 +915,7 @@ with st.container():
             except Exception:
                 has_hr = False
 
-            # ---- Initialize defaults AFTER data load (and when data/dive/layout changes) ----
+            # ---- Initialize defaults AFTER data load (and when data/dive changes) ----
             sig = (
                 st.session_state.get("ov_watch_meta", {}).get("path", ""),
                 int(selected_dive_index) if str(selected_dive_index).isdigit() else str(selected_dive_index),
@@ -954,7 +936,23 @@ with st.container():
             if not has_temp:  st.session_state["ov_mod_temp"]  = False
             if not has_hr:    st.session_state["ov_mod_hr"]    = False
 
-            st.markdown('<div class="adv-pill-scope">', unsafe_allow_html=True)
+            # Hint: fewer modules => faster rendering
+            _adv_suffix = ""
+            try:
+                _adv_suffix = Path(st.session_state.get("ov_watch_meta", {}).get("path", "")).suffix.lower()
+            except Exception:
+                _adv_suffix = ""
+            _adv_note = tr("advanced_options_hint")
+            _adv_extra = ""
+            if _adv_suffix == ".uddf":
+                _adv_extra = tr("advanced_options_hint_atmos")
+            elif _adv_suffix == ".fit":
+                if not has_hr:
+                    _adv_extra = tr("advanced_options_hint_no_hr")
+            _adv_text = _adv_note + (f" {_adv_extra}" if _adv_extra else "")
+            st.markdown(f'<div class="adv-options-hint">{_adv_text}</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="adv-mod-scope">', unsafe_allow_html=True)
             st.session_state["ov_mod_depth"] = st.checkbox(
                 tr("module_depth"),
                 value=st.session_state.get("ov_mod_depth", True),
@@ -985,10 +983,11 @@ with st.container():
                 key="ov_mod_temp_cb",
                 disabled=not has_temp,
             )
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+
 # --- 9. 產生影片 ---
         if st.button(tr("render_button"), type="primary", key="overlay_render_btn"):
-            st.markdown('</div>', unsafe_allow_html=True)
             video_meta = st.session_state.get("ov_video_meta")
             video_path_ok = bool(video_meta and video_meta.get("path") and os.path.exists(video_meta.get("path", "")))
             watch_meta = st.session_state.get("ov_watch_meta")

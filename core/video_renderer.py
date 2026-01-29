@@ -3303,7 +3303,7 @@ def draw_depth_bar_and_bubbles(
 # ==========================================================
 
 def _run_cmd(cmd: list) -> None:
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
     if p.returncode != 0:
         raise RuntimeError(p.stderr.strip() or "Command failed")
 
@@ -3313,7 +3313,7 @@ def _ffprobe_stream_info(video_path: Path) -> dict:
         "ffprobe", "-v", "error",
         "-select_streams", "v:0",
         "-show_entries",
-        "stream=width,height,codec_name,pix_fmt,sample_aspect_ratio:stream_tags=rotate:side_data_list=rotation",
+        "stream=width,height,codec_name,pix_fmt,sample_aspect_ratio:stream_tags=rotate:stream_side_data_list=rotation",
         "-of", "json",
         str(video_path),
     ]
@@ -3445,12 +3445,16 @@ def normalize_video_to_portrait_1080(
     rotate_landscape: str = "left",  # "left" default
 ) -> Path:
     """Return a path to a normalized mp4. May return src_path if no normalization is needed."""
+    _t0_probe = time.time()
     info = _ffprobe_stream_info(src_path)
+    _t1_probe = time.time()
+    print(f"[normalize] ffprobe {src_path.name} took {(_t1_probe-_t0_probe):.3f}s; info={info}")
     if not info:
         return src_path
 
     # Fast-path: already clean 1080x1920 portrait => skip normalization
     if _is_clean_portrait_1080(info, target_wh=target_wh):
+        print("[normalize] FAST-PATH: skip normalization")
         return src_path
 
     tw, th = int(target_wh[0]), int(target_wh[1])
@@ -3517,6 +3521,7 @@ def normalize_video_to_portrait_1080(
         "-c:a", "aac", "-b:a", "192k",
         str(out_path),
     ]
+    print(f"[normalize] TRANSCODE tag={tag} -> {out_path.name}")
     _run_cmd(cmd)
     return out_path
 
