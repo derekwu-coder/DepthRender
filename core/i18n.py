@@ -69,9 +69,9 @@ TRANSLATIONS = {
         "layout_a_desc": "",
         "layout_b_label": "賽事風格 2",
         "layout_b_desc": "",
-        "layout_c_label": "單純數據",
+        "layout_c_label": "潛水儀表板 1",  # original = 單純數據
         "layout_c_desc": "Simple_A",
-        "layout_d_label": "開發中 請勿使用",
+        "layout_d_label": "潛水儀表板 2",
         "layout_d_desc": "Simple_B",
 
         "diver_info_subheader": "5️⃣ 潛水員資訊（選填，主要給賽事風格使用）",
@@ -183,8 +183,8 @@ TRANSLATIONS = {
         "module_depth": "深度",
         "module_rate": "速率",
         "module_time": "時間",
-        "module_hr": "心律",
-        "module_temp": "溫度",
+        "module_hr": "心率",
+        "module_temp": "水溫",
         
 },
     "en": {
@@ -240,9 +240,9 @@ TRANSLATIONS = {
         "layout_a_desc": "",
         "layout_b_label": "Competition Style 2",
         "layout_b_desc": "",
-        "layout_c_label": "Dive indicator",
+        "layout_c_label": "Dive Dashboard–Classic",
         "layout_c_desc": "Simple_A",
-        "layout_d_label": "Under Development",
+        "layout_d_label": "Dive Dashboard-2",
         "layout_d_desc": "Simple_B",
 
         "diver_info_subheader": "5️⃣ Diver info (optional, mainly for Competition Style)",

@@ -3308,24 +3308,57 @@ def _run_cmd(cmd: list) -> None:
         raise RuntimeError(p.stderr.strip() or "Command failed")
 
 def _ffprobe_stream_info(video_path: Path) -> dict:
-    """Return primary video stream info: width/height, codec, pix_fmt, rotation, SAR."""
+    """Return primary video stream info (metadata only): width/height, codec, pix_fmt, rotation, SAR.
+
+    PERFORMANCE INVARIANT (do not break):
+    - ffprobe must read *stream metadata only*.
+    - Do NOT use `side_data_list=rotation` in -show_entries (it can trigger slow frame scanning).
+      Use `stream_side_data_list=rotation` instead.
+
+    If ffprobe gets unusually slow, we emit a warning to catch regressions early.
+    """
+    # NOTE: Keep this small and metadata-only. Anything that makes ffprobe scan packets/frames
+    # will cause 10–20s startup delays on some high-bitrate portrait clips (e.g., IG downloads).
+    show_entries = (
+        "stream=width,height,codec_name,pix_fmt,sample_aspect_ratio"
+        ":stream_tags=rotate"
+        ":stream_side_data_list=rotation"
+    )
     cmd = [
         "ffprobe", "-v", "error",
         "-select_streams", "v:0",
-        "-show_entries",
-        "stream=width,height,codec_name,pix_fmt,sample_aspect_ratio:stream_tags=rotate:stream_side_data_list=rotation",
+        "-show_entries", show_entries,
         "-of", "json",
         str(video_path),
     ]
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    t0 = time.perf_counter()
+    try:
+        p = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,  # safeguard against hangs / regressions
+        )
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"ffprobe timeout (>5s): {video_path}") from e
+    dt = time.perf_counter() - t0
+
+    if dt > 1.0:
+        print(f"[WARN] ffprobe unusually slow ({dt:.2f}s): {Path(video_path).name} | check -show_entries for frame scanning")
+
     if p.returncode != 0:
         raise RuntimeError(p.stderr.strip() or "ffprobe failed")
+
     data = json.loads(p.stdout or "{}")
     streams = data.get("streams") or []
     if not streams:
         return {}
+
     st = streams[0]
-    # Rotation can appear in tags.rotate (string) or side_data_list.rotation (number)
+
+    # Rotation can appear in tags.rotate (string) or stream_side_data_list.rotation (number)
     rot = None
     try:
         rot = int((st.get("tags") or {}).get("rotate"))
@@ -3340,9 +3373,11 @@ def _ffprobe_stream_info(video_path: Path) -> dict:
                     break
                 except Exception:
                     pass
+
     sar = st.get("sample_aspect_ratio")
     if sar in (None, "", "N/A"):
         sar = None
+
     info = {
         "width": int(st.get("width") or 0),
         "height": int(st.get("height") or 0),
