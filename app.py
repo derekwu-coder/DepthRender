@@ -1198,7 +1198,17 @@ with st.container():
     
             if suffix_a == ".fit":
                 file_bytes_a = cmp_file_a.read()
-                dives_a = parse_garmin_fit_to_dives(BytesIO(file_bytes_a))
+                res_a = parse_garmin_fit_to_dives(BytesIO(file_bytes_a))
+                # parse_garmin_fit_to_dives may return a list[DataFrame] or an error string depending on parser version
+                if isinstance(res_a, str):
+                    st.error(res_a)
+                    dives_a = []
+                elif isinstance(res_a, tuple) and len(res_a) > 0:
+                    dives_a = res_a[0] if res_a[0] is not None else []
+                elif isinstance(res_a, dict):
+                    dives_a = res_a.get('dives', []) or []
+                else:
+                    dives_a = res_a or []
     
             elif suffix_a == ".uddf":
                 dive_a = parse_atmos_uddf(BytesIO(cmp_file_a.read()))
@@ -1214,7 +1224,17 @@ with st.container():
     
             if suffix_b == ".fit":
                 file_bytes_b = cmp_file_b.read()
-                dives_b = parse_garmin_fit_to_dives(BytesIO(file_bytes_b))
+                res_b = parse_garmin_fit_to_dives(BytesIO(file_bytes_b))
+                # parse_garmin_fit_to_dives may return a list[DataFrame] or an error string depending on parser version
+                if isinstance(res_b, str):
+                    st.error(res_b)
+                    dives_b = []
+                elif isinstance(res_b, tuple) and len(res_b) > 0:
+                    dives_b = res_b[0] if res_b[0] is not None else []
+                elif isinstance(res_b, dict):
+                    dives_b = res_b.get('dives', []) or []
+                else:
+                    dives_b = res_b or []
     
             elif suffix_b == ".uddf":
                 dive_b = parse_atmos_uddf(BytesIO(cmp_file_b.read()))
@@ -1232,10 +1252,22 @@ with st.container():
     
                 with sel_col_a:
                     if dives_a:
-                        options_a = [
-                            f"Dive #{i+1}（{df['depth_m'].max():.1f} m）"
-                            for i, df in enumerate(dives_a)
-                        ]
+                        # Build display labels safely (parser may return non-DataFrame items on edge cases)
+                        options_a = []
+                        valid_dives_a = []
+                        for _idx, _df in enumerate(dives_a):
+                            if hasattr(_df, '__getitem__') and (not isinstance(_df, str)) and ('depth_m' in _df):
+                                try:
+                                    _md = float(_df['depth_m'].max())
+                                    options_a.append(f"Dive #{_idx+1}（{_md:.1f} m）")
+                                    valid_dives_a.append(_df)
+                                except Exception:
+                                    options_a.append(f"Dive #{_idx+1}")
+                                    valid_dives_a.append(_df)
+                            else:
+                                # Skip invalid items
+                                pass
+                        dives_a = valid_dives_a
                         idx_a = st.selectbox(
                             tr("compare_select_dive_a"),
                             options=list(range(len(dives_a))),
@@ -1247,10 +1279,22 @@ with st.container():
     
                 with sel_col_b:
                     if dives_b:
-                        options_b = [
-                            f"Dive #{i+1}（{df['depth_m'].max():.1f} m）"
-                            for i, df in enumerate(dives_b)
-                        ]
+                        # Build display labels safely (parser may return non-DataFrame items on edge cases)
+                        options_b = []
+                        valid_dives_b = []
+                        for _idx, _df in enumerate(dives_b):
+                            if hasattr(_df, '__getitem__') and (not isinstance(_df, str)) and ('depth_m' in _df):
+                                try:
+                                    _md = float(_df['depth_m'].max())
+                                    options_b.append(f"Dive #{_idx+1}（{_md:.1f} m）")
+                                    valid_dives_b.append(_df)
+                                except Exception:
+                                    options_b.append(f"Dive #{_idx+1}")
+                                    valid_dives_b.append(_df)
+                            else:
+                                # Skip invalid items
+                                pass
+                        dives_b = valid_dives_b
                         idx_b = st.selectbox(
                             tr("compare_select_dive_b"),
                             options=list(range(len(dives_b))),
